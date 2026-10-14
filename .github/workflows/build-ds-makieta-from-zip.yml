@@ -1,0 +1,44 @@
+name: DS Makieta UI3 - kompilacja z ZIP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-ds-makieta-from-zip.yml'
+      - 'DS_Makieta_UI3_GITHUB_ACTIONS_READY.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Zbuduj DLL Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - name: Pobierz repozytorium
+        uses: actions/checkout@v4
+
+      - name: Rozpakuj przeslane archiwum
+        shell: pwsh
+        run: | $zip = 'DS_Makieta_UI3_GITHUB_ACTIONS_READY.zip' if (!(Test-Path -LiteralPath $zip)) { throw "Nie znaleziono $zip" } Expand-Archive -LiteralPath $zip -DestinationPath . -Force foreach ($file in @('source/DSMakieta2019.cpp', 'source/makieta_preview.rc', 'KOMPILUJ_MAKIETE.ps1')) { if (!(Test-Path $file)) { throw "Brak wymaganego pliku: $file" } } 
+      - name: Kompiluj DLL kompilatorem Visual Studio x64
+        shell: cmd
+        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File KOMPILUJ_MAKIETE.ps1
+
+      - name: Sprawdz DLL
+        shell: pwsh
+        run: | foreach ($f in @('output/DSMakieta2019.dll', 'output/DSAssembly2019.dll')) { if (!(Test-Path $f)) { throw "Nie powstal $f" } } if (!(Test-Path 'output/STATUS_KOMPILACJI.txt')) { throw 'Nie ma raportu statusu' } if ((Get-Content 'output/STATUS_KOMPILACJI.txt' -Raw).Trim() -ne 'BUILD_OK') { throw 'Brak BUILD_OK' } Get-Item output/*.dll | Select-Object Name, Length 
+      - name: Udostepnij gotowe DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: DS-Makieta-UI3-GOTOWE-DLL-x64
+          path: | output/DSMakieta2019.dll output/DSAssembly2019.dll output/STATUS_KOMPILACJI.txt output/KOMPILACJA_MAKIETA.log           if-no-files-found: error
+
+      - name: Zachowaj raporty przy bledzie
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DS-Makieta-UI3-RAPORTY-BLEDOW
+          path: | output/*.log output/*.txt           if-no-files-found: ignore
