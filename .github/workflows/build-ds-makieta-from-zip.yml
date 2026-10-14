@@ -1,12 +1,11 @@
-name: DS Makieta UI4 - build Windows x64 from ZIP
+name: DS Makieta UI4 - fixed nose - Windows x64
 
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/build-ds-makieta-from-zip.yml'
-      - 'DS_Makieta_UI3_GITHUB_ACTIONS_READY.zip'
-      - 'DS_Makieta_UI3_GITHUB_ACTIONS_READY-1.zip'
+      - 'DS_Makieta_UI3_GITHUB_ACTIONS_READY_FIXED_NOSE-1.zip'
   workflow_dispatch:
 
 permissions:
@@ -14,20 +13,20 @@ permissions:
 
 jobs:
   build:
-    name: Build DSMakieta2019.dll UI4
+    name: Build DSMakieta2019.dll - fixed nose
     runs-on: windows-2022
     timeout-minutes: 25
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract UI4 source ZIP
+      - name: Extract fixed-nose source ZIP
         shell: pwsh
-        run: Expand-Archive -LiteralPath 'DS_Makieta_UI3_GITHUB_ACTIONS_READY-1.zip' -DestinationPath . -Force
+        run: Expand-Archive -LiteralPath 'DS_Makieta_UI3_GITHUB_ACTIONS_READY_FIXED_NOSE-1.zip' -DestinationPath . -Force
 
       - name: Check source files
         shell: pwsh
-        run: if (!(Test-Path 'source/DSMakieta2019.cpp') -or !(Test-Path 'source/makieta_preview.rc') -or !(Test-Path 'KOMPILUJ_MAKIETE.ps1')) { throw 'Source files missing from ZIP' }
+        run: if (!(Test-Path 'source/DSMakieta2019.cpp') -or !(Test-Path 'source/makieta_core.h') -or !(Test-Path 'source/makieta_preview.rc') -or !(Test-Path 'KOMPILUJ_MAKIETE.ps1')) { throw 'Source files missing from ZIP' }
 
       - name: Compile with Visual Studio 2022 x64
         shell: cmd
@@ -40,7 +39,7 @@ jobs:
       - name: Upload DLLs and logs
         uses: actions/upload-artifact@v4
         with:
-          name: DS-Makieta-UI4-Windows-x64-DLL
+          name: DS-Makieta-UI4-FIXED-NOSE-Windows-x64-DLL
           path: output/
           if-no-files-found: error
 
@@ -48,6 +47,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: DS-Makieta-UI4-build-errors
+          name: DS-Makieta-UI4-FIXED-NOSE-build-errors
           path: output/
           if-no-files-found: ignore
