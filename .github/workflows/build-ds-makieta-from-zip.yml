@@ -1,11 +1,9 @@
-name: DS Makieta UI3 - kompilacja z ZIP
+name: DS Makieta UI3 - build Windows x64 from ZIP
 
 on:
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/build-ds-makieta-from-zip.yml'
-      - 'DS_Makieta_UI3_GITHUB_ACTIONS_READY.zip'
+    paths: ['.github/workflows/build-ds-makieta-from-zip.yml', 'DS_Makieta_UI3_GITHUB_ACTIONS_READY.zip']
   workflow_dispatch:
 
 permissions:
@@ -13,32 +11,40 @@ permissions:
 
 jobs:
   build:
-    name: Zbuduj DLL Windows x64
+    name: Build DSMakieta2019.dll
     runs-on: windows-2022
     timeout-minutes: 25
     steps:
-      - name: Pobierz repozytorium
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Rozpakuj przeslane archiwum
+      - name: Extract source ZIP
         shell: pwsh
-        run: | $zip = 'DS_Makieta_UI3_GITHUB_ACTIONS_READY.zip' if (!(Test-Path -LiteralPath $zip)) { throw "Nie znaleziono $zip" } Expand-Archive -LiteralPath $zip -DestinationPath . -Force foreach ($file in @('source/DSMakieta2019.cpp', 'source/makieta_preview.rc', 'KOMPILUJ_MAKIETE.ps1')) { if (!(Test-Path $file)) { throw "Brak wymaganego pliku: $file" } } 
-      - name: Kompiluj DLL kompilatorem Visual Studio x64
+        run: Expand-Archive -LiteralPath 'DS_Makieta_UI3_GITHUB_ACTIONS_READY.zip' -DestinationPath . -Force
+
+      - name: Check source files
+        shell: pwsh
+        run: if (!(Test-Path 'source/DSMakieta2019.cpp') -or !(Test-Path 'source/makieta_preview.rc') -or !(Test-Path 'KOMPILUJ_MAKIETE.ps1')) { throw 'Source files missing from ZIP' }
+
+      - name: Compile with Visual Studio 2022 x64
         shell: cmd
         run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File KOMPILUJ_MAKIETE.ps1
 
-      - name: Sprawdz DLL
+      - name: Verify build output
         shell: pwsh
-        run: | foreach ($f in @('output/DSMakieta2019.dll', 'output/DSAssembly2019.dll')) { if (!(Test-Path $f)) { throw "Nie powstal $f" } } if (!(Test-Path 'output/STATUS_KOMPILACJI.txt')) { throw 'Nie ma raportu statusu' } if ((Get-Content 'output/STATUS_KOMPILACJI.txt' -Raw).Trim() -ne 'BUILD_OK') { throw 'Brak BUILD_OK' } Get-Item output/*.dll | Select-Object Name, Length 
-      - name: Udostepnij gotowe DLL
+        run: if (!(Test-Path 'output/DSMakieta2019.dll') -or !(Test-Path 'output/DSAssembly2019.dll') -or (Get-Content 'output/STATUS_KOMPILACJI.txt' -Raw).Trim() -ne 'BUILD_OK') { throw 'DLL build missing or failed' }
+
+      - name: Upload DLLs and logs
         uses: actions/upload-artifact@v4
         with:
-          name: DS-Makieta-UI3-GOTOWE-DLL-x64
-          path: | output/DSMakieta2019.dll output/DSAssembly2019.dll output/STATUS_KOMPILACJI.txt output/KOMPILACJA_MAKIETA.log           if-no-files-found: error
+          name: DS-Makieta-UI3-Windows-x64-DLL
+          path: output/
+          if-no-files-found: error
 
-      - name: Zachowaj raporty przy bledzie
+      - name: Upload diagnostics if failed
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: DS-Makieta-UI3-RAPORTY-BLEDOW
-          path: | output/*.log output/*.txt           if-no-files-found: ignore
+          name: DS-Makieta-UI3-build-errors
+          path: output/
+          if-no-files-found: ignore
