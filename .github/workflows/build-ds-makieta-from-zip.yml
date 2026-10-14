@@ -1,9 +1,12 @@
-name: DS Makieta UI3 - build Windows x64 from ZIP
+name: DS Makieta UI4 - build Windows x64 from ZIP
 
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/build-ds-makieta-from-zip.yml', 'DS_Makieta_UI3_GITHUB_ACTIONS_READY.zip']
+    paths:
+      - '.github/workflows/build-ds-makieta-from-zip.yml'
+      - 'DS_Makieta_UI3_GITHUB_ACTIONS_READY.zip'
+      - 'DS_Makieta_UI3_GITHUB_ACTIONS_READY-1.zip'
   workflow_dispatch:
 
 permissions:
@@ -11,16 +14,16 @@ permissions:
 
 jobs:
   build:
-    name: Build DSMakieta2019.dll
+    name: Build DSMakieta2019.dll UI4
     runs-on: windows-2022
     timeout-minutes: 25
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract source ZIP
+      - name: Extract UI4 source ZIP
         shell: pwsh
-        run: Expand-Archive -LiteralPath 'DS_Makieta_UI3_GITHUB_ACTIONS_READY.zip' -DestinationPath . -Force
+        run: Expand-Archive -LiteralPath 'DS_Makieta_UI3_GITHUB_ACTIONS_READY-1.zip' -DestinationPath . -Force
 
       - name: Check source files
         shell: pwsh
@@ -37,7 +40,7 @@ jobs:
       - name: Upload DLLs and logs
         uses: actions/upload-artifact@v4
         with:
-          name: DS-Makieta-UI3-Windows-x64-DLL
+          name: DS-Makieta-UI4-Windows-x64-DLL
           path: output/
           if-no-files-found: error
 
@@ -45,6 +48,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: DS-Makieta-UI3-build-errors
+          name: DS-Makieta-UI4-build-errors
           path: output/
           if-no-files-found: ignore
