@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/build-ds-makieta-from-zip.yml'
-      - 'DS_Makieta_UI3_GITHUB_ACTIONS_READY_FIXED_NOSE-1.zip'
+      - 'DS_Makieta_UI3_GITHUB_ACTIONS_READY_FIXED_NOSE-1-1.zip'
   workflow_dispatch:
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
 
       - name: Extract fixed-nose source ZIP
         shell: pwsh
-        run: Expand-Archive -LiteralPath 'DS_Makieta_UI3_GITHUB_ACTIONS_READY_FIXED_NOSE-1.zip' -DestinationPath . -Force
+        run: Expand-Archive -LiteralPath 'DS_Makieta_UI3_GITHUB_ACTIONS_READY_FIXED_NOSE-1-1.zip' -DestinationPath . -Force
 
       - name: Check source files
         shell: pwsh
