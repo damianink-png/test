@@ -1,0 +1,97 @@
+name: DS Assembly Compare V2.9 B-Rep - EXE z ZIP
+
+"on":
+  workflow_dispatch:
+  push:
+    paths:
+      - 'DS_Assembly_Compare_V2_9_BREP_PROTOTYP_STEP_ZRODLA.zip'
+      - '.github/workflows/build-dsac-v29-brep-zip.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 60
+
+    steps:
+      - name: Pobierz repozytorium
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 x64
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+
+      - name: Rozpakuj zrodla V2.9 z ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Join-Path $env:GITHUB_WORKSPACE 'DS_Assembly_Compare_V2_9_BREP_PROTOTYP_STEP_ZRODLA.zip'
+          if (-not (Test-Path -LiteralPath $zip)) {
+            throw "Brak ZIP w katalogu glownym repozytorium: $zip"
+          }
+
+          $src = Join-Path $env:RUNNER_TEMP 'dsac29_source'
+          New-Item -Path $src -ItemType Directory -Force | Out-Null
+          Expand-Archive -LiteralPath $zip -DestinationPath $src -Force
+
+          foreach ($required in @('requirements.txt', 'URUCHOM_GUI.py', 'dsac29/compare.py', 'tests/test_brep29.py')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $src $required))) {
+              throw "Brak pliku w archiwum: $required"
+            }
+          }
+
+          "DSAC_SRC=$src" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "DSAC_OUTPUT=$src/dist/DSAC_V29_BREP" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Rozpakowano zrodla do: $src"
+
+      - name: Zainstaluj Open CASCADE, testy i PyInstaller
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw 'Aktualizacja pip nie powiodla sie' }
+          python -m pip install -r (Join-Path $env:DSAC_SRC 'requirements.txt') 'pytest>=8,<10' 'pyinstaller>=6.11,<7'
+          if ($LASTEXITCODE -ne 0) { throw 'Instalacja zaleznosci nie powiodla sie' }
+
+      - name: Testy geometrii B-Rep i STEP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location -LiteralPath $env:DSAC_SRC
+          python -m pytest -q tests
+          if ($LASTEXITCODE -ne 0) { throw 'Testy V2.9 nie przeszly' }
+
+      - name: Zbuduj samodzielny EXE Windows x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location -LiteralPath $env:DSAC_SRC
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSAC_V29_BREP --collect-all OCP URUCHOM_GUI.py
+          if ($LASTEXITCODE -ne 0) { throw 'Kompilacja PyInstaller nie powiodla sie' }
+          if (-not (Test-Path -LiteralPath (Join-Path $env:DSAC_OUTPUT 'DSAC_V29_BREP.exe'))) {
+            throw 'Nie znaleziono wygenerowanego programu EXE'
+          }
+
+      - name: Dolacz instrukcje, modele testowe i SHA256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dest = $env:DSAC_OUTPUT
+          Copy-Item -LiteralPath (Join-Path $env:DSAC_SRC 'README.md') -Destination (Join-Path $dest 'README.md')
+          Copy-Item -LiteralPath (Join-Path $env:DSAC_SRC 'samples') -Destination (Join-Path $dest 'samples') -Recurse
+          Copy-Item -LiteralPath (Join-Path $env:DSAC_SRC 'PRZYKLADOWY_WYNIK') -Destination (Join-Path $dest 'PRZYKLADOWY_WYNIK') -Recurse
+          $exe = Join-Path $dest 'DSAC_V29_BREP.exe'
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+          "DSAC_V29_BREP.exe SHA256: $hash" | Set-Content -LiteralPath (Join-Path $dest 'SHA256.txt') -Encoding UTF8
+
+      - name: Udostepnij EXE jako artefakt
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSAC-V2.9-BREP-Windows-x64-EXE
+          path: ${{ env.DSAC_OUTPUT }}/
+          if-no-files-found: error
+          retention-days: 30
