@@ -27,6 +27,14 @@ jobs:
         shell: pwsh
         run: Expand-Archive -LiteralPath 'DS_Assembly_Compare_GITHUB_ACTIONS_ZW3D2019_V1_1.zip' -DestinationPath '.' -Force
 
+      - name: Fix Windows near macro collision
+        shell: pwsh
+        run: |
+          $path = 'source/compare_core.hpp'
+          $text = [System.IO.File]::ReadAllText((Join-Path $PWD $path))
+          $text = $text.Replace('near(', 'nearlyEqual(')
+          [System.IO.File]::WriteAllText((Join-Path $PWD $path), $text)
+
       - name: Build and test with MSVC 2022
         shell: pwsh
         run: |
@@ -62,4 +70,5 @@ jobs:
             output/EXPORTS.txt
           if-no-files-found: warn
           retention-days: 30
+
 
