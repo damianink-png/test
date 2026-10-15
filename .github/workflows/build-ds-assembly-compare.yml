@@ -1,0 +1,65 @@
+name: DS Assembly Compare - DLL ZW3D 2019 x64
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'DS_Assembly_Compare_GITHUB_ACTIONS_ZW3D2019_V1_1.zip'
+      - 'source/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/build-ds-assembly-compare.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-windows-x64:
+    name: MSVC x64 - unit tests and DLL
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Get repository sources
+        uses: actions/checkout@v4
+
+      - name: Extract assembly comparison source package
+        shell: pwsh
+        run: Expand-Archive -LiteralPath 'DS_Assembly_Compare_GITHUB_ACTIONS_ZW3D2019_V1_1.zip' -DestinationPath '.' -Force
+
+      - name: Build and test with MSVC 2022
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/build.ps1
+          if ($LASTEXITCODE -ne 0) {
+            throw "Build script failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Validate output and publish checksums
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dll = Join-Path $PWD 'output/DSAssemblyCompare2019.dll'
+          $log = Join-Path $PWD 'output/KOMPILACJA.log'
+          if (!(Test-Path $dll)) { throw 'DLL not created' }
+          if (!(Test-Path $log)) { throw 'Build log not created' }
+          $sum = (Get-FileHash $dll -Algorithm SHA256).Hash
+          "DSAssemblyCompare2019.dll SHA256=$sum" | Set-Content -Encoding utf8 'output/SHA256.txt'
+          Write-Host "DLL: $dll"
+          Write-Host "SHA256: $sum"
+
+      - name: Upload DLL and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSAssemblyCompare2019-Windows-x64
+          path: |
+            output/DSAssemblyCompare2019.dll
+            output/KOMPILACJA.log
+            output/STATUS.txt
+            output/SHA256.txt
+            output/EXPORTS.txt
+          if-no-files-found: warn
+          retention-days: 30
+
