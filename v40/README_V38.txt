@@ -1,0 +1,1 @@
+DS Compare V3.8 — pomarańczowy motyw, legenda 3D, progress mas, edycja ilości i CSV.\nSTEP przechowuje kolory, ale wyświetlanie w ZW3D wymaga osobnego testu.\nAutomatycznego zapisu Z3 nie udostępniamy bez sprawdzonego API ZW3D 2019.\nAutor: Szymczyk Damian.\n

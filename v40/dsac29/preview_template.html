@@ -1,0 +1,34 @@
+<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DS Compare — podgląd kolorów 3D</title><style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0e1521;color:#eaf0f7;font-family:Segoe UI,system-ui,sans-serif;overflow:hidden}
+header{position:absolute;z-index:2;left:16px;top:12px;pointer-events:none}header h2{margin:0;font-size:18px;font-weight:650}header p{color:#aebcd0;font-size:12px}#info{position:absolute;left:16px;bottom:16px;background:#192638dd;border:1px solid #39485d;border-radius:14px;padding:12px 15px;z-index:2;font-size:12px;max-width:65%;line-height:1.7}#legend{position:absolute;right:15px;top:15px;background:#192638dd;border:1px solid #39485d;border-radius:12px;padding:11px 14px;font-size:12px;z-index:2}canvas{display:block;width:100vw;height:100vh;cursor:grab}canvas:active{cursor:grabbing}#err{display:none;position:absolute;top:35%;left:20%;right:20%;padding:20px;background:#7b2732;color:white;border-radius:9px;z-index:4}
+</style></head><body><header><h2>DS Compare — podgląd 3D</h2><p>Obracaj: przeciągnij · Powiększ: rolka myszy · Przywróć widok: klawisz R</p></header><div id="legend">🟢 Bez zmian<br>🟣 Nowe / zmienione / przesunięte<br>🟠 Usunięte</div><div id="info"></div><div id="err"></div><canvas id="cad"></canvas><script>
+'use strict';
+const scene=/*__SCENE__*/;
+const stats=/*__STATS__*/;
+document.getElementById('info').textContent=stats+' · Podgląd siatkowy, nie zastępuje dokładnego STEP';
+const canvas=document.getElementById('cad');const gl=canvas.getContext('webgl',{antialias:true,depth:true});
+if(!gl){document.getElementById('err').style.display='block';document.getElementById('err').textContent='WebGL niedostępny w tej przeglądarce.';}
+else{
+const vertex=`attribute vec3 aPos;attribute vec3 aCol;uniform mat4 mat;varying vec3 color;varying float lit;void main(){vec3 p=aPos;gl_Position=mat*vec4(p,1.0);color=aCol;}`;
+const fragment=`precision mediump float;varying vec3 color;void main(){gl_FragColor=vec4(color,1.0);}`;
+function shader(kind,source){const s=gl.createShader(kind);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;}
+const pr=gl.createProgram();gl.attachShader(pr,shader(gl.VERTEX_SHADER,vertex));gl.attachShader(pr,shader(gl.FRAGMENT_SHADER,fragment));gl.linkProgram(pr);gl.useProgram(pr);
+let chunks=[],lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];
+for(const piece of scene){const b=atob(piece.data);const arr=new Uint8Array(b.length);for(let i=0;i<b.length;i++)arr[i]=b.charCodeAt(i);const pts=new Float32Array(arr.buffer);for(let i=0;i<pts.length;i+=3)for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],pts[i+k]);hi[k]=Math.max(hi[k],pts[i+k]);}chunks.push({pts,col:piece.rgb});}
+const center=lo.map((v,i)=>(v+hi[i])/2), span=Math.max(...hi.map((v,i)=>v-lo[i]),1e-8);
+function buffer(data){const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);return b;}
+for(const c of chunks){const points=c.pts;for(let i=0;i<points.length;i+=3)for(let k=0;k<3;k++)points[i+k]=(points[i+k]-center[k])*2/span;c.buf=buffer(points);c.len=points.length/3;}
+const loc=gl.getAttribLocation(pr,'aPos'),matLoc=gl.getUniformLocation(pr,'mat'),colLoc=gl.getAttribLocation(pr,'aCol');
+// Reuse the same matrix for X/Y rotation and perspective projection.
+let yaw=-0.65,pitch=0.45,scale=1.0,drag=false,px=0,py=0;
+function matmul(a,b){const out=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)out[c*4+r]+=a[k*4+r]*b[c*4+k];return out;}
+function rx(v){const c=Math.cos(v),s=Math.sin(v);return new Float32Array([1,0,0,0,0,c,s,0,0,-s,c,0,0,0,0,1]);}
+function ry(v){const c=Math.cos(v),s=Math.sin(v);return new Float32Array([c,0,-s,0,0,1,0,0,s,0,c,0,0,0,0,1]);}
+function render(){const w=window.innerWidth,h=window.innerHeight,dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;gl.viewport(0,0,canvas.width,canvas.height);gl.clearColor(.055,.079,.115,1);gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+const aspect=w/h, f=2.2*scale, proj=new Float32Array([f/aspect,0,0,0,0,f,0,0,0,0,-1.01,-1,0,0,-.201,0]);
+const view=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,-4.7,1]);
+gl.uniformMatrix4fv(matLoc,false,matmul(proj,matmul(view,matmul(rx(pitch),ry(yaw)))));
+for(const ch of chunks){gl.bindBuffer(gl.ARRAY_BUFFER,ch.buf);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);gl.disableVertexAttribArray(colLoc);gl.vertexAttrib3fv(colLoc,new Float32Array(ch.col));gl.drawArrays(gl.TRIANGLES,0,ch.len);}}
+canvas.addEventListener('pointerdown',e=>{drag=true;px=e.clientX;py=e.clientY;canvas.setPointerCapture(e.pointerId);});canvas.addEventListener('pointerup',()=>drag=false);canvas.addEventListener('pointermove',e=>{if(!drag)return;yaw+=(e.clientX-px)*.009;pitch+=(e.clientY-py)*.009;px=e.clientX;py=e.clientY;render();});canvas.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(.55,Math.min(4.0,scale*Math.exp(-e.deltaY*.001)));render();},{passive:false});window.addEventListener('resize',render);window.addEventListener('keydown',e=>{if(e.key.toLowerCase()==='r'){yaw=-.65;pitch=.45;scale=1;render();}});render();
+}
+</script></body></html>

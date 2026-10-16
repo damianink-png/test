@@ -1,0 +1,18 @@
+DS Compare V3.0 - PROTOTYP (Szymczyk Damian)
+
+Do GitHub:
+1) DSCompare_V3_ZRODLA.zip -> katalog glowny repozytorium
+2) build-dscompare-v30.yml -> .github/workflows/
+3) GitHub Actions -> DS Compare V3.0 -> Run workflow
+4) Pobierz artefakt: EXE + DLL + _internal
+
+Program jest osobnym EXE do STEP/STP. DLL to nowy eksperymentalny most do ZW3D.
+Nie zastępuj produkcyjnej DLL bez kopii. Zawsze zamknij ZW3D przy wymianie pliku.
+
+Komendy ZW3D:
+~DSCOMPARE_A  (aktywne Z3 -> model A STEP)
+~DSCOMPARE_B  (aktywne Z3 -> model B STEP, otwiera EXE)
+~DSCOMPARE    (otwiera EXE)
+~DSAC        (alias do otwarcia EXE)
+
+Więcej w README.md
