@@ -27,7 +27,7 @@ jobs:
           $src = Join-Path $env:RUNNER_TEMP 'dscompare-v3-src'
           New-Item -ItemType Directory -Path $src -Force | Out-Null
           Expand-Archive -LiteralPath $zip -DestinationPath $src -Force
-          Copy-Item (Join-Path $src 'bridge/DSAssemblyCompare2019.cpp') (Join-Path $src 'DSAssemblyCompare2019.cpp')
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'v3/DSAssemblyCompare2019.cpp') (Join-Path $src 'DSAssemblyCompare2019.cpp')
           if (-not (Test-Path (Join-Path $src 'tests/test_fast32.py'))) { throw 'Missing V3.2 tests in source ZIP' }
           "DS_COMPARE_SOURCE=$src" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "DS_COMPARE_OUT=$src/dist/DSCompareV3" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
