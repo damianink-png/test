@@ -1,0 +1,34 @@
+name: Public STEP comparison fixtures (download only)
+on:
+  push:
+    branches:
+      - dscompare-public-step-test-pair
+    paths:
+      - .github/workflows/download-public-step-fixtures.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download unchanged original STEP files from caddiff public repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p public-step-pair
+          curl --fail --location --retry 3 --silent --show-error 'https://raw.githubusercontent.com/angel291592/caddiff/main/examples/fixtures/moved_old.stp' -o public-step-pair/moved_old.stp
+          curl --fail --location --retry 3 --silent --show-error 'https://raw.githubusercontent.com/angel291592/caddiff/main/examples/fixtures/moved_new.stp' -o public-step-pair/moved_new.stp
+          test "$(wc -c < public-step-pair/moved_old.stp)" -eq 22288
+          test "$(wc -c < public-step-pair/moved_new.stp)" -eq 24729
+          grep -q 'ISO-10303-21' public-step-pair/moved_old.stp
+          grep -q 'ISO-10303-21' public-step-pair/moved_new.stp
+          sha256sum public-step-pair/*.stp | tee public-step-pair/SHA256.txt
+          printf '%s\n' 'Originals downloaded without modification:' 'A: moved_old.stp - three-part assembly, before modification' 'B: moved_new.stp - BASEPLATE unchanged; SLIDER moved 5 mm; BRACKET cut 192 mm3' 'Source: https://github.com/angel291592/caddiff/tree/main/examples/fixtures' 'License: Apache-2.0 (see upstream LICENSE).' 'No geometry generated or edited by ChatGPT.' > public-step-pair/SOURCE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-Original-Public-STEP-Test-Pair
+          path: public-step-pair/
+          if-no-files-found: error
+          retention-days: 7
