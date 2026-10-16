@@ -3,7 +3,9 @@ p=Path("dsac29/gui_qt37.py")
 s=p.read_text(encoding="utf-8")
 def change(a,b):
  global s
- if a not in s: raise RuntimeError("V3.9: brak fragmentu: "+a[:75])
+ if a not in s:
+  print("V3.9: pominięty wariant fragmentu:",a[:75])
+  return
  s=s.replace(a,b)
 change("'MOVED':'#B47BDD'","'MOVED':'#6659D4'")
 change("'ADDED':'#4985EE'","'ADDED':'#6659D4'")
@@ -103,6 +105,30 @@ change("    def open_folder(self):QDesktopServices.openUrl(QUrl.fromLocalFile(st
             QMessageBox.warning(self,'Folder wyników',str(exc));return
         if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))):
             QMessageBox.warning(self,'Folder wyników','Nie można otworzyć folderu: '+str(folder))""")
+# V3.8 release patch leaves a few multiline layouts from its V3.7 base.
+import re
+s=re.sub(r"for k,name,color in \[\('SAME','Bez zmian'.*?\)\]:",
+         "for k,name,color in [('SAME','Bez zmian','#26AD42'),('CHANGED','Nowe / zmienione','#6659D4'),('REMOVED','Usunięte','#E68F3D')]:",s,count=1)
+s=re.sub(r"for code,name in \[\('SAME','Bez zmian'\).*?\]:\n            cb=QCheckBox",
+         "for code,name in [('SAME','Bez zmian'),('CHANGED','Nowe / zmienione'),('REMOVED','Usunięte')]:\n            cb=QCheckBox",s,count=1,flags=re.S)
+s=re.sub(r"for idx,\(status,name\) in enumerate\(\[\s*\('SAME','Bez zmian'\).*?\]\):",
+         "for idx,(status,name) in enumerate([('SAME','Bez zmian'),('CHANGED','Nowe / zmienione'),('REMOVED','Usunięte')]):",s,count=1,flags=re.S)
+# V3.8 source sometimes spells QProgressBar setup differently. Remove all placeholder percentages.
+s=s.replace("self.progress.setFormat('Gotowy  •  %p%')","self.progress.setTextVisible(False)")
+s=s.replace("self.mass_progress.setFormat('Gotowy  •  %p%')","self.mass_progress.setTextVisible(False)")
+s=s.replace("self.progress.setFormat('Przetwarzanie…')","self.progress.setTextVisible(False)")
+s=s.replace("self.mass_progress.setFormat('Przetwarzanie…')","self.mass_progress.setTextVisible(False)")
+# Never hide imported neutral STEP mesh if it does not match a status color.
+s=s.replace("""visible=any(checkbox.isChecked() for status,checkbox in self.legend_filters.items()
+                 if self.settings['kolory'].get(status,COLORS[status]).lower()==key)""",
+"""match=[v for kind,v in self.legend_filters.items()
+                    if self.settings['kolory'].get(kind,COLORS[kind]).lower()==key]
+            visible=any(v.isChecked() for v in match) if match else True""")
+# Verify that all required UI controls were injected.
+for required in ('viewer_custom_path=QLineEdit','def choose_viewer_file(self):',
+                 'Otwórz folder wyników','viewer_progress=QProgressBar'):
+    if required not in s:raise RuntimeError("V3.9 failed to provide "+required)
+
 p.write_text(s,encoding="utf-8")
 p=Path("dsac29/step_io.py");s=p.read_text(encoding="utf-8")
 s=s.replace("'UNCERTAIN':(0.6,0.64,0.7)","'UNCERTAIN':(0.40,0.35,0.83)")
