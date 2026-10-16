@@ -124,6 +124,26 @@ s=s.replace("""visible=any(checkbox.isChecked() for status,checkbox in self.lege
 """match=[v for kind,v in self.legend_filters.items()
                     if self.settings['kolory'].get(kind,COLORS[kind]).lower()==key]
             visible=any(v.isChecked() for v in match) if match else True""")
+# The released V3.8 toolbar uses a local 'legend' variable rather than 'self.viewer_legend'.
+if 'viewer_custom_path=QLineEdit' not in s:
+    needle="        v.addLayout(toolbar)\n        legend=QHBoxLayout()"
+    ui="""        v.addLayout(toolbar)
+        own=QHBoxLayout()
+        own.addWidget(_label('Własny STEP:','muted'))
+        self.viewer_custom_path=QLineEdit(self.settings.get('ostatni_podglad',''))
+        self.viewer_custom_path.setPlaceholderText('Dowolny plik STEP/STP bez porównania')
+        self.viewer_custom_path.textEdited.connect(lambda _:self.viewer_model.setCurrentIndex(0))
+        own.addWidget(self.viewer_custom_path,1)
+        own.addWidget(_button('Przeglądaj STEP…',self.choose_viewer_file,'subtle'))
+        v.addLayout(own)
+        self.viewer_progress=QProgressBar()
+        self.viewer_progress.setTextVisible(False)
+        self.viewer_progress.hide()
+        v.addWidget(self.viewer_progress)
+        legend=QHBoxLayout()"""
+    if needle not in s:raise RuntimeError('V3.9: nie znaleziono rzeczywistego układu zakładki 3D')
+    s=s.replace(needle,ui)
+
 # Verify that all required UI controls were injected.
 for required in ('viewer_custom_path=QLineEdit','def choose_viewer_file(self):',
                  'Otwórz folder wyników','viewer_progress=QProgressBar'):
