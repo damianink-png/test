@@ -1,0 +1,104 @@
+name: DS Compare V3.2 FAST B-Rep - Windows EXE and ZW3D DLL
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'DSCompare_V3_2_FAST_ZRODLA.zip'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 70
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python 3.11 x64
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Prepare source tree
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Join-Path $env:GITHUB_WORKSPACE 'DSCompare_V3_2_FAST_ZRODLA.zip'
+          if (-not (Test-Path $zip)) { throw 'Missing DS Compare V3.2 source ZIP' }
+          $src = Join-Path $env:RUNNER_TEMP 'dscompare-v3-src'
+          New-Item -ItemType Directory -Path $src -Force | Out-Null
+          Expand-Archive -LiteralPath $zip -DestinationPath $src -Force
+          Copy-Item (Join-Path $src 'bridge/DSAssemblyCompare2019.cpp') (Join-Path $src 'DSAssemblyCompare2019.cpp')
+          if (-not (Test-Path (Join-Path $src 'tests/test_fast32.py'))) { throw 'Missing V3.2 tests in source ZIP' }
+          "DS_COMPARE_SOURCE=$src" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "DS_COMPARE_OUT=$src/dist/DSCompareV3" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw 'pip failed' }
+          python -m pip install -r (Join-Path $env:DS_COMPARE_SOURCE 'requirements.txt') 'pytest>=8,<10' 'pyinstaller>=6.11,<7'
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency install failed' }
+      - name: Test B-Rep geometry and validate Python
+        shell: pwsh
+        run: |
+          Set-Location $env:DS_COMPARE_SOURCE
+          python -m py_compile DSCompareV3.py
+          if ($LASTEXITCODE -ne 0) { throw 'Python syntax invalid' }
+          python -m pytest -q tests
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+          python DSCompareV3.py --dscompare-worker --a samples/MODEL_A.step --b samples/MODEL_B.step --output $env:RUNNER_TEMP/smoke_v32 --no-main-step --no-diff-step
+          if ($LASTEXITCODE -ne 0) { throw 'Worker subprocess smoke failed' }
+          if (-not (Test-Path (Join-Path $env:RUNNER_TEMP 'smoke_v32/ZMIANY.csv'))) { throw 'Worker did not produce report' }
+      - name: Build portable EXE
+        shell: pwsh
+        run: |
+          Set-Location $env:DS_COMPARE_SOURCE
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSCompareV3 --collect-all OCP DSCompareV3.py
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
+          if (-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSCompareV3.exe'))) { throw 'EXE missing' }
+      - name: Build MSVC ZW3D bridge DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $vs) { throw 'MSVC tools not available' }
+          $env:VSCMD = Join-Path $vs 'VC/Auxiliary/Build/vcvars64.bat'
+          if (-not (Test-Path $env:VSCMD)) { throw 'Missing vcvars64.bat' }
+          & cmd.exe /d /c (Join-Path $env:GITHUB_WORKSPACE 'v3/build.cmd')
+          if ($LASTEXITCODE -ne 0) { throw "DLL build failed: $LASTEXITCODE" }
+          if (-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSAssemblyCompare2019.dll'))) { throw 'DLL missing' }
+      - name: Include instructions and integrity hashes
+        shell: pwsh
+        run: |
+          $dest = $env:DS_COMPARE_OUT
+          Copy-Item (Join-Path $env:DS_COMPARE_SOURCE 'samples') (Join-Path $dest 'samples') -Recurse
+          Copy-Item (Join-Path $env:DS_COMPARE_SOURCE 'README_V32.txt') (Join-Path $dest 'README_V32.txt')
+          @'
+          DS Compare V3.2 FAST B-Rep (Windows x64) - Geometry & Assembly Comparison
+          Designed & developed by Szymczyk Damian
+          Run DSCompareV3.exe with _internal folder kept alongside.
+          Choose two STEP/STP files; click PORÓWNAJ B-REP.
+          ZW3D 2019 DLL is experimental and not yet validated in ZW3D.
+          Back up previous DLL and close CAD before swapping it.
+          ZW3D commands:
+          ~DSCOMPARE_A - export current model as A
+          ~DSCOMPARE_B - export current model as B, launch EXE
+          ~DSCOMPARE or ~DSAC - launch EXE with last captures
+          Place DSCompareV3.exe next to DLL, or create DSComparePath.txt next
+          to DLL with the full EXE path on line 1.
+          DLL does not open, close, or save any Z3 documents.
+          Logs: %TEMP%/DSCompareV3/bridge.log
+          '@ | Set-Content (Join-Path $dest 'README_V3.txt') -Encoding UTF8
+          foreach($file in @('DSCompareV3.exe','DSAssemblyCompare2019.dll')) {
+            $hash=(Get-FileHash (Join-Path $dest $file) -Algorithm SHA256).Hash
+            "$file $hash" | Add-Content (Join-Path $dest 'SHA256.txt') -Encoding UTF8
+          }
+          'BUILD_OK_V3_2_FAST_BREP_WINDOWS_X64_ZW3D_UNTESTED' | Set-Content (Join-Path $dest 'STATUS.txt') -Encoding UTF8
+      - name: Upload Windows program
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-V3.2-FAST-BREP-Windows-x64-EXE-and-DLL
+          path: ${{ env.DS_COMPARE_OUT }}/
+          if-no-files-found: error
+          retention-days: 30
