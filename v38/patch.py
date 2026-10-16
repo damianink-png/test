@@ -203,7 +203,7 @@ mesh.write_text(t,encoding="utf-8")
 io=root/'dsac29/step_io.py'
 t=io.read_text(encoding='utf-8')
 t=t.replace("'pokolorowane_powierzchnie':colored_faces,",
-     "'pokolorowane_powierzchnie':colored_faces,\\n            'brak_kolorow_powierzchni':not bool(colored_faces),")
+     "'pokolorowane_powierzchnie':colored_faces,\n            'brak_kolorow_powierzchni':not bool(colored_faces),")
 io.write_text(t,encoding='utf-8')
 (root/'README_V38.txt').write_text(
  "DS Compare V3.8 — pomarańczowy motyw, legenda 3D, progress mas, edycja ilości i CSV.\\n"
