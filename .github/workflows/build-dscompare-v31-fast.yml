@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - 'v3/**'
-      - '.github/workflows/build-dscompare-v30.yml'
+      - '.github/workflows/build-dscompare-v31-fast.yml'
 permissions:
   contents: read
 jobs:
