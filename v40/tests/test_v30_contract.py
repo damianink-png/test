@@ -27,7 +27,7 @@ def test_dll_api_export_contract_and_no_file_mutations():
         assert '"'+forbidden+'"' not in source
 
 def test_workflow_builds_exe_and_dll():
-    wf = (ROOT / '.github' / 'workflows' / 'build-dscompare-v30.yml').read_text(encoding='utf-8')
+    wf = (ROOT.parent / '.github' / 'workflows' / 'build-dscompare-v40.yml').read_text(encoding='utf-8')
     assert '--collect-all OCP' in wf
     assert 'DSAssemblyCompare2019.dll' in wf
     assert 'DSCompareV3.exe' in wf
