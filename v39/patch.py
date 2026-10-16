@@ -4,7 +4,7 @@ s=p.read_text(encoding="utf-8")
 def change(a,b):
  global s
  if a not in s:
-  print("V3.9: pominięty wariant fragmentu:",a[:75])
+  # Differences between released V3.8 and local prototype are handled below.
   return
  s=s.replace(a,b)
 change("'MOVED':'#B47BDD'","'MOVED':'#6659D4'")
