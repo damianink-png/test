@@ -1,0 +1,64 @@
+name: Download public OpenArm revision STEP files
+on:
+  push:
+    branches:
+      - dscompare-public-openarm-revisions
+    paths:
+      - .github/workflows/download-openarm-revisions.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download and validate original OpenArm STEP assemblies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p openarm-test-revisions
+          base='https://raw.githubusercontent.com/Utsav92/openarm-3d-cad-assembly/master/STEP%20%28assembly%29'
+          curl --fail --location --retry 4 --connect-timeout 20 --max-time 350 --silent --show-error "$base/OpenArm_v1.0_follower.step" -o openarm-test-revisions/OpenArm_v1.0_follower.step
+          curl --fail --location --retry 4 --connect-timeout 20 --max-time 350 --silent --show-error "$base/OpenArm_v1.1_follower.STEP" -o openarm-test-revisions/OpenArm_v1.1_follower.STEP
+          curl --fail --location --retry 3 --silent --show-error 'https://raw.githubusercontent.com/enactic/openarm_hardware/main/LICENSE.txt' -o openarm-test-revisions/LICENSE_OpenArm.txt
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,re
+          root=Path("openarm-test-revisions")
+          entries=[("OpenArm_v1.0_follower.step",29307440),("OpenArm_v1.1_follower.STEP",43987181)]
+          report=[]
+          for name,expected in entries:
+              data=(root/name).read_bytes()
+              assert len(data)==expected, (name,len(data),expected)
+              assert data[:200].find(b'ISO-10303-21')>=0, name
+              assert b'END-ISO-10303-21;' in data[-1000:], name
+              sha=hashlib.sha256(data).hexdigest()
+              counts={k:len(re.findall(rb'=\s*'+k.encode()+rb'\s*\(',data)) for k in ['NEXT_ASSEMBLY_USAGE_OCCURRENCE','PRODUCT_DEFINITION','MANIFOLD_SOLID_BREP','SHAPE_REPRESENTATION']}
+              report.append(f"{name}: {len(data):,} bytes; SHA256 {sha}; STEP entities {counts}")
+              print(report[-1])
+          (root/'WERYFIKACJA.txt').write_text('\n'.join(report)+'\n',encoding='utf8')
+          PY
+          cat > openarm-test-revisions/README.txt <<'EOF'
+          DS Compare: publiczne duze zlozenie OpenArm Follower w 2 rewizjach
+          MODEL A: OpenArm_v1.0_follower.step
+          MODEL B: OpenArm_v1.1_follower.STEP
+
+          Pliki STEP zostaly pobrane bez zmian i bez generowania geometrii.
+          Repozytorium: https://github.com/Utsav92/openarm-3d-cad-assembly
+          Folder: https://github.com/Utsav92/openarm-3d-cad-assembly/tree/master/STEP%20(assembly)
+          Oryginalny projekt: https://github.com/enactic/openarm_hardware
+          Licencja projektow sprzetowych OpenArm: CERN-OHL-S-2.0; dolaczono LICENSE_OpenArm.txt.
+
+          V1.0 i V1.1 sa odrebnymi rewizjami rzeczywistego zestawu CAD.
+          Dokumentacja V1.1 opisuje setki czesci i wielokrotne elementy zlaczne.
+          Dokladne kategorie i liczby przesuniec wymagaja analizy B-Rep;
+          nie jest to sztucznie przygotowany test tylko kilku przesunietych detali.
+          EOF
+      - name: Upload original CAD test revisions
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-OpenArm-Follower-V1.0-vs-V1.1-Original-STEP
+          path: openarm-test-revisions/
+          if-no-files-found: error
+          retention-days: 14
