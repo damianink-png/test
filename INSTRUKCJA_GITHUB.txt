@@ -1,0 +1,26 @@
+DS Compare 4.1 — pliki do ręcznego przesłania na GitHub
+
+1. Plik DSCompare_V4_1_ZRODLA.zip prześlij BEZ ROZPAKOWYWANIA do katalogu
+   głównego repozytorium (Code > Add file > Upload files).
+2. Plik build-dscompare-v41.yml dodaj pod dokładną ścieżką:
+   .github/workflows/build-dscompare-v41.yml
+   Możesz użyć Add file > Create new file, wpisać tę pełną ścieżkę
+   i wkleić całą zawartość pliku YML.
+3. Po zapisaniu obu plików otwórz Actions > DS Compare V4.1 - Verified Colors,
+   UI, EXE and DLL. Uruchom Run workflow dla właściwej gałęzi.
+4. Po zielonym zakończeniu pobierz artefakt DSCompare-V4.1-Windows-x64-EXE-DLL.
+   W nim jest DSCompare_V4_1_Windows_x64_EXE_DLL.zip.
+5. Rozpakuj cały ZIP programu do nowego folderu. EXE, DLL i folder _internal
+   muszą pozostać razem. Uruchom DSCompareV3.exe (nazwa zachowana dla DLL).
+
+Workflow rozpakowuje źródła, uruchamia testy, buduje EXE i DLL, a następnie
+sprawdza gotowy EXE: porównanie, kolory, siatkę 3D oraz uruchomienie okna.
+DLL jest sprawdzana przez załadowanie i kontrolę eksportowanych funkcji.
+Test wewnątrz ZW3D 2019 trzeba wykonać na Twoim stanowisku.
+
+Jeśli wolisz przechowywać rozpakowany kod: wgraj katalog v41 i .github
+z paczki zamiast źródłowego ZIP-a. Usuń stary DSCompare_V4_1_ZRODLA.zip
+z repozytorium, bo jeśli istnieje, workflow wybiera właśnie ZIP.
+
+W tej sesji nie wysłano tych poprawek ani nie uruchomiono kompilacji na GitHub.
+Dostarczony ZIP zawiera źródła, a nie gotowy program Windows.

@@ -1,0 +1,3 @@
+DS Compare 4.1
+Instrukcja: README_V41.txt.
+Pliki do ręcznego przesłania i testy: ../INSTRUKCJA_GITHUB.txt oraz ../ANALIZA_V41.md.
