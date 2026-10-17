@@ -49,7 +49,7 @@ def test_unavailable_alignment_finishes_with_visible_warning(tmp_path,monkeypatc
     monkeypatch.setattr(cli,'load_step',lambda *a,**kw:[part()])
     folder,recs,err=cli.process('a.step','b.step',tmp_path,step=False,diff_step=False,align=True,progress=None)
     assert err is None and recs[0].status=='SAME'
-    assert 'Porównano oryginalne' in (folder/'RAPORT.html').read_text()
+    assert 'Porównano oryginalne' in (folder/'RAPORT.html').read_text(encoding='utf-8')
     assert (folder/'OSTRZEZENIA.txt').is_file()
 
 def test_step_reader_uses_definition_instead_of_nauo(tmp_path):
