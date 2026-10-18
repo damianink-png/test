@@ -1,0 +1,4 @@
+DS Compare 4.4
+Instrukcja: README_V44.txt.
+Testy i zmiany: ../RAPORT_V44.md.
+Kompilacja: ../INSTRUKCJA_GITHUB.txt.

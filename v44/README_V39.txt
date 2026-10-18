@@ -1,0 +1,1 @@
+DS Compare V3.9. Podgląd 3D otwiera dowolny STEP bez porównania. Trzy kolory; raporty zachowują szczegółowe zmiany. Paski postępu bez sztucznego procentu. Folder wyników na ekranie porównania. Eksport STEP w rzeczywistych dużych złożeniach nadal wymaga sprawdzenia w ZW3D. DLL eksperymentalna. Autor: Szymczyk Damian.

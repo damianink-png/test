@@ -1,0 +1,44 @@
+"""Runs the frozen program, not source modules, on the Windows build host."""
+import json,os,subprocess,sys,struct
+from pathlib import Path
+out=Path(sys.argv[1]).resolve();exe=out/'DSCompareV3.exe'
+checks=out/'WERYFIKACJA';checks.mkdir(exist_ok=True)
+env=dict(os.environ,QT_QPA_PLATFORM='offscreen')
+def run(args):
+    p=subprocess.run([str(exe),*map(str,args)],env=env,timeout=180)
+    assert p.returncode==0,(args,p.returncode)
+run(['--worker','compare','--a',out/'samples/MODEL_A.step','--b',out/'samples/MODEL_B.step',
+     '--output',checks/'WYNIK_TESTOWY','--generate-step','--diff-step','--direct-scene','--schema','AP214IS'])
+diag=json.loads((checks/'WYNIK_TESTOWY/DIAGNOSTYKA_KOLOROW.json').read_text(encoding='utf-8'))
+assert diag['pokolorowane_powierzchnie']>0 and diag['powierzchnie_bez_koloru']==0
+result=json.loads((checks/'WYNIK_TESTOWY/_WYNIK_V37.json').read_text(encoding='utf-8'))
+assert result['ok'] and result['blad_step'] is None
+scene=json.loads((checks/'WYNIK_TESTOWY/SCENA_DIAGNOSTYKA.json').read_text(encoding='utf-8'))
+assert scene['complete'] and scene['expected_records']==scene['rendered_records']
+summary=json.loads((checks/'WYNIK_TESTOWY/PODSUMOWANIE.json').read_text(encoding='utf-8'))
+changed=next(i for i,r in enumerate(summary['records']) if r['status']=='CHANGED')
+run(['--worker','detail','--input',checks/'WYNIK_TESTOWY','--record',changed,
+     '--output',checks/'WYNIK_TESTOWY'/f'Szczegoly_R{changed:06d}'])
+assert (checks/'WYNIK_TESTOWY'/f'Szczegoly_R{changed:06d}'/'SCENA_WYNIK.npz').exists()
+# Verify the manual-pair path in the frozen executable too.
+r=summary['records'][changed]
+review=checks/'manual_review.json'
+review.write_text(json.dumps({'fingerprints':summary['source_fingerprints'],'pairs':[[r['a_index'],r['b_index']]]}),encoding='utf-8')
+run(['--worker','compare','--a',out/'samples/MODEL_A.step','--b',out/'samples/MODEL_B.step',
+     '--output',checks/'MANUAL','--direct-scene','--manual-review',review])
+manual=json.loads((checks/'MANUAL/PODSUMOWANIE.json').read_text(encoding='utf-8'))
+assert manual['manual_pairs']==[[r['a_index'],r['b_index']]]
+run(['--worker','mesh','--input',checks/'WYNIK_TESTOWY/POROWNANIE_KOLORY.step','--output',checks/'MESH'])
+assert (checks/'MESH/SCENA_3D.npz').exists()
+run(['--smoke-test-ui',checks/'GUI'])
+assert (checks/'GUI/UI_OK.json').exists()
+# Load DLL outside CAD solely to verify x64 load/dependencies/exports, not Init.
+import ctypes
+bridge=ctypes.WinDLL(str(out/'DSAssemblyCompare2019.dll'))
+for symbol in ('DSAssemblyCompare2019Init','DSAssemblyCompare2019Exit'):
+    assert getattr(bridge,symbol)
+(checks/'TESTY_GOTOWEGO_PROGRAMU.json').write_text(json.dumps({
+ 'version':'4.4','packaged_compare':'PASS','face_color_roundtrip':'PASS',
+ 'packaged_mesh':'PASS','packaged_gui':'PASS','dll_load_and_exports':'PASS',
+ 'ZW3D_runtime':'NOT_TESTED'},indent=2),encoding='utf-8')
+print('Frozen EXE, STEP colors, mesh, GUI and DLL load: PASS')

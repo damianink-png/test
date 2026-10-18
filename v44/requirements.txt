@@ -1,0 +1,2 @@
+cadquery-ocp>=7.8,<7.10
+numpy>=1.26,<3
