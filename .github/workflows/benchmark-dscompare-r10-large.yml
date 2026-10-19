@@ -1,0 +1,49 @@
+name: DS Compare R10 - Stress test duzych zlozen STEP
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'benchmarks/benchmark_large_r10.py'
+      - '.github/workflows/benchmark-dscompare-r10-large.yml'
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: windows-2022
+    timeout-minutes: 70
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout R10 test branch
+        uses: actions/checkout@v4
+      - name: Python 3.11 x64
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Extract identical R10 application sources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $archive=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_V4_6_R10_ZRODLA.zip'
+          if(-not (Test-Path $archive)){throw "Missing R10 source archive"}
+          Expand-Archive -Path $archive -DestinationPath $env:GITHUB_WORKSPACE -Force
+          if(-not (Test-Path 'v46/DSCompareV3.py')){throw 'Missing R10 worker code'}
+      - name: CAD libraries
+        shell: pwsh
+        run: |
+          python -m pip install -r v46/requirements.txt
+          if($LASTEXITCODE -ne 0){throw 'Dependency installation failed'}
+      - name: Benchmark 120, 400, 800 components with actual STEP files
+        shell: pwsh
+        run: |
+          python -u benchmarks/benchmark_large_r10.py
+          if($LASTEXITCODE -ne 0){throw 'One of the R10 large-assembly cases failed; see result JSON'}
+      - name: Store benchmark results and generated STEP evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R10-Large-Assembly-Results
+          path: benchmark_results/
+          if-no-files-found: warn
+          retention-days: 30
