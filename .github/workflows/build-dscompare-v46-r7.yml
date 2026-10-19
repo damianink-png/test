@@ -5,6 +5,7 @@ on:
     paths:
       - 'DSCompare_V4_6_R6_ZRODLA.zip'
       - 'patches/DSCompare_R7_gzip_b64.txt'
+      - 'patches/DSCompare_R7_hotfix_gzip_b64.txt'
       - 'v46/**'
       - '.github/workflows/build-dscompare-v46-r7.yml'
 permissions:
@@ -44,6 +45,14 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R7 source patch incompatible'}
           git apply (Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R7.patch')
           if($LASTEXITCODE -ne 0){throw 'R7 source patch failed'}
+          Set-Location $env:GITHUB_WORKSPACE
+          python -c "from pathlib import Path;import base64,gzip; p=Path('patches/DSCompare_R7_hotfix_gzip_b64.txt');Path('DSCompare_R7_hotfix.patch').write_bytes(gzip.decompress(base64.b64decode(p.read_text(encoding='ascii'))))"
+          if($LASTEXITCODE -ne 0){throw 'R7 hotfix decoding failed'}
+          Set-Location $env:DS_COMPARE_SOURCE
+          git apply --check (Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R7_hotfix.patch')
+          if($LASTEXITCODE -ne 0){throw 'R7 hotfix incompatible'}
+          git apply (Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R7_hotfix.patch')
+          if($LASTEXITCODE -ne 0){throw 'R7 hotfix apply failed'}
       - name: Dependencies - Open CASCADE + PySide6 (VTK for legacy regression tests)
         shell: pwsh
         run: |
