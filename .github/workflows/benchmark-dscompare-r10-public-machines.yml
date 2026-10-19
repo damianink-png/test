@@ -1,0 +1,50 @@
+name: DS Compare R10 - Real public robot and machine CAD (fast mirror)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/benchmark-dscompare-r10-public-machines.yml'
+permissions:
+  contents: read
+jobs:
+  real-machines:
+    runs-on: windows-2022
+    timeout-minutes: 70
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Extract R10
+        shell: pwsh
+        run: |
+          Expand-Archive -LiteralPath DSCompare_V4_6_R10_ZRODLA.zip -DestinationPath . -Force
+      - name: Decode verified benchmark
+        shell: pwsh
+        run: |
+          python -c "from pathlib import Path;import lzma,base64,hashlib; p=Path('benchmarks/public_cad_r10_script.xz.b64'); content=lzma.decompress(base64.b64decode(p.read_text('ascii'))); assert hashlib.sha256(content).hexdigest()=='e166550eec59a35c33b78433a3e39d91b4f3c7e21e5a3fa8a637e92f68a8050e'; p=Path('benchmarks/benchmark_public_cad_r10.py'); p.write_bytes(content); text=p.read_text('utf8'); assert text.count('for spec in CASES:')==1; p.write_text(text.replace('for spec in CASES:', 'for spec in CASES[1:]:'),encoding='utf8')"
+          if($LASTEXITCODE -ne 0){throw 'Bad script'}
+      - name: Install CAD libraries
+        shell: pwsh
+        run: |
+          python -m pip install -r v46/requirements.txt
+          if($LASTEXITCODE -ne 0){throw 'Install failed'}
+      - name: Run SO101 robot, OLSK CNC and Voron Trident
+        shell: pwsh
+        timeout-minutes: 55
+        run: |
+          python -u benchmarks/benchmark_public_cad_r10.py
+          if($LASTEXITCODE -ne 0){throw 'See diagnostics for failing model(s)'}
+      - name: Upload measurement logs even for failed tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R10-Public-Machines-Results
+          path: |
+            real_cad_results/**/*.json
+            real_cad_results/**/*.txt
+          if-no-files-found: warn
+          retention-days: 30
