@@ -1,0 +1,28 @@
+name: R12 - Capture public OLSK source for exact BOM profiling
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/r12-public-olsk-input.yml'
+permissions:
+  contents: read
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download pinned public mechanical CAD STEP source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p inputs
+          curl --retry 3 --fail --location --silent --show-error --max-time 180 \
+            'https://raw.githubusercontent.com/Open-Lab-Starter-Kit/OLSK-Small-CNC/cae066fa5b78b596743e1f2e432b93539cba8c24/OLSK_Small_CNC_V2/OLSK%20small%20CNC%20v2_Workshop.step.zip' \
+            --output inputs/olsk_cnc_v2_original_step.zip
+          test "$(stat -c %s inputs/olsk_cnc_v2_original_step.zip)" -gt 1000000
+          sha256sum inputs/olsk_cnc_v2_original_step.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-OLSK-CNC-source-for-geometry-profiling
+          path: inputs/olsk_cnc_v2_original_step.zip
+          retention-days: 5
