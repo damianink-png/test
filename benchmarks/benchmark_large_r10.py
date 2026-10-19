@@ -14,7 +14,7 @@ from OCP.XCAFDoc import XCAFDoc_DocumentTool
 from OCP.STEPCAFControl import STEPCAFControl_Writer
 from OCP.IFSelect import IFSelect_RetDone
 
-ROOT=Path(__file__).resolve().parents[2]
+ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'v46'
 OUTPUT=ROOT/'benchmark_results'
 OUTPUT.mkdir(exist_ok=True)
