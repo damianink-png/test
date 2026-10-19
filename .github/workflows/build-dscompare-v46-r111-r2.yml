@@ -1,0 +1,141 @@
+name: DS Compare V4.6 R11.1 R2 - lazy accurate BOM
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'DSCompare_V4_6_R10_ZRODLA.zip'
+      - 'patches/r11_patch.xz.b64'
+      - '.github/workflows/build-dscompare-v46-r111-r2.yml'
+      - 'patches/r111_lazy_patch.xz.b64'
+      - 'patches/r111_bom_patch.xz.b64'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 110
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Rozpakuj pelne zrodla R10
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $archive=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_V4_6_R10_ZRODLA.zip'
+          if(-not (Test-Path $archive)){throw 'Brak DSCompare_V4_6_R10_ZRODLA.zip w katalogu glownym repozytorium'}
+          $root=Join-Path $env:RUNNER_TEMP 'dscompare-r10-source'
+          Expand-Archive -Path $archive -DestinationPath $root -Force
+          $src=Join-Path $root 'v46'
+          if(-not (Test-Path (Join-Path $src 'DSCompareV3.py'))){throw 'Brak plikow zrodlowych v46/DSCompareV3.py'}
+          "DS_COMPARE_SOURCE=$src" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DS_COMPARE_OUT=$src/dist/DSCompareV3" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Apply verified R11 source patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; p=Path('patches/r11_patch.xz.b64').read_text(encoding='ascii').strip(); raw=lzma.decompress(base64.b64decode(p)); assert hashlib.sha256(raw).hexdigest()=='88920cc1350fc6daddb34b6c54b4d916e3b87b74d40a7e0693c4485fb45fca59'; Path('R11.patch').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R11 patch SHA256 verification failed'}
+          Set-Location $env:DS_COMPARE_SOURCE
+          git apply --check (Join-Path $env:GITHUB_WORKSPACE 'R11.patch')
+          if($LASTEXITCODE -ne 0){throw 'R11 patch cannot be applied to R10 sources'}
+          git apply (Join-Path $env:GITHUB_WORKSPACE 'R11.patch')
+          if($LASTEXITCODE -ne 0){throw 'R11 patch application failed'}
+          Set-Location $env:GITHUB_WORKSPACE
+      - name: Apply verified R11.1 in-memory BOM/STEP definition optimization
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location $env:GITHUB_WORKSPACE
+          python -c "from pathlib import Path;import base64,lzma,hashlib; p=Path('patches/r111_bom_patch.xz.b64').read_text('ascii').strip(); raw=lzma.decompress(base64.b64decode(p)); assert hashlib.sha256(raw).hexdigest()=='ed641d5a37b5328dd6c03903e29c8407226bef15a85b203ad471565d3618355c'; Path('R111.patch').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R11.1 patch verification failed'}
+          Set-Location $env:DS_COMPARE_SOURCE
+          git apply -p2 --check (Join-Path $env:GITHUB_WORKSPACE 'R111.patch')
+          if($LASTEXITCODE -ne 0){throw 'R11.1 patch incompatible with R11'}
+          git apply -p2 (Join-Path $env:GITHUB_WORKSPACE 'R111.patch')
+          if($LASTEXITCODE -ne 0){throw 'R11.1 patch application failed'}
+      - name: Apply R11.1 R2 lazy B-Rep proof only for compatible BOM candidates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location $env:GITHUB_WORKSPACE
+          python -c "from pathlib import Path;import base64,lzma,hashlib; p=Path('patches/r111_lazy_patch.xz.b64').read_text('ascii').strip(); raw=lzma.decompress(base64.b64decode(p)); assert hashlib.sha256(raw).hexdigest()=='2b98f4915a5ca00fcf7f2ba424a67ce2daf35ed4c13bc5dd2dc1e0f54d37f7f9'; Path('R111_LAZY.patch').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R2 patch hash mismatch'}
+          Set-Location $env:DS_COMPARE_SOURCE
+          git apply -p2 --check (Join-Path $env:GITHUB_WORKSPACE 'R111_LAZY.patch')
+          if($LASTEXITCODE -ne 0){throw 'R2 patch incompatible'}
+          git apply -p2 (Join-Path $env:GITHUB_WORKSPACE 'R111_LAZY.patch')
+          if($LASTEXITCODE -ne 0){throw 'R2 patch failed'}
+      - name: Zainstaluj biblioteki
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          if($LASTEXITCODE -ne 0){throw 'Blad aktualizacji pip'}
+          python -m pip install -r (Join-Path $env:DS_COMPARE_SOURCE 'requirements.txt') 'PySide6>=6.8,<6.10' 'vtk>=9.3,<9.6' 'pytest>=8,<10' 'pyinstaller>=6.11,<7'
+          if($LASTEXITCODE -ne 0){throw 'Blad instalacji zaleznosci'}
+          python -m pip check
+          if($LASTEXITCODE -ne 0){throw 'Konflikt zaleznosci'}
+      - name: Testy logiki i interfejsu Qt
+        shell: pwsh
+        run: |
+          Set-Location $env:DS_COMPARE_SOURCE
+          python -m pytest -q tests
+          if($LASTEXITCODE -ne 0){throw 'Testy nie przeszly'}
+          $env:QT_API='pyside6'
+          python -c "from PySide6 import QtWidgets; import dsac29.gui46; print('Qt UI imported')"
+          if($LASTEXITCODE -ne 0){throw 'Blad importu Qt'}
+      - name: Kompiluj EXE Windows x64
+        shell: pwsh
+        run: |
+          Set-Location $env:DS_COMPARE_SOURCE
+          $env:QT_API='pyside6'
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSCompareV3 --icon assets/DSCompare.ico --collect-all OCP --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" DSCompareV3.py
+          if($LASTEXITCODE -ne 0){throw 'PyInstaller failed'}
+          if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSCompareV3.exe'))){throw 'Brak EXE'}
+      - name: Kompiluj eksperymentalna DLL ZW3D 2019 x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $where=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs=& $where -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if(-not $vs){throw 'Brak MSVC'}
+          $env:DS_COMPARE_VCVARS=Join-Path $vs 'VC/Auxiliary/Build/vcvars64.bat'
+          & cmd.exe /d /c (Join-Path $env:DS_COMPARE_SOURCE 'bridge/build_bridge_wrapper.cmd')
+          if($LASTEXITCODE -ne 0){throw 'Kompilacja DLL nie powiodla sie'}
+          if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSAssemblyCompare2019.dll'))){throw 'Brak DLL'}
+      - name: Instrukcje i SHA-256
+        shell: pwsh
+        run: |
+          $dest=$env:DS_COMPARE_OUT
+          foreach($name in @('README_R10.txt','UTWORZ_SKROT_START.cmd','UTWORZ_SKROT_START.ps1')){
+            Copy-Item (Join-Path $env:DS_COMPARE_SOURCE $name) (Join-Path $dest $name)
+          }
+          Copy-Item (Join-Path $env:DS_COMPARE_SOURCE 'samples') (Join-Path $dest 'samples') -Recurse
+          foreach($name in @('DSCompareV3.exe','DSAssemblyCompare2019.dll')){
+            $sha=(Get-FileHash (Join-Path $dest $name) -Algorithm SHA256).Hash
+            "$name $sha" | Add-Content (Join-Path $dest 'SHA256.txt')
+          }
+          'BUILD_OK_V4.6_R111_R2_WINDOWS_x64_ZW3D_RUNTIME_UNTESTED' | Set-Content (Join-Path $dest 'STATUS.txt')
+          'R11.1 R2: pamiec definicji STEP, serializacja B-Rep tylko dla rzeczywistych kandydatow, bez cache na dysku. ZW3D 2019 runtime not tested.' | Set-Content (Join-Path $dest 'README_R111.txt')
+      - name: Zweryfikuj gotowy EXE i DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=$env:DS_COMPARE_OUT
+          python (Join-Path $env:DS_COMPARE_SOURCE 'verify_package.py') $out
+          if($LASTEXITCODE -ne 0){throw 'Test gotowego EXE/DLL nie przeszedl'}
+      - name: Spakuj przenosny program
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "$env:DS_COMPARE_OUT/*" -DestinationPath "$env:GITHUB_WORKSPACE/DSCompare_V4_6_R111_R2_Windows_x64_EXE_DLL.zip" -CompressionLevel Optimal
+      - name: Udostepnij gotowy ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-V4.6-R11.1-R2-Windows-x64-EXE-DLL
+          path: DSCompare_V4_6_R111_R2_Windows_x64_EXE_DLL.zip
+          if-no-files-found: error
+          retention-days: 30
