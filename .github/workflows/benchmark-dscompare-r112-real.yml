@@ -79,6 +79,11 @@ jobs:
         run: |
           python -m pip install -r v46/requirements.txt
           if($LASTEXITCODE -ne 0){throw 'CAD dependency install failed'}
+      - name: Assert R11.2 code loaded in Python runner
+        shell: pwsh
+        run: |
+          python -c "import sys;from pathlib import Path;sys.path.insert(0,str(Path('v46').resolve()));import dsac29.report as m;print('REPORT_MODULE=',m.__file__);print('HAS_REUSE=',hasattr(m,'reuse_verified_bom_groups'));assert hasattr(m,'reuse_verified_bom_groups'), 'R112 not imported';print('REPORT_SOURCE_MATCH=', 'BOM B: ponowne użycie zweryfikowanych grup A' in Path(m.__file__).read_text(encoding='utf-8'))"
+          if($LASTEXITCODE -ne 0){throw 'Wrong report module in benchmark'}
       - name: Validate reuse only for fully proven cross-file unchanged mappings
         shell: pwsh
         run: |
