@@ -7,6 +7,7 @@ on:
       - 'patches/r111_lazy_patch.xz.b64'
       - 'patches/r111_bom_patch.xz.b64'
       - 'patches/r112_shared_bom_patch.xz.b64'
+      - 'patches/r112_bom_guard.xz.b64'
 permissions:
   contents: read
 jobs:
@@ -69,6 +70,30 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R11.2 patch incompatible'}
           git apply ../R112.patch
           if($LASTEXITCODE -ne 0){throw 'R11.2 patch failed'}
+      - name: Reconstruct and verify all R11.2 patches outside the Git worktree
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $workspace=$env:GITHUB_WORKSPACE
+          python -c "from pathlib import Path;import base64,lzma,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r112_bom_guard.xz.b64').read_text('ascii'))); assert hashlib.sha256(raw).hexdigest()=='198dc4c21236e115b64ac36a96550959d58782ba862fea43359cf95db82301d7'; Path('R112_GUARD.patch').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R11.2 guard checksum mismatch'}
+          $isolated=Join-Path $env:RUNNER_TEMP 'r112-independent-source'
+          Expand-Archive -LiteralPath (Join-Path $workspace 'DSCompare_V4_6_R10_ZRODLA.zip') -DestinationPath $isolated -Force
+          Set-Location (Join-Path $isolated 'v46')
+          foreach($stage in @(@('R11.patch',0),@('R111.patch',2),@('R111_LAZY.patch',2),@('R112.patch',1),@('R112_GUARD.patch',1))){
+            $patch=Join-Path $workspace $stage[0]
+            $strip=[int]$stage[1]
+            & git apply "-p$strip" --check $patch
+            if($LASTEXITCODE -ne 0){throw "R11.2 patch check failed: $patch"}
+            & git apply "-p$strip" $patch
+            if($LASTEXITCODE -ne 0){throw "R11.2 patch apply failed: $patch"}
+          }
+          $localSource=Join-Path $isolated 'v46'
+          $dest=Join-Path $workspace 'v46'
+          Copy-Item -Path "$localSource/*" -Destination $dest -Recurse -Force
+          Set-Location $workspace
+          python -c "from pathlib import Path; p=Path('v46/dsac29/report.py'); s=p.read_text(encoding='utf8'); assert 'def reuse_verified_bom_groups' in s and 'transferred = None if bom_warnings else' in s; print('R112 source verified:',p.resolve())"
+          if($LASTEXITCODE -ne 0){throw 'R11.2 module not reconstructed'}
       - name: Decode original benchmark and choose two pinned public assemblies
         shell: pwsh
         run: |
@@ -175,6 +200,17 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R11.2 patch incompatible'}
           git apply (Join-Path $env:GITHUB_WORKSPACE 'R112.patch')
           if($LASTEXITCODE -ne 0){throw 'R11.2 patch apply failed'}
+      - name: R11.2 verify BOM A before reusing its grouping
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r112_bom_guard.xz.b64').read_text('ascii'))); assert hashlib.sha256(raw).hexdigest()=='198dc4c21236e115b64ac36a96550959d58782ba862fea43359cf95db82301d7'; Path('R112_GUARD.patch').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R11.2 guard checksum failed'}
+          Set-Location $env:DS_COMPARE_SOURCE
+          git apply --check (Join-Path $env:GITHUB_WORKSPACE 'R112_GUARD.patch')
+          if($LASTEXITCODE -ne 0){throw 'R11.2 guard patch incompatible'}
+          git apply (Join-Path $env:GITHUB_WORKSPACE 'R112_GUARD.patch')
+          if($LASTEXITCODE -ne 0){throw 'R11.2 guard application failed'}
       - name: Zainstaluj biblioteki
         shell: pwsh
         run: |
