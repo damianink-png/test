@@ -71,10 +71,12 @@ def step(path,bodies,items):
     if not writer.Transfer(doc) or writer.Write(str(path))!=IFSelect_RetDone:
         raise RuntimeError('STEP write failed: '+str(path))
 
-def trial(n,timeout=1000):
-    folder=OUTPUT/str(n);folder.mkdir(parents=True,exist_ok=True)
+def trial(n,timeout=1000,extra_B=0):
+    folder=OUTPUT/(f'{n - n//20}x{n - n//20 + extra_B}' if extra_B else str(n));folder.mkdir(parents=True,exist_ok=True)
     out=folder/'results';out.mkdir(exist_ok=True)
     a=instances(n,'A');b=instances(n,'B');bodies=shapes()
+    for i in range(extra_B):
+        b.append((9,'NOWY_DETAL_09',5000+(i%25)*120.,5000+(i//25)*100.,0.))
     t0=time.perf_counter()
     step(folder/'A.step',bodies,a)
     step(folder/'B.step',bodies,b)
@@ -118,7 +120,7 @@ def trial(n,timeout=1000):
             'no_uncertain':statuses.get('UNCERTAIN',0)==0,
             'STEP_before_reports':workflow_order,
             'reports_100pct':json.loads(stage.read_text(encoding='utf-8')).get('report_percent')==100}
-    record={'size':n,'solids_A':len(a),'solids_B':len(b),
+    record={'size':n,'test_label':folder.name,'extra_B':extra_B,'solids_A':len(a),'solids_B':len(b),
             'input_A_MiB':round((folder/'A.step').stat().st_size/1048576,2),
             'input_B_MiB':round((folder/'B.step').stat().st_size/1048576,2),
             'output_step_MiB':round((out/'POROWNANIE_KOLORY.step').stat().st_size/1048576,2) if (out/'POROWNANIE_KOLORY.step').exists() else 0,
@@ -139,6 +141,10 @@ def main():
         report['cases'].append(result)
         (OUTPUT/'wyniki_testow.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
         if not result['ok']:return 1
-    return 0
+    # Matches the previously reported A=380 vs B=560 component populations.
+    result=trial(400,extra_B=180)
+    report['cases'].append(result)
+    (OUTPUT/'wyniki_testow.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+    return 0 if result['ok'] else 1
 
 if __name__=='__main__':sys.exit(main())
