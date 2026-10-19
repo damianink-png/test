@@ -1,8 +1,8 @@
 """Integration check for R11.2: files differing in bytes but equal in CAD data and changed revisions."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import csv, json, sys
-ROOT = Path(__file__).resolve().parents[1] / "v46"
+import csv, json, sys, os
+ROOT = Path(os.environ["DS_COMPARE_SOURCE"]) if os.environ.get("DS_COMPARE_SOURCE") else Path(__file__).resolve().parents[1] / "v46"
 sys.path.insert(0, str(ROOT))
 from dsac29.cli import process
 from dsac29.step_io import load_step
