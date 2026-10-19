@@ -107,6 +107,11 @@ jobs:
           $env:QT_API='pyside6'
           python -c "from PySide6 import QtWidgets; import dsac29.gui46; print('Qt UI imported')"
           if($LASTEXITCODE -ne 0){throw 'Blad importu Qt'}
+      - name: Test rzeczywistych plikow STEP, niezmienionych i zmodyfikowanych rewizji
+        shell: pwsh
+        run: |
+          python -u benchmarks/verify_r112_crossfile.py
+          if($LASTEXITCODE -ne 0){throw 'R11.2 cross-file exact BOM regression failed'}
       - name: Kompiluj EXE Windows x64
         shell: pwsh
         run: |
