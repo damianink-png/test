@@ -24,7 +24,7 @@ jobs:
       - name: Select V4 source
         shell: pwsh
         run: |
-          $archive=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_V4_6_R7_ZRODLA.zip'
+          $archive=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_V4_6_R6_ZRODLA.zip'
           if(Test-Path $archive){
             $root=Join-Path $env:RUNNER_TEMP 'dscompare-v46'
             Expand-Archive -Path $archive -DestinationPath $root -Force
