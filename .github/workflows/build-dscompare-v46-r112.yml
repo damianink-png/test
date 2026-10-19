@@ -9,6 +9,7 @@ on:
       - 'patches/r111_lazy_patch.xz.b64'
       - 'patches/r111_bom_patch.xz.b64'
       - 'patches/r112_shared_bom_patch.xz.b64'
+      - 'patches/r112_bom_guard.xz.b64'
 permissions:
   contents: read
 jobs:
@@ -82,6 +83,17 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R11.2 patch incompatible'}
           git apply (Join-Path $env:GITHUB_WORKSPACE 'R112.patch')
           if($LASTEXITCODE -ne 0){throw 'R11.2 patch apply failed'}
+      - name: R11.2 verify BOM A before reusing its grouping
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r112_bom_guard.xz.b64').read_text('ascii'))); assert hashlib.sha256(raw).hexdigest()=='198dc4c21236e115b64ac36a96550959d58782ba862fea43359cf95db82301d7'; Path('R112_GUARD.patch').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R11.2 guard checksum failed'}
+          Set-Location $env:DS_COMPARE_SOURCE
+          git apply --check (Join-Path $env:GITHUB_WORKSPACE 'R112_GUARD.patch')
+          if($LASTEXITCODE -ne 0){throw 'R11.2 guard patch incompatible'}
+          git apply (Join-Path $env:GITHUB_WORKSPACE 'R112_GUARD.patch')
+          if($LASTEXITCODE -ne 0){throw 'R11.2 guard application failed'}
       - name: Zainstaluj biblioteki
         shell: pwsh
         run: |
