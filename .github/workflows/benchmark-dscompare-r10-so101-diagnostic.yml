@@ -1,0 +1,66 @@
+name: DS Compare R10 - Diagnose real SO101 STEP assembly
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/benchmark-dscompare-r10-so101-diagnostic.yml'
+permissions:
+  contents: read
+jobs:
+  robot:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Extract unmodified R10 sources
+        shell: pwsh
+        run: Expand-Archive -LiteralPath DSCompare_V4_6_R10_ZRODLA.zip -DestinationPath . -Force
+      - name: Install 90-second diagnostic benchmark with progress retention
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import hashlib,base64,lzma
+          data=lzma.decompress(base64.b64decode(Path('benchmarks/public_cad_r10_script.xz.b64').read_text('ascii')))
+          assert hashlib.sha256(data).hexdigest()=='e166550eec59a35c33b78433a3e39d91b4f3c7e21e5a3fa8a637e92f68a8050e'
+          t=data.decode('utf8')
+          changes={
+              'for spec in CASES:': 'for spec in CASES[1:2]:',
+              'limit=1500,timeout=480)': 'limit=1500,timeout=90)',
+              'cmd=[sys.executable,str(SOURCE': "cmd=[sys.executable,'-u',str(SOURCE",
+              "shutil.rmtree(directory/'result',ignore_errors=True)": "(directory/'progress.txt').write_text((directory/'result'/'_POSTEP_V37.jsonl').read_text(encoding='utf-8') if (directory/'result'/'_POSTEP_V37.jsonl').exists() else 'No progress message emitted',encoding='utf-8'); shutil.rmtree(directory/'result',ignore_errors=True)",
+          }
+          for src,dst in changes.items():
+              assert t.count(src)==1,src
+              t=t.replace(src,dst)
+          Path('benchmarks/benchmark_public_cad_r10.py').write_text(t,encoding='utf8')
+          '@ | Set-Content -Path instrument_robot.py -Encoding utf8
+          python instrument_robot.py
+          if($LASTEXITCODE -ne 0){throw 'Failed to verify benchmark'}
+      - name: Install geometry library
+        shell: pwsh
+        run: |
+          python -m pip install -r v46/requirements.txt
+          if($LASTEXITCODE -ne 0){throw 'Install failed'}
+      - name: Compare original SO101 robot STEP
+        shell: pwsh
+        timeout-minutes: 6
+        run: |
+          python -u benchmarks/benchmark_public_cad_r10.py
+          if($LASTEXITCODE -ne 0){Write-Host 'Observed real-model failure (see artifact)'}
+      - name: Upload logs including last worker progress
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R10-SO101-90sec-Diagnostic
+          path: |
+            real_cad_results/**/*.txt
+            real_cad_results/**/*.json
+          if-no-files-found: warn
+          retention-days: 30
