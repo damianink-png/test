@@ -1,0 +1,105 @@
+name: DS Compare V4.6 R6 - STEP export recovery and simple file picker
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'DSCompare_V4_6_R6_ZRODLA.zip'
+      - 'v46/**'
+      - '.github/workflows/build-dscompare-v46-r6.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 110
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Select V4 source
+        shell: pwsh
+        run: |
+          $archive=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_V4_6_R6_ZRODLA.zip'
+          if(Test-Path $archive){
+            $root=Join-Path $env:RUNNER_TEMP 'dscompare-v46'
+            Expand-Archive -Path $archive -DestinationPath $root -Force
+          } else { $root=$env:GITHUB_WORKSPACE }
+          $src=Join-Path $root 'v46'
+          if(-not (Test-Path (Join-Path $src 'DSCompareV3.py'))){throw 'Missing V4.6 source'}
+          "DS_COMPARE_SOURCE=$src" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DS_COMPARE_OUT=$src/dist/DSCompareV3" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Dependencies - Open CASCADE + PySide6 (VTK for legacy regression tests)
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          if($LASTEXITCODE -ne 0){throw 'pip update failed'}
+          python -m pip install -r (Join-Path $env:DS_COMPARE_SOURCE 'requirements.txt') 'PySide6>=6.8,<6.10' 'vtk>=9.3,<9.6' 'pytest>=8,<10' 'pyinstaller>=6.11,<7'
+          if($LASTEXITCODE -ne 0){throw 'Dependency installation failed'}
+          python -m pip check
+          if($LASTEXITCODE -ne 0){throw 'Inconsistent dependencies'}
+      - name: Test business logic and Qt imports
+        shell: pwsh
+        run: |
+          Set-Location $env:DS_COMPARE_SOURCE
+          python -m pytest -q tests
+          if($LASTEXITCODE -ne 0){throw 'Tests failed'}
+          $env:QT_API='pyside6'
+          python -c "from PySide6 import QtWidgets; import dsac29.gui46; print('Qt UI imported')"
+          if($LASTEXITCODE -ne 0){throw 'Qt imports failed'}
+      - name: Compile single-install portable Windows EXE
+        shell: pwsh
+        run: |
+          Set-Location $env:DS_COMPARE_SOURCE
+          $env:QT_API='pyside6'
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSCompareV3 --icon assets/DSCompare.ico --collect-all OCP --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" DSCompareV3.py
+          if($LASTEXITCODE -ne 0){throw 'PyInstaller failed'}
+          if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSCompareV3.exe'))){throw 'Missing EXE'}
+      - name: Compile experimental ZW3D x64 bridge DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $where=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs=& $where -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if(-not $vs){throw 'MSVC not found'}
+          $env:DS_COMPARE_VCVARS=Join-Path $vs 'VC/Auxiliary/Build/vcvars64.bat'
+          & cmd.exe /d /c (Join-Path $env:DS_COMPARE_SOURCE 'bridge/build_bridge_wrapper.cmd')
+          if($LASTEXITCODE -ne 0){throw 'DLL failed'}
+          if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSAssemblyCompare2019.dll'))){throw 'DLL missing'}
+      - name: Copy instructions and attach checksum
+        shell: pwsh
+        run: |
+          $dest=$env:DS_COMPARE_OUT
+          Copy-Item (Join-Path $env:DS_COMPARE_SOURCE 'README_V46.txt') (Join-Path $dest 'README_V46.txt')
+          Copy-Item (Join-Path $env:DS_COMPARE_SOURCE 'README_R6.txt') (Join-Path $dest 'README_R6.txt')
+          Copy-Item (Join-Path $env:DS_COMPARE_SOURCE 'UTWORZ_SKROT_START.cmd') (Join-Path $dest 'UTWORZ_SKROT_START.cmd')
+          Copy-Item (Join-Path $env:DS_COMPARE_SOURCE 'UTWORZ_SKROT_START.ps1') (Join-Path $dest 'UTWORZ_SKROT_START.ps1')
+          Copy-Item (Join-Path $env:DS_COMPARE_SOURCE 'samples') (Join-Path $dest 'samples') -Recurse
+          foreach($name in @('DSCompareV3.exe','DSAssemblyCompare2019.dll')){
+            $sha=(Get-FileHash (Join-Path $dest $name) -Algorithm SHA256).Hash
+            "$name $sha" | Add-Content (Join-Path $dest 'SHA256.txt')
+          }
+          'BUILD_OK_V4.6_R6_WINDOWS_x64_ZW3D_RUNTIME_UNTESTED' | Set-Content (Join-Path $dest 'STATUS.txt')
+      - name: Verify built EXE and DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=$env:DS_COMPARE_SOURCE
+          $out=$env:DS_COMPARE_OUT
+          $exe=Join-Path $out 'DSCompareV3.exe'
+          python (Join-Path $src 'verify_package.py') $out
+          if($LASTEXITCODE -ne 0){throw 'Packaged EXE/DLL smoke test failed'}
+      - name: Package portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "$env:DS_COMPARE_OUT/*" -DestinationPath "$env:GITHUB_WORKSPACE/DSCompare_V4_6_R6_Windows_x64_EXE_DLL.zip" -CompressionLevel Optimal
+      - name: Upload compiled portable program
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-V4.6-R6-Windows-x64-EXE-DLL
+          path: DSCompare_V4_6_R6_Windows_x64_EXE_DLL.zip
+          if-no-files-found: error
+          retention-days: 30
