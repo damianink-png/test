@@ -79,6 +79,11 @@ jobs:
         run: |
           python -m pip install -r v46/requirements.txt
           if($LASTEXITCODE -ne 0){throw 'CAD dependency install failed'}
+      - name: Validate reuse only for fully proven cross-file unchanged mappings
+        shell: pwsh
+        run: |
+          python -u benchmarks/verify_r112_crossfile.py
+          if($LASTEXITCODE -ne 0){throw 'R11.2 cross-file BOM regression failed'}
       - name: Analyze real SO101 and OLSK models on Windows
         shell: pwsh
         timeout-minutes: 19
