@@ -53,6 +53,10 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R7 hotfix incompatible'}
           git apply (Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R7_hotfix.patch')
           if($LASTEXITCODE -ne 0){throw 'R7 hotfix apply failed'}
+      - name: Headless CI compatibility for Windows file picker
+        shell: pwsh
+        run: |
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'patches/r7_smoke_interactions_headless.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/smoke_interactions.py') -Force
       - name: Dependencies - Open CASCADE + PySide6 (VTK for legacy regression tests)
         shell: pwsh
         run: |
