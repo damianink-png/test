@@ -7,6 +7,7 @@ on:
       - 'patches/DSCompare_R7_gzip_b64.txt'
       - 'patches/DSCompare_R7_hotfix_gzip_b64.txt'
       - 'patches/DSCompare_R8_gzip_b64.txt'
+      - 'patches/DSCompare_R8_hotfix_gzip_b64.txt'
       - 'v46/**'
       - '.github/workflows/build-dscompare-v46-r8.yml'
 permissions:
@@ -65,6 +66,17 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R8 patch did not match R7 source'}
           git apply (Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R8.patch')
           if($LASTEXITCODE -ne 0){throw 'R8 patch apply failed'}
+      - name: Apply R8 two-tab GUI test hotfix
+        shell: pwsh
+        run: |
+          Set-Location $env:GITHUB_WORKSPACE
+          python -c "from pathlib import Path;import base64,gzip; p=Path('patches/DSCompare_R8_hotfix_gzip_b64.txt');Path('DSCompare_R8_hotfix.patch').write_bytes(gzip.decompress(base64.b64decode(p.read_text(encoding='ascii'))))"
+          if($LASTEXITCODE -ne 0){throw 'R8 hotfix decode failed'}
+          Set-Location $env:DS_COMPARE_SOURCE
+          git apply --check (Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R8_hotfix.patch')
+          if($LASTEXITCODE -ne 0){throw 'R8 hotfix did not match patched sources'}
+          git apply (Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R8_hotfix.patch')
+          if($LASTEXITCODE -ne 0){throw 'R8 hotfix apply failed'}
       - name: Headless CI compatibility for Windows file picker
         shell: pwsh
         run: |
