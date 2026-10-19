@@ -80,7 +80,7 @@ jobs:
           $isolated=Join-Path $env:RUNNER_TEMP 'r112-independent-source'
           Expand-Archive -LiteralPath (Join-Path $workspace 'DSCompare_V4_6_R10_ZRODLA.zip') -DestinationPath $isolated -Force
           Set-Location (Join-Path $isolated 'v46')
-          foreach($stage in @(@('R11.patch',0),@('R111.patch',2),@('R111_LAZY.patch',2),@('R112.patch',1),@('R112_GUARD.patch',1))){
+          foreach($stage in @(@('R11.patch',1),@('R111.patch',2),@('R111_LAZY.patch',2),@('R112.patch',1),@('R112_GUARD.patch',1))){
             $patch=Join-Path $workspace $stage[0]
             $strip=[int]$stage[1]
             & git apply "-p$strip" --check $patch
