@@ -110,6 +110,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: DSCompare-V4.6-R11-Windows-x64-EXE-DLL
-          path: DSCompare_V4_6_R10_Windows_x64_EXE_DLL.zip
+          path: DSCompare_V4_6_R11_Windows_x64_EXE_DLL.zip
           if-no-files-found: error
           retention-days: 30
