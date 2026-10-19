@@ -1,0 +1,53 @@
+name: DS Compare R10 - Public real-world STEP assembly benchmark
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'benchmarks/public_cad_r10_script.xz.b64'
+      - '.github/workflows/benchmark-dscompare-r10-public.yml'
+permissions:
+  contents: read
+jobs:
+  real-cad:
+    runs-on: windows-2022
+    timeout-minutes: 100
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Extract exact R10 source archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Expand-Archive -LiteralPath DSCompare_V4_6_R10_ZRODLA.zip -DestinationPath . -Force
+          if(!(Test-Path 'v46/DSCompareV3.py')){throw 'R10 source archive is invalid'}
+      - name: Decode checksum-pinned benchmark script
+        shell: pwsh
+        run: |
+          python -c "from pathlib import Path;import base64,lzma,hashlib; p=Path('benchmarks/public_cad_r10_script.xz.b64').read_text('ascii').strip(); src=lzma.decompress(base64.b64decode(p)); assert hashlib.sha256(src).hexdigest()=='e166550eec59a35c33b78433a3e39d91b4f3c7e21e5a3fa8a637e92f68a8050e'; Path('benchmarks/benchmark_public_cad_r10.py').write_bytes(src)"
+          if($LASTEXITCODE -ne 0){throw 'Benchmark script checksum failed'}
+      - name: Install CAD geometry dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r v46/requirements.txt
+          if($LASTEXITCODE -ne 0){throw 'Dependency installation failed'}
+      - name: Benchmark public NIST, SO101, OLSK CNC and Voron assemblies
+        shell: pwsh
+        timeout-minutes: 75
+        run: |
+          python -u benchmarks/benchmark_public_cad_r10.py
+          if($LASTEXITCODE -ne 0){throw 'One or more genuine public STEP assembly cases failed. See attached JSON and worker logs.'}
+      - name: Upload reproducible measurements and diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R10-Real-CAD-Measurements
+          path: |
+            real_cad_results/**/*.json
+            real_cad_results/**/*.txt
+          if-no-files-found: warn
+          retention-days: 30
