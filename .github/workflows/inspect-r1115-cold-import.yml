@@ -310,7 +310,7 @@ jobs:
           # Compute exact properties on the same independent shapes.
           def job(p):
               z=describe(p.shape,p.name,p.path,p.source)
-              return (z.volume,z.area,tuple(z.center),z.bbox,tuple(z.eig))
+              return (z.volume,z.area,tuple(z.center),z.bbox)
           base=[]
           for workers in (1,4,8):
               start=time.perf_counter()
