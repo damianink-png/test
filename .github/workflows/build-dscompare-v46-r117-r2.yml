@@ -80,7 +80,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          python -c "from pathlib import Path;import base64,lzma,hashlib;raw=lzma.decompress(base64.b64decode(Path('patches/r117_r2_table_fit.xz.b64').read_text('ascii')));assert hashlib.sha256(raw).hexdigest()=='53eff7da13f21e7c328bb63525c477bcd41232bec7ec4eab254e9b3d18cdbf8f';Path('R117_R2_OVERLAY.zip').write_bytes(raw)"
+          python -c "from pathlib import Path;import base64,lzma,hashlib;raw=lzma.decompress(base64.b64decode(Path('patches/r117_r2_table_fit.xz.b64').read_text('ascii')));assert hashlib.sha256(raw).hexdigest()=='3f6d8b42d54b251717cc64410d4755f051e1d9dcba320564b543579b314b42e5';Path('R117_R2_OVERLAY.zip').write_bytes(raw)"
           if($LASTEXITCODE -ne 0){throw 'R117 R2 checksum mismatch'}
           Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R117_R2_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
           python -c "import os;from pathlib import Path;p=Path(os.environ['DS_COMPARE_SOURCE']);s=(p/'dsac29/gui46.py').read_text(encoding='utf8');assert 'self.compare_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)' in s;print('R117 R2 layout verified')"
