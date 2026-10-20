@@ -275,6 +275,7 @@ jobs:
         shell: pwsh
         run: |
           Set-Location $env:DS_COMPARE_SOURCE
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
           @'
           from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
           from OCP.gp import gp_Trsf, gp_Vec
