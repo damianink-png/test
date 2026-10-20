@@ -1,0 +1,307 @@
+--- a/v46/README_R120.txt
++++ b/v46/README_R120.txt
+@@ -0,0 +1,13 @@
++DS Compare R11.10 — BOM i uproszczone wyniki
++
++Zmiany:
++- Wyniki: mniejszy panel, bez napisów „Wynik porównania” oraz „STEP gotowy do otwarcia”.
++- Raport RAPORT.html: BOM A i B jako domyślnie zamknięte sekcje HTML (<details>), pod tabelą zmian.
++- Ustawienia: BOM dokładny (domyślnie) i opcjonalny szybki bez kosztownych porównań B-Rep dla różnych definicji STEP.
++- Szybki BOM scala WYŁĄCZNIE pewne duplikaty, ale może pozostawić równoważne części w osobnych pozycjach. Nie należy traktować liczby unikalnych grup jako wyczerpującej. Ostrzeżenie wyświetlane w raporcie.
++- CSV BOM A/B opcjonalny i domyślnie niewłączony w interfejsie (do obliczeń nadal konieczne jest grupowanie).
++- Klasyfikacja rewizji i eksport STEP bez zmian względem R11.9.
++
++Analiza przesłanych danych: „Nowsza wersja.zip” zawiera wyłącznie JSON wyników, NIE zawiera rzeczywistych 91002674_000.stp i 91007430_000.stp. Nie wykonano benchmarku poprawionej wersji na tych dwóch dużych modelach.
++Czasy zmierzone w R11.9: import równoległy ok. 73 s, porównanie 328 s, BOM 238 s. 5 sprawdzeń Ringoese ok. 236 s.
++Zapis CSV nie odpowiada za te 238 s.
+--- a/v46/dsac29/cli.py
++++ b/v46/dsac29/cli.py
+@@ -7,7 +7,7 @@
+ from .report import produce
+ 
+ 
+-def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress=print,cancelled=None,colors=None,diff_step=True,preview3d=False,align=False,direct_scene=False,manual_review=None,revision_style=False,old_alpha=0.4,thumbnails=False,max_solids=20000,full_bom=True):
++def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress=print,cancelled=None,colors=None,diff_step=True,preview3d=False,align=False,direct_scene=False,manual_review=None,revision_style=False,old_alpha=0.4,thumbnails=False,max_solids=20000,full_bom=True,bom_fast=False,bom_csv=True):
+     ts=perf_counter()
+     from .manual_pairs import fingerprint
+     fingerprints={'A':fingerprint(a_path),'B':fingerprint(b_path)}
+@@ -80,7 +80,7 @@
+     if progress:progress(f'Dopasowanie geometrii: {matching_s:.1f} s')
+     if progress:progress('Zapis raportów CSV/HTML i modelu porównawczego STEP...')
+     folder,err=produce(output,a,b,rec,density,generate_step=step,colors=colors,
+-                       diff_step=diff_step,tolerance=tolerance,progress=progress,preview3d=preview3d,revision_style=revision_style,old_alpha=old_alpha,geometry_context=geometry_context,full_bom=full_bom,report_context={"A":Path(a_path).name,"B":Path(b_path).name,"import":import_stats,"alignment":alignment,"tolerance_mm":tolerance})
++                       diff_step=diff_step,tolerance=tolerance,progress=progress,preview3d=preview3d,revision_style=revision_style,old_alpha=old_alpha,geometry_context=geometry_context,full_bom=full_bom,bom_fast=bom_fast,bom_csv=bom_csv,report_context={"A":Path(a_path).name,"B":Path(b_path).name,"import":import_stats,"alignment":alignment,"tolerance_mm":tolerance})
+     import json
+     summary_path=folder/'PODSUMOWANIE.json'
+     summary=json.loads(summary_path.read_text(encoding='utf-8'))
+--- a/v46/dsac29/gui45.py
++++ b/v46/dsac29/gui45.py
+@@ -271,6 +271,8 @@
+             palette=(self.color_overrides() if hasattr(self,'color_overrides') else ({'REMOVED':[.95,.12,.10]} if self.old_color.currentText()=='Czerwony' else {}))
+             args+=['--a',inputs[0],'--b',inputs[1],'--generate-step','--revision-style','--old-alpha',str(1-self.opacity.value()/100),'--schema',self.schema.currentText(),'--palette',json.dumps(palette),'--tolerance',str(self.tolerance.value())]
+             if hasattr(self,'full_bom') and not self.full_bom.isChecked():args+=['--no-bom']
++            if hasattr(self,'bom_mode') and self.bom_mode.currentData()=='fast':args+=['--fast-bom']
++            if hasattr(self,'bom_csv') and not self.bom_csv.isChecked():args+=['--no-bom-csv']
+             if hasattr(self,'verify_mode'):args+=['--step-verify',self.verify_mode.currentData()]
+             if getattr(self,'zw3d_body_colors',False):args+=['--body-colors']
+             if self.align.isChecked():args+=['--align']
+--- a/v46/dsac29/gui46.py
++++ b/v46/dsac29/gui46.py
+@@ -237,8 +237,10 @@
+   self.only_changes=QCheckBox();self.only_changes.setChecked(False);self.only_changes.toggled.connect(self.filter_results)
+   self.compare_table=table(['Status','Stara rewizja A','Nowa rewizja B','Szczegóły']);self.compare_table.setItemDelegateForColumn(0,StatusDelegate(self.compare_table));self.compare_table.verticalHeader().setDefaultSectionSize(36);left.addWidget(self.compare_table,1);body.addLayout(left,1)
+   export=QFrame();self.export_box=export;export.setObjectName('export');el=QVBoxLayout(export);el.setContentsMargins(11,9,11,9);el.setSpacing(4)
+-  h=QLabel('Wynik porównania');h.setObjectName('section');el.addWidget(h)
+-  self.export_name=QLabel('STEP: oczekuje na analizę');self.export_name.setWordWrap(True);self.export_name.setMinimumWidth(0);self.export_name.setStyleSheet('font-weight:600;padding:6px 0;');el.addWidget(self.export_name)
++  # Summary and STEP status are already shown in the main results row and progress.
++  # Keep the label instance for the existing state/progress machinery, but do not
++  # waste a large results card on duplicated text.
++  self.export_name=QLabel('STEP: oczekuje na analizę');self.export_name.hide()
+   self.legend=QLabel('');self.legend.setWordWrap(True);self.legend.hide()
+   grouping=QLabel('Model jest zapisany w grupach według rodzaju zmiany.');self.grouping_hint=grouping;grouping.setObjectName('sub');grouping.setWordWrap(True);grouping.hide()
+   visibility=QLabel('Gdy elementy się pokrywają, ukryj odpowiednią grupę A lub B w drzewie ZW3D.');visibility.setObjectName('sub');visibility.setWordWrap(True);self.visibility_hint=visibility;visibility.hide();el.addSpacing(4)
+@@ -246,10 +248,19 @@
+   links=QGridLayout();links.setHorizontalSpacing(6);links.setVerticalSpacing(6)
+   for i,(text,filename) in enumerate([('Otwórz STEP','POROWNANIE_KOLORY.step'),('Raport','RAPORT.html'),('BOM A','BOM_A.csv'),('BOM B','BOM_B.csv'),('Zmiany CSV','ZMIANY.csv'),('Folder','')]):
+    b=button(text,lambda checked=False,f=filename:self.open_result('compare',f),filename.endswith('.step'))
+-   b.setEnabled(False);self.compare_open[filename]=b;links.addWidget(b,i//2,i%2)
++   b.setEnabled(False);self.compare_open[filename]=b
++   if filename in ('BOM_A.csv','BOM_B.csv','ZMIANY.csv'):
++    b.hide()  # Legacy API only; the information is in RAPORT.html.
++   elif filename=='':
++    links.addWidget(b,1,0,1,2)
++   else:
++    links.addWidget(b,0,0 if filename.endswith('.step') else 1)
+   el.addLayout(links)
+-  # Crisp SVG action icons are applied in apply_theme(), not OS-dependent pixel icons.
+-  self.compare_open['POROWNANIE_KOLORY.step'].setToolTip('Otwiera plik w domyślnej aplikacji Windows dla STEP.');body.addWidget(export);lay.addLayout(body,1)
++  # Actions remain available via the report; CSV files no longer clutter the panel.
++  export.setMaximumWidth(330)
++  export.setSizePolicy(QSizePolicy.Preferred,QSizePolicy.Maximum)
++  self.compare_open['POROWNANIE_KOLORY.step'].setToolTip('Otwiera plik w domyślnej aplikacji Windows dla STEP.')
++  body.addWidget(export,0,Qt.AlignTop);lay.addLayout(body,1)
+   self.step_progress_label=QLabel('Model STEP: oczekuje')
+   self.step_progress_label.setObjectName('sub');lay.addWidget(self.step_progress_label)
+   self.progress=QProgressBar();self.progress.setRange(0,100);self.progress.setValue(0);self.progress.setTextVisible(False);lay.addWidget(self.progress)
+@@ -290,7 +301,18 @@
+    self.store.setValue('full_bom',True);self.store.setValue('bom_default_migrated_r119',True)
+   self.full_bom.setChecked(str(self.store.value('full_bom','true')).lower()=='true')
+   self.full_bom.toggled.connect(lambda checked:self.store.setValue('full_bom',checked))
+-  self.full_bom.setToolTip('Tworzy BOM_A.csv i BOM_B.csv, a także tabele BOM w RAPORT.html')
++  self.full_bom.setToolTip('Rozpoznaje powtarzające się części i umieszcza BOM A/B w zwijanych sekcjach raportu HTML')
++  self.bom_mode=QComboBox()
++  self.bom_mode.addItem('Dokładny — również kontrola B-Rep (wolniejszy)','exact')
++  self.bom_mode.addItem('Szybki — tylko pewne duplikaty (może rozdzielić identyczne)','fast')
++  selected=str(self.store.value('bom_mode','exact'))
++  self.bom_mode.setCurrentIndex(max(0,self.bom_mode.findData(selected)))
++  self.bom_mode.currentIndexChanged.connect(lambda:self.store.setValue('bom_mode',self.bom_mode.currentData()))
++  self.bom_mode.setToolTip('Tryb szybki nigdy nie scala części na podstawie samej nazwy/objętości. Niektóre obrócone kopie pozostają w osobnych wierszach.')
++  self.bom_csv=QCheckBox('Eksportuj także BOM A/B do CSV')
++  self.bom_csv.setChecked(str(self.store.value('bom_csv','false')).lower()=='true')
++  self.bom_csv.toggled.connect(lambda checked:self.store.setValue('bom_csv',checked))
++  self.bom_csv.setToolTip('CSV to dodatkowy format. Jego wyłączenie nie przyspieszy znacząco grupowania geometrii.')
+   self.safe_export=QCheckBox('Bezpieczny STEP do ZW3D (bez współdzielenia geometrii)')
+   self.safe_export.setChecked(str(self.store.value('safe_export','true')).lower()=='true')
+   self.safe_export.toggled.connect(lambda checked:self.store.setValue('safe_export',checked))
+@@ -306,6 +328,8 @@
+   form.addRow('Kontrola STEP',self.verify_mode)
+   form.addRow('Limit brył / plik',self.solid_limit)
+   form.addRow(self.full_bom)
++  form.addRow('Sposób grupowania',self.bom_mode)
++  form.addRow(self.bom_csv)
+   form.addRow(self.safe_export)
+   note=QLabel('Z3: wyeksportuj STEP obok pliku Z3 pod tą samą nazwą. Zostanie wykryty automatycznie.')
+   note.setObjectName('sub');note.setWordWrap(True);form.addRow(note)
+--- a/v46/dsac29/report.py
++++ b/v46/dsac29/report.py
+@@ -59,7 +59,7 @@
+         for row in rows:
+             w.writerow([_csv_value(v) for v in row])
+ 
+-def geometry_groups(parts, progress=None, report_progress=None, context=None, tolerance=0.01, known_groups=None):
++def geometry_groups(parts, progress=None, report_progress=None, context=None, tolerance=0.01, known_groups=None, fast_proven_only=False):
+     """Exact BOM grouping with O(1) native-definition and B-Rep lookup.
+ 
+     - STEP occurrences of the same native definition: definitive identity.
+@@ -110,6 +110,17 @@
+             if matched is None:
+                 for group_index in possible:
+                     first = parts[groups[group_index][0]]
++                    if fast_proven_only:
++                        # Equality of two independent local B-Rep serializations
++                        # proves identity. Numeric signatures or a shared name DO NOT.
++                        # Rotated but equivalent independent definitions may remain
++                        # separated: fast BOM is explicitly not exhaustive.
++                        other = context.exact_digest(first)
++                        if digest is not None and other is not None and digest == other:
++                            matched = group_index
++                            break
++                        context.stats['bom_inconclusive_fast_pairs'] += 1
++                        continue
+                     try:
+                         if context.rigid_equivalent(first, part, tolerance):
+                             matched = group_index
+@@ -187,7 +198,7 @@
+ 
+ 
+ def produce(folder,a,b,records,density=7850.,generate_step=True,colors=None,
+-            diff_step=True,tolerance=0.01,progress=None, preview3d=False, revision_style=False, old_alpha=0.4, geometry_context=None,full_bom=True,report_context=None):
++            diff_step=True,tolerance=0.01,progress=None, preview3d=False, revision_style=False, old_alpha=0.4, geometry_context=None,full_bom=True,report_context=None,bom_fast=False,bom_csv=True):
+     from .geometry_registry import GeometryRegistry
+     geometry_context=geometry_context if geometry_context is not None else GeometryRegistry()
+     out=Path(folder);out.mkdir(parents=True,exist_ok=True)
+@@ -241,7 +252,7 @@
+         try:
+             result=geometry_groups(parts,progress,report_progress=lambda i,n:stage.update(
+                 reports='bom_'+role.lower(),report_percent=start+int((end-start)*i/max(1,n))),
+-                context=geometry_context,tolerance=tolerance,**({'known_groups':known_groups} if known_groups else {}))
++                context=geometry_context,tolerance=tolerance,fast_proven_only=bom_fast,**({'known_groups':known_groups} if known_groups else {}))
+             if len(geometry_context.bom_errors)>before:
+                 warning=f'BOM {role}: grupowanie niepełne; {len(geometry_context.bom_errors)-before} błędów sprawdzania geometrii. Nierozstrzygnięte części zachowano osobno.'
+                 bom_warnings.append(warning)
+@@ -283,8 +294,13 @@
+             mapping=[{'ilosc':len(ids),'wystapienia':[{'index':i,'name':parts[i].name,'path':parts[i].path} for i in ids]} for ids in groups]
+             (out/f'BOM_GRUPY_{role}.json').write_text(json.dumps(mapping,ensure_ascii=False,indent=2),encoding='utf-8')
+         bh=['Nazwa','Ilość','Objętość jednej sztuki [mm³]','Masa jednej sztuki [kg]','Masa łączna [kg]','Ścieżka w złożeniu']
+-        write_csv(out/'BOM_A.csv',bh,bom_a)
+-        write_csv(out/'BOM_B.csv',bh,bom_b)
++        if bom_csv:
++            write_csv(out/'BOM_A.csv',bh,bom_a)
++            write_csv(out/'BOM_B.csv',bh,bom_b)
++        if bom_fast and geometry_context.stats['bom_inconclusive_fast_pairs']:
++            bom_warnings.append('Szybki BOM: pominięto '+str(geometry_context.stats['bom_inconclusive_fast_pairs'])+
++                ' kosztownych testów B-Rep. Takie same części o różnych definicjach CAD mogą pozostać w osobnych pozycjach. '+
++                'Aby je połączyć, wybierz w Ustawieniach „BOM dokładny”.')
+         bom_seconds=perf_counter()-bom_start
+     total_a=sum(s.volume*density*1e-9 for s in a)
+     total_b=sum(s.volume*density*1e-9 for s in b)
+@@ -304,27 +320,29 @@
+         legend+=f'<p>Przezroczystość starej wersji: {round((1-old_alpha)*100)}%. Przesunięte i zmienione pary: stara A jest jaśniejsza i przezroczysta, nowa B ma pełny kolor. Zmiana samej nazwy pozostaje zielona. Niepewne pary wymagają weryfikacji i mają znacznik DO_SPRAWDZENIA. Przezroczystość zależy również od importera ZW3D. Liczba brył w eksporcie może przewyższać liczbę pozycji raportu. Podzłożenia STEP są grupowane według statusu (bez zmian, zmienione, przesunięte, dodane, usunięte, do sprawdzenia). Ich wyświetlanie i możliwość ukrywania całych grup zależą od importera CAD.</p>'
+     htmltxt=f'''<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>DS Compare — raport porównania modeli</title>
+-<style>body{{font:14px system-ui,sans-serif;max-width:1600px;margin:32px auto;padding:0 18px;background:#101820;color:#e6edf4}}h1{{font-size:26px}}p{{line-height:1.55}}table{{border-collapse:collapse;width:100%;font-size:12px}}th,td{{border:1px solid #34465c;padding:7px;text-align:left;vertical-align:top}}th{{background:#29394b;position:sticky;top:0}}tr:nth-child(even){{background:#192638}}.panel{{background:#192638;border:1px solid #34465c;border-radius:10px;padding:18px;margin:16px 0}}.legend{{display:flex;gap:18px;flex-wrap:wrap}}.dot{{display:inline-block;width:13px;height:13px;border-radius:3px;margin-right:7px}}small{{color:#abbaca}}input,select{{padding:10px;background:#24364b;color:white;border:1px solid #46607c;border-radius:5px;box-sizing:border-box}}input{{width:100%;max-width:520px}}.filters{{display:flex;flex-wrap:wrap;gap:12px;align-items:center}}select{{min-width:190px}}</style></head><body>
++<style>body{{font:14px system-ui,sans-serif;max-width:1600px;margin:32px auto;padding:0 18px;background:#101820;color:#e6edf4}}h1{{font-size:26px}}p{{line-height:1.55}}table{{border-collapse:collapse;width:100%;font-size:12px}}th,td{{border:1px solid #34465c;padding:7px;text-align:left;vertical-align:top}}th{{background:#29394b;position:sticky;top:0}}tr:nth-child(even){{background:#192638}}.panel{{background:#192638;border:1px solid #34465c;border-radius:10px;padding:18px;margin:16px 0}}.legend{{display:flex;gap:18px;flex-wrap:wrap}}.dot{{display:inline-block;width:13px;height:13px;border-radius:3px;margin-right:7px}}small{{color:#abbaca}}input,select{{padding:10px;background:#24364b;color:white;border:1px solid #46607c;border-radius:5px;box-sizing:border-box}}input{{width:100%;max-width:520px}}.filters{{display:flex;flex-wrap:wrap;gap:12px;align-items:center}}select{{min-width:190px}}.bom-panel{{padding:0;overflow:hidden}}.bom-panel summary{{cursor:pointer;padding:17px 20px;font-size:17px;font-weight:650;list-style-position:inside}}.bom-panel summary:hover{{background:#24364b}}.bom-panel summary:focus-visible{{outline:2px solid #82aaff}}.bom-content{{padding:0 16px 16px}}.bom-panel:not([open]){{background:#192638}}</style></head><body>
+ <h1>DS Compare — raport porównania modeli</h1><div class="panel"><p><b>Wynik:</b> {html.escape(status)}</p><p><b>Liczba brył:</b> A = {len(a)}, B = {len(b)}</p>
+ <p><b>Masa A:</b> {pl_float(total_a)} kg &nbsp; <b>Masa B:</b> {pl_float(total_b)} kg &nbsp; <b>Różnica:</b> {pl_float(total_b-total_a)} kg</p>
+-<small>Gęstość: {pl_float(density,1)} kg/m³, jednostki STEP: mm. Masy obliczone z geometrii — bez odczytu materiałów ZW3D. Tabele BOM_A.csv i BOM_B.csv obejmują ilości.</small></div>
++<small>Gęstość: {pl_float(density,1)} kg/m³, jednostki STEP: mm. Masy obliczone z geometrii — bez odczytu materiałów ZW3D. BOM A i BOM B znajdują się w zwijanych sekcjach pod tabelą zmian.</small></div>
+ <div class="panel legend">{legend}</div>
+ <p><b>Widoczność elementów nakładających się:</b> w drzewie złożenia ZW3D wyłącz grupę A_STARA lub B_NOWA wewnątrz grupy przesunięć. Przezroczystość zapisywana w STEP może zostać pominięta przez importer CAD.</p>
+ <div class="panel filters"><label for="status">Rodzaj zmiany: <select id="status"><option value="ALL">Wszystkie</option><option value="SAME">Bez zmian</option><option value="RENAMED">Zmiana nazwy</option><option value="MOVED">Przesunięte</option><option value="ADDED">Nowe</option><option value="REMOVED">Usunięte</option><option value="CHANGED">Zmieniona geometria</option><option value="UNCERTAIN">Do sprawdzenia</option></select></label><input id="search" type="search" placeholder="Szukaj nazwy, ścieżki, uwag…" aria-label="Szukaj w raporcie"><span id="count" aria-live="polite"></span></div>
+ <div style="overflow:auto;max-height:75vh"><table id="table"><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>
+ <script>(function(){{ const rows=[...document.querySelectorAll('#table tbody tr')],q=document.getElementById('search'),filter=document.getElementById('status'),count=document.getElementById('count'); function update(){{let visible=0;const text=q.value.toLocaleLowerCase('pl').trim(),status=filter.value;for(const row of rows){{const ok=(status==='ALL'||row.dataset.status===status)&&row.textContent.toLocaleLowerCase('pl').includes(text);row.hidden=!ok;row.style.display=ok?'':'none';if(ok)visible++;}}count.textContent='Pozycji: '+visible+' / '+rows.length;}}q.addEventListener('input',update);filter.addEventListener('change',update);update();}})();</script></body></html>'''
+     if full_bom:
+-        # Full grouped BOM is visible *inside* the only HTML report.
++        # BOM can be folded independently; the changes table must stay immediately visible.
+         sections=[]
+         for label,items in (("A — stara rewizja",bom_a),("B — nowa rewizja",bom_b)):
+             heads=['Nazwa','Ilość','Objętość [mm³]','Masa / szt. [kg]','Masa łączna [kg]','Ścieżka']
+             ths=''.join('<th>'+html.escape(h)+'</th>' for h in heads)
+             cells=''.join('<tr>'+''.join('<td>'+html.escape(_csv_value(v) if isinstance(v,(int,float)) else str(v))+'</td>' for v in item)+'</tr>' for item in items)
+-            sections.append(f'<div class="panel"><h2>BOM {html.escape(label)}</h2><p>Grup części: {len(items)} · Wystąpień: {sum(int(x[1]) for x in items)}. CSV z pełnym zestawieniem znajduje się obok raportu.</p><div style="overflow:auto"><table><thead><tr>{ths}</tr></thead><tbody>{cells}</tbody></table></div></div>')
+-        htmltxt=htmltxt.replace('<div class="panel legend">',''.join(sections)+'<div class="panel legend">',1)
++            header=f'BOM {html.escape(label)} · {len(items)} grup · {sum(int(x[1]) for x in items)} szt.'
++            sections.append(f'<details class="panel bom-panel"><summary>{header}</summary><div class="bom-content"><div style="overflow:auto;max-height:65vh"><table><thead><tr>{ths}</tr></thead><tbody>{cells}</tbody></table></div></div></details>')
++        # Place collapsed BOM *after* the visible revision changes table.
++        htmltxt=htmltxt.replace('<script>(function()', ''.join(sections)+'<script>(function()',1)
+     if revision_style:
+         htmltxt=htmltxt.replace(' i ROZNICE_BREP.step (kolorowy model dodanego i usuniętego materiału, jeżeli eksport się powiedzie)', ' (pełne części obu rewizji, jeżeli eksport się powiedzie)')
+-    if not full_bom:htmltxt=htmltxt.replace('Tabele BOM_A.csv i BOM_B.csv obejmują ilości.','Pełny BOM wyłączony; porównanie i masa obejmują wszystkie wczytane bryły.')
++    if not full_bom:htmltxt=htmltxt.replace('BOM A i BOM B znajdują się w zwijanych sekcjach pod tabelą zmian.','Pełny BOM wyłączony; porównanie i masa obejmują wszystkie wczytane bryły.')
+     if bom_warnings:
+         (out/'UWAGI_BOM.txt').write_text('\n'.join(bom_warnings),encoding='utf-8')
+         htmltxt=htmltxt.replace('<body>','<body><p role=alert>'+html.escape(' '.join(bom_warnings))+'</p>',1)
+@@ -361,6 +379,6 @@
+     if progress:progress('Finalizowanie raportu i podsumowania...')
+     (out/'PODSUMOWANIE.json').write_text(json.dumps({'statuses':counts,'solids_A':len(a),'solids_B':len(b),
+                         'colors_hex':{k:hex_color(k) for k in palette},'density_kg_m3':density,'mass_A_kg':total_a,'mass_B_kg':total_b,
+-                        'step_verification':color_check.get('weryfikacja'),'step_export_error':err,'step_ready':bool(generate_step and err is None and (out/'POROWNANIE_KOLORY.step').is_file()),'full_bom':full_bom,'bom_grouping_complete':bool(full_bom and not bom_warnings),'bom_seconds':bom_seconds,'bom_warnings':bom_warnings,'diff_step':details,'preview_3d':preview_info,'records':[vars(r) for r in records]},indent=2,ensure_ascii=False),encoding='utf-8')
++                        'step_verification':color_check.get('weryfikacja'),'step_export_error':err,'step_ready':bool(generate_step and err is None and (out/'POROWNANIE_KOLORY.step').is_file()),'full_bom':full_bom,'bom_grouping_complete':bool(full_bom and not bom_warnings),'bom_mode':'szybki' if bom_fast else 'dokladny','bom_csv':bool(full_bom and bom_csv),'bom_seconds':bom_seconds,'bom_warnings':bom_warnings,'diff_step':details,'preview_3d':preview_info,'records':[vars(r) for r in records]},indent=2,ensure_ascii=False),encoding='utf-8')
+     stage.update(reports='gotowe',report_percent=100)
+     return out,err
+--- a/v46/dsac29/worker_v37.py
++++ b/v46/dsac29/worker_v37.py
+@@ -18,6 +18,8 @@
+     p.add_argument('--quality',default='normalna')
+     p.add_argument('--generate-step',action='store_true')
+     p.add_argument('--no-bom',action='store_true',help='Only STEP and complete change report; omit grouped BOM')
++    p.add_argument('--fast-bom',action='store_true',help='Only group provably identical B-Reps; rotated copies may stay separate')
++    p.add_argument('--no-bom-csv',action='store_true',help='Keep BOM in HTML only, no BOM_A.csv/BOM_B.csv')
+     p.add_argument('--safe-export',action='store_true',help='ZW3D-safe export; no shared native B-Rep definitions')
+     p.add_argument('--body-colors',action='store_true',help='Use only solid and definition STEP styling to avoid face-subshape clutter in ZW3D')
+     p.add_argument('--diff-step',action='store_true')
+@@ -51,7 +53,7 @@
+             from .cli import process
+             palette=json.loads(ns.palette)
+             output,recs,err=process(ns.a,ns.b,ns.output,ns.tolerance,ns.density,
+-                   full_bom=not ns.no_bom,max_solids=ns.max_solids,step=ns.generate_step,diff_step=ns.diff_step,preview3d=False,
++                   full_bom=not ns.no_bom,bom_fast=ns.fast_bom,bom_csv=not ns.no_bom_csv,max_solids=ns.max_solids,step=ns.generate_step,diff_step=ns.diff_step,preview3d=False,
+                    colors=palette,progress=emit,align=ns.align,revision_style=ns.revision_style,thumbnails=ns.thumbnails,old_alpha=ns.old_alpha,direct_scene=ns.direct_scene,manual_review=json.loads(Path(ns.manual_review).read_text(encoding='utf-8')) if ns.manual_review else None)
+             payload={'ok':True,'folder':str(output),'wyniki':len(recs),'blad_step':err,'step_ready':not bool(err) and (output/'POROWNANIE_KOLORY.step').is_file(),'alignment':json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8')).get('alignment',{})}
+         elif ns.worker=='detail':
+--- a/v46/tests/test_r116_ui_clip_regression.py
++++ b/v46/tests/test_r116_ui_clip_regression.py
+@@ -15,7 +15,7 @@
+         assert not hasattr(win,'legend_button')
+         assert win.compare_open['POROWNANIE_KOLORY.step'].isVisible()
+         # No visible widget can be placed on top of another in export result card.
+-        widgets=[win.export_name,*win.compare_open.values()]
++        widgets=[item for item in (win.export_name,*win.compare_open.values()) if item.isVisible()]
+         rectangles=[]
+         for obj in widgets:
+             pt=obj.mapTo(win.export_box,QPoint(0,0));r=QRect(pt,obj.size())
+--- a/v46/tests/test_r120_bom_speed_and_report_layout.py
++++ b/v46/tests/test_r120_bom_speed_and_report_layout.py
+@@ -0,0 +1,52 @@
++"""R11.10: optional proven-duplicates-only grouping, collapsible HTML and optional CSV."""
++import json
++from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
++from dsac29 import report
++from dsac29.geometry import describe
++from dsac29.compare import Record
++from dsac29.geometry_registry import GeometryRegistry
++
++
++def _part(name):
++    return describe(BRepPrimAPI_MakeBox(10, 20, 30).Shape(), name, name)
++
++
++def test_fast_bom_skips_expensive_cad_bool_when_independent_digests_differ(monkeypatch):
++    a,b=_part('A'),_part('B')
++    ctx=GeometryRegistry()
++    monkeypatch.setattr(ctx, 'exact_digest', lambda part: b'one' if part is a else b'two')
++    monkeypatch.setattr(ctx, 'rigid_equivalent', lambda *args: (_ for _ in ()).throw(AssertionError('expensive check')))
++    groups=report.geometry_groups([a,b],context=ctx,fast_proven_only=True)
++    assert groups==[[0],[1]]
++    assert ctx.stats['bom_inconclusive_fast_pairs']==1
++
++
++def test_fast_bom_can_join_identical_digest_without_cad_bool(monkeypatch):
++    a,b=_part('A'),_part('B')
++    ctx=GeometryRegistry()
++    monkeypatch.setattr(ctx, 'exact_digest', lambda part: b'confirmed-brep')
++    monkeypatch.setattr(ctx, 'rigid_equivalent', lambda *args: (_ for _ in ()).throw(AssertionError('unnecessary CAD bool')))
++    assert report.geometry_groups([a,b],context=ctx,fast_proven_only=True)==[[0,1]]
++
++
++def test_html_bom_collapsed_after_changes_no_csv(tmp_path):
++    a,b=[_part('A')],[_part('B')]
++    report.produce(tmp_path,a,b,[Record(0,0,'SAME','same')],generate_step=False,diff_step=False,bom_fast=True,bom_csv=False)
++    page=(tmp_path/'RAPORT.html').read_text(encoding='utf8')
++    assert '<details class="panel bom-panel"><summary>BOM A' in page
++    assert '<details class="panel bom-panel"><summary>BOM B' in page
++    assert '<details class="panel bom-panel" open' not in page
++    assert page.index('<table id="table">') < page.index('<details class="panel bom-panel">')
++    assert page.index('BOM A')<page.index('BOM B')
++    assert not (tmp_path/'BOM_A.csv').exists() and not (tmp_path/'BOM_B.csv').exists()
++    assert (tmp_path/'ZMIANY.csv').exists()
++    data=json.loads((tmp_path/'PODSUMOWANIE.json').read_text(encoding='utf8'))
++    assert data['bom_mode']=='szybki' and not data['bom_csv'] and data['full_bom']
++    assert data['bom_grouping_complete']
++
++
++def test_html_bom_can_keep_csv_and_full_mode(tmp_path):
++    a,b=[_part('A')],[_part('B')]
++    report.produce(tmp_path,a,b,[Record(0,0,'SAME','same')],generate_step=False,diff_step=False,bom_fast=False,bom_csv=True)
++    assert (tmp_path/'BOM_A.csv').is_file() and (tmp_path/'BOM_B.csv').is_file()
++    assert json.loads((tmp_path/'PODSUMOWANIE.json').read_text())['bom_mode']=='dokladny'
