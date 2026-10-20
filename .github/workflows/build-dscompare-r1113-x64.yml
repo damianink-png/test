@@ -207,33 +207,33 @@ jobs:
     _handles_b=[s.shape.TShape() for s in b]
     group_a=[id(t) for t in _handles_a]
     group_b=[id(t) for t in _handles_b]
-"""
+          """
           new="""    # Native IsPartner() identity, shared by matching and exact BOM.
     from .geometry_registry import GeometryRegistry
     geometry_context = geometry_context if geometry_context is not None else GeometryRegistry()
     group_a=[geometry_context.definition(s) for s in a]
     group_b=[geometry_context.definition(s) for s in b]
-"""
+          """
           assert old in s, 'R11.12 matching registry anchor mismatch'
           s=s.replace(old,new)
           old="""    from .geometry_registry import GeometryRegistry
     geometry_context = geometry_context if geometry_context is not None else GeometryRegistry()
     def exact_same_definition(s,t,ga,gb):
         return geometry_context.same_definition(s,t)
-"""
+          """
           new="""    def exact_same_definition(s,t,ga,gb):
         return ga == gb or geometry_context.same_definition(s,t)
-"""
+          """
           assert old in s,'R11.12 duplicate registry init differs'
           s=s.replace(old,new)
           old="""    free_a=set(range(len(a))); free_b=set(range(len(b)))
     out=[]; checks=0
-"""
+          """
           new="""    free_a=set(range(len(a))); free_b=set(range(len(b)))
     norm_a=[_normalized_name(p.name) for p in a]
     norm_b=[_normalized_name(p.name) for p in b]
     out=[]; checks=0
-"""
+          """
           assert old in s
           s=s.replace(old,new)
           assert s.count('(_normalized_name(s.name) == _normalized_name(b[j].name)) == names_equal')==2
