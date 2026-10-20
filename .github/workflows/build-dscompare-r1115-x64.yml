@@ -485,7 +485,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $dest=Join-Path $env:RUNNER_TEMP 'r1114_baseline_binary'
           New-Item -ItemType Directory -Path $dest -Force | Out-Null
-          gh run download 39470253217 --repo damianink-png/test --name DSCompare-R1115-Windows-x64-EXE-DLL --dir $dest
+          gh run download 39470253217 --repo damianink-png/test --name DSCompare-R1114-Windows-x64-EXE-DLL --dir $dest
           if($LASTEXITCODE -ne 0){throw 'Cannot download known R11.14 Windows baseline'}
           $archive=Get-ChildItem -Path $dest -Filter '*.zip' | Select-Object -First 1
           if(-not $archive){throw 'Missing baseline ZIP'}
@@ -524,7 +524,7 @@ jobs:
             $sha=(Get-FileHash (Join-Path $out $name) -Algorithm SHA256).Hash
             "$name $sha" | Add-Content (Join-Path $out 'SHA256.txt')
           }
-          'R1114_CACHE_UI_WINDOWS_x64__ZW3D2019_ABSR_IMPORT_NOT_VERIFIED' | Set-Content (Join-Path $out 'STATUS.txt')
+          'R1115_COLD_FIRST_WINDOWS_x64__ZW3D2019_ABSR_IMPORT_NOT_VERIFIED' | Set-Content (Join-Path $out 'STATUS.txt')
           $dest=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1115_WINDOWS_x64_EXE_DLL.zip'
           Compress-Archive -Path "$out/*" -DestinationPath $dest -CompressionLevel Optimal
           if(-not (Test-Path $dest)){throw 'Missing ZIP'}
