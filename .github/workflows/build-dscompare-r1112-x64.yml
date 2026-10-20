@@ -173,7 +173,7 @@ jobs:
           root=Path(os.environ['GITHUB_WORKSPACE'])
           f=root/'patches/r1112_geometry_ui.patch.xz.b64'
           data=lzma.decompress(base64.b64decode(''.join(f.read_text(encoding='ascii').split())))
-          assert hashlib.sha256(data).hexdigest()=='83026c4c1a7858c4a7de1718235e6a739acb5ec95da9f26d4a5be95bb5f877af', 'Invalid R1112 patch SHA256'
+          assert hashlib.sha256(data).hexdigest()=='2a8bc87ee353c9a0455add6c2df443ccc66559bfd136d5f7af4a393a4ad9a868', 'Invalid R1112 patch SHA256'
           (root/'R1112.patch').write_bytes(data)
           print('Patch verified',len(data))
           '@ | Set-Content (Join-Path $env:GITHUB_WORKSPACE 'R1112_PATCH_CHECK.py') -Encoding UTF8
