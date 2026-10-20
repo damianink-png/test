@@ -4,7 +4,8 @@ on:
   push:
     paths:
       - 'DSCompare_V4_6_R113_ZRODLA.zip'
-      - '.github/workflows/build-dscompare-v46-r115-r3.yml'
+      - '.github/workflows/build-dscompare-v46-r116.yml'
+      - 'patches/r116_gui_export_overlay.xz.b64'
       - 'patches/r115_r3_face_identity.xz.b64'
       - 'patches/r114_boolean_cut_fallback.xz.b64'
       - 'public_benchmark.py'
