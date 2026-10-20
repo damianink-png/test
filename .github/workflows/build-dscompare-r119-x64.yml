@@ -161,7 +161,13 @@ jobs:
           $env:DSCOMPARE_PARALLEL_IMPORT='on'
           $result=Join-Path $env:RUNNER_TEMP 'R119_SMOKE_RESULTS'
           & $exe --worker compare --a (Join-Path $src 'samples/RAMA_REV_03.step') --b (Join-Path $src 'samples/RAMA_REV_04.step') --output $result --generate-step --revision-style --safe-export --body-colors --step-verify full
-          if($LASTEXITCODE -ne 0){throw 'Frozen EXE comparison failed'}
+          if($LASTEXITCODE -ne 0){
+            $errfile=Join-Path $result '_WYNIK_V37.json'
+            if(Test-Path $errfile){Get-Content $errfile -Encoding UTF8 -Raw | Write-Host}
+            $events=Join-Path $result '_POSTEP_V37.jsonl'
+            if(Test-Path $events){Get-Content $events -Encoding UTF8 -Tail 20 | Write-Host}
+            throw 'Frozen EXE comparison failed: see worker JSON details above'
+          }
           foreach($name in @('POROWNANIE_KOLORY.step','BOM_A.csv','BOM_B.csv','RAPORT.html','ZMIANY.csv','PODSUMOWANIE.json')){
             if(-not (Test-Path (Join-Path $result $name))){throw "Missing R119 result $name"}
           }
