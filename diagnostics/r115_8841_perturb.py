@@ -17,7 +17,7 @@ with zipfile.ZipFile(io.BytesIO(data)) as z:
     p=next(n for n in z.namelist() if n.endswith("OLSK small CNC v2_Workshop.step") and "__MACOSX/" not in n)
     Path("olsk_contact.step").write_bytes(z.read(p))
 parts=load_step("olsk_contact.step",max_solids=5000)
-for i,j in [(102,104),(100,106),(26,90)]:
+for i,j in [(102,104),(100,106)]:
     a,b=parts[i],parts[j]
     print("PAIR",i,j,a.name,b.name,"vol",a.volume,b.volume,flush=True)
     bounds=_precise_world_bounds(a.shape)
