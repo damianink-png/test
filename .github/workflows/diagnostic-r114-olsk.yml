@@ -1,0 +1,40 @@
+name: DS Compare R11.4 OLSK OCCT validity diagnostics
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/diagnostic-r114-olsk.yml'
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Extract baseline
+        shell: pwsh
+        run: |
+          Expand-Archive -LiteralPath DSCompare_V4_6_R113_ZRODLA.zip -DestinationPath "$env:RUNNER_TEMP/r114" -Force
+      - name: Install geometry engine
+        shell: pwsh
+        run: |
+          python -m pip install -r "$env:RUNNER_TEMP/r114/v46/requirements.txt"
+          if($LASTEXITCODE -ne 0){throw 'Dependencies failed'}
+      - name: Inspect public OLSK geometry and possible healing
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          python -u diagnostics/olsk_shape_check.py "$env:RUNNER_TEMP/r114/v46" 2>&1 | Tee-Object OLSK_SHAPE_DIAG.txt
+          if($LASTEXITCODE -ne 0){throw 'Diagnostic failed'}
+      - name: Upload shape diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R114-OLSK-BREP-DIAG
+          path: OLSK_SHAPE_DIAG.txt
+          retention-days: 30
