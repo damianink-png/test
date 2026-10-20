@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/diagnostic-r114-olsk.yml'
+      - 'diagnostics/olsk_shape_check.py'
 permissions:
   contents: read
 jobs:
