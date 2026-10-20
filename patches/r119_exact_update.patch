@@ -1,0 +1,1162 @@
+--- a/v46/DSCompareV3.py
++++ b/v46/DSCompareV3.py
+@@ -29,9 +29,11 @@
+             output=Path(args.smoke_test_ui);output.mkdir(parents=True,exist_ok=True)
+             for theme in ('Jasny','Ciemny'):
+                 w.theme.setCurrentText(theme)
+-                for key in ('compare','mass'):
++                for key in ('compare','mass','settings'):
+                     w.navigate(key);app.processEvents();w.grab().save(str(output/(key+'_'+theme+'.png')))
+-            assert all(not b.icon().isNull() for b in w.nav.values())
++            assert len(w.nav)==3 and all(not b.icon().isNull() for b in w.nav.values())
++            assert not hasattr(w.a,'thumbnail') and not hasattr(w,'param_frame')
++            assert w.full_bom.isChecked() and w.safe_export.isChecked()
+             from PySide6.QtWidgets import QScrollArea
+             assert not w.centralWidget().findChildren(QScrollArea), 'unexpected window scrollbars'
+             assert w.width() <= app.primaryScreen().availableGeometry().width()
+@@ -41,7 +43,7 @@
+             assert old!=w.theme.currentText()
+             w.theme_button.click();assert old==w.theme.currentText()
+             w.close()
+-            (output/'UI_OK.json').write_text(json.dumps({'version':'4.6 R11.6','pages':2,'icons':2,'themes':2,'toggle':'PASS'}))
++            (output/'UI_OK.json').write_text(json.dumps({'version':'4.6 R11.9','pages':3,'icons':3,'themes':2,'toggle':'PASS'}))
+             sys.exit(0)
+         from dsac29.diagnostics import install_diagnostics
+         install_diagnostics()
+--- a/v46/dsac29/cli.py
++++ b/v46/dsac29/cli.py
+@@ -12,24 +12,47 @@
+     from .manual_pairs import fingerprint
+     fingerprints={'A':fingerprint(a_path),'B':fingerprint(b_path)}
+     if manual_review and manual_review['fingerprints']!=fingerprints:raise ValueError('Pliki źródłowe zmieniły się od analizy; pary ręczne nie zostały zastosowane')
+-    if progress:progress('Wczytywanie starszej wersji modelu…')
+     import_stats={"A":{},"B":{}}
+-    a=load_step(a_path,progress=progress,diagnostics=import_stats["A"],max_solids=max_solids)
+-    if progress:progress(f'Wczytywanie A: {perf_counter()-ts:.1f} s; brył: {len(a)}')
+     identical_sources=(fingerprints['A']==fingerprints['B'] and not manual_review)
+-    import_a_s=perf_counter()-ts
+-    tb=perf_counter()
+-    if identical_sources:
+-        # Cryptographic identity of the complete STEP files proves the entire
+-        # imported assembly (names, geometry, occurrences, placements) equal.
+-        # Reuse the same in-memory import: no second XCAF read and no Booleans.
+-        b=a
+-        import_stats['B']=dict(import_stats['A'])
+-        if progress:progress('R11: identyczna zawartość STEP (SHA-256). Import B i B-Rep pominięte bez utraty pewności.')
+-    else:
+-        b=load_step(b_path,progress=progress,diagnostics=import_stats["B"],max_solids=max_solids)
+-    if progress:progress(f'Wczytywanie B: {perf_counter()-tb:.1f} s; brył: {len(b)}')
+-    import_b_s=perf_counter()-tb
++    import_mode='sekwencyjny'
++    import_parallel_wall_s=None
++    import_parallel_worker_s=None
++    ta=perf_counter()
++    a=b=None
++    if not identical_sources:
++        from .parallel_import import should_parallel, load_pair
++        parallel, reason=should_parallel(a_path,b_path)
++        if parallel:
++            try:
++                a,b,import_stats,import_parallel_worker_s,import_parallel_wall_s=load_pair(
++                    a_path,b_path,output,max_solids=max_solids,progress=progress,cancelled=cancelled)
++                import_mode='rownolegly_dwa_procesy'
++                import_a_s=import_parallel_worker_s['A']
++                import_b_s=import_parallel_worker_s['B']
++            except InterruptedError:
++                raise
++            except Exception as exc:
++                if progress:progress('Import równoległy niedostępny ('+str(exc)[:250]+'). Ponawiam bezpiecznie sekwencyjnie.')
++                import_stats={"A":{},"B":{}}
++                a=b=None
++                import_mode='sekwencyjny_fallback'
++        elif progress:
++            progress('Import standardowy: '+reason)
++    if a is None:
++        if progress:progress('Wczytywanie starszej wersji modelu…')
++        a=load_step(a_path,progress=progress,diagnostics=import_stats["A"],max_solids=max_solids)
++        import_a_s=perf_counter()-ta
++        if progress:progress(f'Wczytywanie A: {import_a_s:.1f} s; brył: {len(a)}')
++        tb=perf_counter()
++        if identical_sources:
++            b=a
++            import_stats['B']=dict(import_stats['A'])
++            if progress:progress('R11: identyczna zawartość STEP (SHA-256). Import B i B-Rep pominięte bez utraty pewności.')
++        else:
++            if progress:progress('Wczytywanie nowszej wersji modelu…')
++            b=load_step(b_path,progress=progress,diagnostics=import_stats["B"],max_solids=max_solids)
++        import_b_s=perf_counter()-tb
++        if progress:progress(f'Wczytywanie B: {import_b_s:.1f} s; brył: {len(b)}')
+     alignment={'requested':bool(align),'enabled':False}
+     (Path(output)/'OSTRZEZENIA.txt').unlink(missing_ok=True)
+     if align and identical_sources:
+@@ -100,7 +123,7 @@
+         except Exception as exc:
+             (folder/'UWAGI_SCENA.txt').write_text(str(exc),encoding='utf-8')
+             if progress:progress('Podgląd niedostępny: '+str(exc))
+-    timing={'import_A_including_fingerprint_s':import_a_s,'import_B_s':import_b_s,'matching_and_classification_s':matching_s,'bom_grouping_s':summary.get('bom_seconds',0),'total_s':perf_counter()-ts,'registry':dict(geometry_context.stats),'slowest_bom_or_population_checks':geometry_context.slow_checks}
++    timing={'import_A_including_fingerprint_s':import_a_s,'import_B_s':import_b_s,'import_mode':import_mode,'parallel_import_wall_s':import_parallel_wall_s,'parallel_worker_import_s':import_parallel_worker_s,'matching_and_classification_s':matching_s,'bom_grouping_s':summary.get('bom_seconds',0),'total_s':perf_counter()-ts,'registry':dict(geometry_context.stats),'slowest_bom_or_population_checks':geometry_context.slow_checks}
+     (folder/'CZASY_ANALIZY.json').write_text(json.dumps(timing,ensure_ascii=False,indent=2),encoding='utf-8')
+     if progress:progress(f'Łączny czas przetwarzania: {perf_counter()-ts:.1f} s')
+     if progress:progress('Gotowe: '+str(folder)+((' (UWAGA eksport STEP: '+err+')') if err else ''))
+--- a/v46/dsac29/gui45.py
++++ b/v46/dsac29/gui45.py
+@@ -252,12 +252,12 @@
+         inputs=[self.a.path.text(),self.b.path.text()] if kind=='compare' else [self.mass_file.path.text()]
+         if any(not Path(value).is_file() for value in inputs):
+             QMessageBox.warning(self,'Wybierz modele','Wybierz istniejące modele STEP / STP.');return
+-        # Native ZW3D archives are proprietary, not STEP B-Reps. Never hand them to OCC.
+-        if any(Path(value).suffix.lower()=='.z3' for value in inputs):
+-            QMessageBox.information(self,'Model ZW3D (Z3)',
+-                'Plik Z3 można wskazać, ale do porównania geometrii trzeba go najpierw '
+-                'wyeksportować w ZW3D jako STEP (.step lub .stp).\n\n'
+-                'Wybierz w ZW3D: Plik → Eksport → STEP (AP214 lub AP242).')
++        # Proprietary Z3: use a fresh exported STEP sidecar, never pass Z3 to OCP.
++        from .z3_support import resolve_model, NativeZW3DExportRequired
++        try:
++            inputs=[str(resolve_model(value)) for value in inputs]
++        except NativeZW3DExportRequired as exc:
++            QMessageBox.information(self,'Eksport Z3 do STEP',str(exc)+'\n\nZW3D → Plik → Eksport → STEP (AP214).')
+             return
+         if any(Path(value).suffix.lower() not in ('.step','.stp') for value in inputs):
+             QMessageBox.warning(self,'Nieobsługiwany format','Do porównania wybierz pliki STEP / STP.');return
+@@ -275,6 +275,7 @@
+             if getattr(self,'zw3d_body_colors',False):args+=['--body-colors']
+             if self.align.isChecked():args+=['--align']
+             if getattr(self,'generate_thumbnails',False):args+=['--thumbnails']
++            if hasattr(self,'safe_export') and self.safe_export.isChecked():args+=['--safe-export']
+         else:args+=['--input',inputs[0],'--no-preview']
+         if not getattr(sys,'frozen',False):args.insert(0,str(Path(__file__).resolve().parents[1]/'DSCompareV3.py'))
+         self.task=kind;self.current_folder=folder;self.event_offset=0;self.was_cancelled=False;self.worker_output=''
+--- a/v46/dsac29/gui46.py
++++ b/v46/dsac29/gui46.py
+@@ -1,4 +1,4 @@
+-"""Revision workspace: empty sessions, two themes, static geometry thumbnails."""
++"""R11.9 simplified revision workspace, HiDPI action icons, dedicated settings."""
+ import json,sys,time,os
+ from pathlib import Path
+ from PySide6.QtCore import Qt,QSize,QPointF
+@@ -6,10 +6,11 @@
+ from PySide6.QtWidgets import (QSpinBox,QApplication,QWidget,QFrame,QLabel,QPushButton,QLineEdit,
+  QVBoxLayout,QHBoxLayout,QGridLayout,QStackedWidget,QComboBox,QCheckBox,QSizePolicy,
+  QProgressBar,QPlainTextEdit,QHeaderView,QStyledItemDelegate,QStyle,QAbstractItemView,QMenu,QFormLayout,QInputDialog,QMessageBox,QAbstractSpinBox,QDialog,QDialogButtonBox,QColorDialog)
+-from .gui45 import Window as BaseWindow,FileCard as BaseFileCard,button,table,icon as base_icon
++from .gui45 import Window as BaseWindow,FileCard as BaseFileCard,button,table
++from .icons_r119 import vector_icon,set_action
+ 
+ def icon(key):
+- pix=base_icon(key).pixmap(48,48);paint=QPainter(pix);paint.setCompositionMode(QPainter.CompositionMode_SourceIn);paint.fillRect(pix.rect(),QColor('#4b85ff'));paint.end();return QIcon(pix)
++ return vector_icon(key, '#4b85ff')
+ 
+ EXPORT_COLOR_CHOICES = (
+  ('SAME', 'Bez zmian / zmiana nazwy', '#1fb852'),
+@@ -92,37 +93,19 @@
+   p.setPen(Qt.NoPen);p.fillPath(outer.subtracted(mask),color)
+  p.end();pix.setDevicePixelRatio(2);return QIcon(pix)
+ 
+-class Thumbnail(QWidget):
+- def __init__(self):
+-  super().__init__();self.lines=[];self.setMinimumSize(105,82);self.setMaximumWidth(155);self.ink='#7387a3'
+- def set_data(self,data):self.lines=data.get('lines',[]);self.update()
+- def paintEvent(self,event):
+-  p=QPainter(self);p.setRenderHint(QPainter.Antialiasing);p.setPen(QPen(QColor(self.ink),.85))
+-  if not self.lines:
+-   p.drawText(self.rect(),Qt.AlignCenter,'Miniatura modelu\npo analizie');return
+-  points=[xy for line in self.lines for xy in line];xs=[xy[0] for xy in points];ys=[xy[1] for xy in points]
+-  xmin,xmax,ymin,ymax=min(xs),max(xs),min(ys),max(ys);scale=min((self.width()-16)/max(xmax-xmin,.001),(self.height()-16)/max(ymax-ymin,.001))
+-  cx=(xmin+xmax)/2;cy=(ymin+ymax)/2
+-  for line in self.lines:
+-   for a,b in zip(line,line[1:]):
+-    p.drawLine(QPointF((a[0]-cx)*scale+self.width()/2,(a[1]-cy)*scale+self.height()/2),QPointF((b[0]-cx)*scale+self.width()/2,(b[1]-cy)*scale+self.height()/2))
+-
+ class FileCard(BaseFileCard):
++ """Compact two-line native source chooser, with no redundant 3D thumbnails."""
+  def __init__(self,title,subtitle):
+   QFrame.__init__(self);self.setObjectName('card');self.setAcceptDrops(True)
+-  row=QHBoxLayout(self);row.setContentsMargins(16,12,16,12);row.setSpacing(8);col=QVBoxLayout();col.setSpacing(4)
+-  heading=QLabel(title);heading.setObjectName('section');col.addWidget(heading)
+-  self.filename=QLabel('Nie wybrano modelu');self.filename.setStyleSheet('font-size:14px;font-weight:600');self.filename.setWordWrap(True);col.addWidget(self.filename)
+-  self.path=QLineEdit();self.path.setAcceptDrops(False);self.path.setPlaceholderText('Wybierz lub przeciągnij plik STEP / STP…');self.path.textChanged.connect(self.changed.emit);col.addWidget(self.path)
+-  self.caption=QLabel('Przeciągnij plik lub wybierz z dysku');self.caption.setObjectName('sub');self.caption.setWordWrap(True);col.addWidget(self.caption)
+-  controls=QHBoxLayout();controls.setSpacing(5)
+-  choose=button('Wybierz plik',self.choose);choose.setIcon(self.style().standardIcon(QStyle.SP_DialogOpenButton));choose.setIconSize(QSize(16,16));controls.addWidget(choose)
+-  controls.addStretch();col.addLayout(controls);row.addLayout(col,1)
+-  self.thumbnail=Thumbnail();row.addWidget(self.thumbnail,1)
+-  self.path.textChanged.connect(self.clear_preview)
+- def clear_preview(self):
+-  self.thumbnail.set_data({});self.caption.setText('Przeciągnij plik lub wybierz z dysku')
+-  value=self.path.text().strip();self.filename.setText(Path(value).name if value else 'Nie wybrano modelu');self.path.setToolTip(value)
++  layout=QVBoxLayout(self);layout.setContentsMargins(14,10,14,10);layout.setSpacing(6)
++  heading=QLabel(title);heading.setObjectName('section');layout.addWidget(heading)
++  row=QHBoxLayout();row.setSpacing(8)
++  self.path=QLineEdit();self.path.setPlaceholderText('Wybierz STEP / STP lub Z3 z eksportem STEP obok')
++  self.path.setAcceptDrops(False);self.path.textChanged.connect(self.changed.emit)
++  self.path.textChanged.connect(lambda value:self.path.setToolTip(value))
++  row.addWidget(self.path,1)
++  self.choose_button=button('Wybierz…',self.choose)
++  row.addWidget(self.choose_button);layout.addLayout(row)
+ 
+ class StatusDelegate(QStyledItemDelegate):
+  def paint(self,painter,option,index):
+@@ -133,7 +116,7 @@
+   rect=option.rect.adjusted(6,5,-6,-5);painter.setRenderHint(QPainter.Antialiasing);painter.setPen(Qt.NoPen);painter.setBrush(background);painter.drawRoundedRect(rect,5,5);painter.setPen(color);painter.drawText(rect,Qt.AlignCenter,option.fontMetrics.elidedText(index.data(),Qt.ElideRight,rect.width()-6));painter.restore()
+ 
+ class Window(BaseWindow):
+- generate_thumbnails=True
++ generate_thumbnails=False
+  def __init__(self,a='',b=''):
+   super().__init__(a,b)
+   self.setWindowTitle('DSCompare — porównanie rewizji')
+@@ -157,13 +140,8 @@
+   brand_icon.setToolTip('DSCompare')
+   bl.addWidget(brand_icon)
+   brand=QLabel('DSCompare');brand.setObjectName('brand');bl.addWidget(brand);bl.addStretch()
+-  for key,label in [('compare','Porównanie'),('mass','Masa części')]:
++  for key,label in [('compare','Porównanie'),('mass','Masa części'),('settings','Ustawienia')]:
+    bnav=self.nav[key];bnav.setParent(bar);bnav.setText(label);bnav.setIconSize(QSize(22,22));bl.addWidget(bnav)
+-  # Old sidebar is deleted below. Never keep a stale C++ button wrapper in self.nav.
+-  obsolete=self.nav.pop('settings')
+-  obsolete.setParent(None)
+-  obsolete.deleteLater()
+-  self.stack.removeWidget(self.pages['settings'])
+   bl.addStretch()
+   # Theme selection is now a single click sun/moon switch, no dropdown.
+   self.theme_quick=self.theme  # invisible state holder, compatibility with settings
+@@ -182,12 +160,9 @@
+  def _fit_layout_to_monitor(self):
+   # Keep all controls inside the main window; wheel scrolling stays available
+   # inside long result tables, without visible scroll bars.
+-  for key in ('compare','mass'):
++  for key in ('compare','mass','settings'):
+    pg=self.pages[key]
+    if self.compact:pg.layout().setSpacing(4)
+-  for card in (self.a,self.b):
+-   card.thumbnail.setMinimumSize(94,68) if self.compact else None
+-   card.thumbnail.setMaximumWidth(132 if self.compact else 155)
+   self.compare_table.setMinimumHeight(95)
+   self.compare_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+   self.compare_table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+@@ -205,19 +180,23 @@
+   self.mass_log.setMaximumHeight(40 if self.compact else 70)
+   self.mass_log.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+   self.export_box.setMinimumHeight(0)
+-  self.export_box.setMaximumWidth(320 if self.compact else 350)
+-  self.export_box.setMinimumWidth(250 if self.compact else 290)
++  self.export_box.setMaximumWidth(350 if self.compact else 375)
++  self.export_box.setMinimumWidth(280 if self.compact else 305)
+   if self.compact:
+-   self.legend.hide();self.visibility_hint.hide();self.legend_button.show()
+-   for card in (self.a,self.b):card.caption.hide()
++   self.legend.hide();self.visibility_hint.hide()
+    self.grouping_hint.hide()
+    self.compare_description.hide()
+-   self.settings_note.setText('Tolerancja wpływa na dopasowanie B-Rep. Wyłączone wyrównanie pozwala wykrywać przesunięcia. Kolory całych brył są przeznaczone do importu ZW3D.')
++   self.settings_note.setText('Geometria B-Rep oraz zapis STEP do ZW3D. Z3 wymaga eksportu do STEP obok źródła.')
+ 
+  def create_settings(self):
+   super().create_settings()
+   self.settings_note=self.pages['settings'].findChildren(QLabel)[-1]
+   self.theme=QComboBox(self);self.theme.addItems(PALETTES);self.theme.setCurrentText(str(self.store.value('theme46','Jasny')))
++  form=self.pages['settings'].findChild(QFrame,'card').layout()
++  for obsolete in (self.opacity,self.old_color):
++   label=form.labelForField(obsolete)
++   if label:label.hide()
++   obsolete.hide()
+   self.theme.hide()  # no selector visible anywhere; keep QSettings and existing API
+   self.theme.currentTextChanged.connect(self.apply_theme)
+  def toggle_theme(self):
+@@ -229,70 +208,20 @@
+   if hasattr(self,'theme_button'):
+    self.theme_button.setText('');self.theme_button.setIcon(theme_icon(name=='Ciemny',p['ink']));self.theme_button.setIconSize(QSize(24,24))
+    self.theme_button.setToolTip('Włącz motyw ciemny' if name=='Jasny' else 'Włącz motyw jasny')
+-  for key,b in self.nav.items():b.setIcon(icon(key))
+-  for card in [getattr(self,'a',None),getattr(self,'b',None)]:
+-   if card:card.thumbnail.ink=p['muted'];card.thumbnail.update()
++  for key,b in self.nav.items():b.setIcon(vector_icon(key,p['ink']))
++  self._refresh_action_icons(p['ink'],p['accent'])
+   if hasattr(self,'metrics'):
+    for label,key in zip(self.metrics,('green','blue','purple','blue','orange','green')):label.setStyleSheet(f'font-size:28px;font-weight:700;color:{p[key]}')
+  def create_compare(self):
+   self.filter_status='ALL';self.metrics=[]
+   lay=self.page('compare','Porównanie rewizji','Porównaj modele STEP i otwórz wynik w ZW3D.');lay.setSpacing(7)
+   self.compare_description=self.pages['compare'].findChild(QLabel,'sub')
+-  row=QHBoxLayout();self.a=FileCard('A   Stara rewizja','');self.b=FileCard('B   Nowa rewizja','');row.addWidget(self.a,1);swap_button=button('⇄',self.swap);swap_button.setToolTip('Zamień rewizje A i B');swap_button.setFixedWidth(44);row.addWidget(swap_button);row.addWidget(self.b,1);lay.addLayout(row)
+-  row=QHBoxLayout();self.run_compare=button('Porównaj i utwórz STEP',lambda:self.start('compare'),True);self.run_compare.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay));self.run_compare.setIconSize(QSize(16,16));row.addWidget(self.run_compare)
+-  self.cancel_compare=button('Anuluj',self.cancel);self.cancel_compare.setIcon(self.style().standardIcon(QStyle.SP_DialogCancelButton));self.cancel_compare.setEnabled(False);row.addWidget(self.cancel_compare)
++  row=QHBoxLayout();self.a=FileCard('A · Stara rewizja','');self.b=FileCard('B · Nowa rewizja','');row.addWidget(self.a,1);self.swap_button=button('Zamień',self.swap);self.swap_button.setToolTip('Zamień rewizje A i B');row.addWidget(self.swap_button);row.addWidget(self.b,1);lay.addLayout(row)
++  row=QHBoxLayout();self.run_compare=button('Porównaj i utwórz STEP',lambda:self.start('compare'),True);row.addWidget(self.run_compare)
++  self.cancel_compare=button('Anuluj',self.cancel);self.cancel_compare.setEnabled(False);row.addWidget(self.cancel_compare)
+   self.compare_summary=QLabel('Wybierz dwa modele, aby rozpocząć.');self.compare_summary.setWordWrap(True);self.compare_summary.setMinimumWidth(0);self.compare_summary.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred);row.addWidget(self.compare_summary,1);lay.addLayout(row)
+-  # Relevant options live inside their task, not in a third navigation tab.
+-  self.param_button=button('Parametry porównania  ▸',self.toggle_compare_options)
+-  self.param_button.setCheckable(True);self.param_button.setToolTip('Tolerancja, kolory, eksport STEP i folder zapisu')
+-  lay.addWidget(self.param_button)
+-  self.param_frame=QFrame();self.param_frame.setObjectName('card');pg=QGridLayout(self.param_frame)
+-  pg.setContentsMargins(12,8,12,8);pg.setHorizontalSpacing(8);pg.setVerticalSpacing(4)
+-  for ctrl in (self.tolerance,self.opacity,self.old_color,self.schema,self.align):
+-   self.pages['settings'].findChild(QFrame,'card').layout().removeWidget(ctrl)
+-  # Per-body colors in ZW3D: no ineffective opacity controls.
+-  self.opacity.setValue(0)
+-  self.opacity.hide()
+-  self.old_color.hide()
+-  self.export_colors={}
+-  for key,caption,default in EXPORT_COLOR_CHOICES:
+-   stored=str(self.store.value('export_color_'+key,default))
+-   self.export_colors[key]=stored if QColor(stored).isValid() else default
+-  self.color_editor=button('Edytuj wszystkie kolory STEP…',self.edit_export_colors)
+-  self.color_editor.setToolTip('Niezależne kolory części dla wszystkich statusów.')
+-  self.color_editor.setIcon(self.style().standardIcon(QStyle.SP_DialogApplyButton))
+-  pg.addWidget(QLabel('Tolerancja B-Rep'),0,0);pg.addWidget(self.tolerance,0,1)
+-  pg.addWidget(self.align,0,2,1,3)
+-  pg.addWidget(QLabel('Kolory wynikowego STEP'),1,0);pg.addWidget(self.color_editor,1,1,1,4)
+-  pg.addWidget(QLabel('Format STEP'),2,0);pg.addWidget(self.schema,2,1)
+-  self.output=QLineEdit(str(self.store.value('output',str(Path.home()/'Documents'/'DSCompare'))))
+-  pg.addWidget(QLabel('Folder wyników'),2,2);pg.addWidget(self.output,2,3)
+-  pg.addWidget(button('Wybierz…',self.choose_output),2,4)
+-  self.verify_mode=QComboBox();self.verify_mode.setMinimumWidth(230)
+-  for label,key in [('Automatyczna (pełna do 150 wystąpień)','auto'),('Szybka — struktura pliku','fast'),('Pełna — ponowny import','full')]:self.verify_mode.addItem(label,key)
+-  self.verify_mode.setCurrentIndex(max(0,self.verify_mode.findData(str(self.store.value('step_verify','auto')))))
+-  self.verify_mode.currentIndexChanged.connect(lambda:self.store.setValue('step_verify',self.verify_mode.currentData()))
+-  pg.addWidget(QLabel('Kontrola STEP'),3,0);pg.addWidget(self.verify_mode,3,1,1,2)
+-  self.verify_mode.setToolTip('Szybka kontrola sprawdza kolory brył; pełna ponownie importuje wynikowy STEP.')
+-  self.solid_limit=QSpinBox();self.solid_limit.setRange(1,50000)
+-  stored=int(self.store.value('solid_limit',20000))
+-  if not self.store.value('solid_limit_migrated_r116',False,type=bool):
+-   # The former GUI default (1000) must not silently remain in saved settings.
+-   if stored==1000:stored=20000
+-   self.store.setValue('solid_limit_migrated_r116',True)
+-  self.solid_limit.setValue(max(1,min(50000,stored)));self.solid_limit.setButtonSymbols(QAbstractSpinBox.NoButtons)
+-  self.solid_limit.valueChanged.connect(lambda value:self.store.setValue('solid_limit',value))
+-  self.solid_limit.setToolTip('Do 50 000 brył na plik; domyślnie 20 000. Limit chroni pamięć RAM. Przekroczenie zatrzymuje import, bez ucinania modelu.')
+-  pg.addWidget(QLabel('Limit brył / plik'),3,3);pg.addWidget(self.solid_limit,3,4)
+-  scope=QLabel('Tylko bryły SOLID · kolory całych detali (tryb ZW3D)')
+-  scope.setObjectName('sub');scope.setWordWrap(True);pg.addWidget(scope,4,0,1,5)
+-  self.full_bom=QCheckBox('Pełny BOM — grupowanie identycznych części (wolniejsze)')
+-  self.full_bom.setToolTip('Zwykłe porównanie działa bez pełnego BOM. Pełny BOM może potrwać kilka minut.');self.full_bom.setChecked(str(self.store.value('full_bom','false')).lower()=='true')
+-  self.full_bom.toggled.connect(lambda checked:self.store.setValue('full_bom',checked))
+-  pg.addWidget(self.full_bom,5,0,1,5)
+-  pg.setColumnStretch(3,2);pg.setColumnMinimumWidth(1,145)
+-  self.param_frame.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
+-  self.param_frame.hide();lay.addWidget(self.param_frame)
++  # Comparison parameters belong exclusively to the settings tab.
++  self._build_settings_options()
+   metricrow=QHBoxLayout()
+   for title in ('Bez zmian','Do sprawdzenia','Przesunięte','Nowe','Stare','Zmiana nazwy'):
+    card=QFrame();card.setObjectName('metric');ml=QVBoxLayout(card);ml.setContentsMargins(8,5,8,5);ml.setSpacing(1);count=QLabel('—');ml.addWidget(count);caption=QLabel(title);caption.setWordWrap(True);ml.addWidget(caption);self.metrics.append(count);metricrow.addWidget(card,1)
+@@ -312,26 +241,96 @@
+   self.export_name=QLabel('STEP: oczekuje na analizę');self.export_name.setWordWrap(True);self.export_name.setMinimumWidth(0);self.export_name.setStyleSheet('font-weight:600;padding:6px 0;');el.addWidget(self.export_name)
+   self.legend=QLabel('');self.legend.setWordWrap(True);self.legend.hide()
+   grouping=QLabel('Model jest zapisany w grupach według rodzaju zmiany.');self.grouping_hint=grouping;grouping.setObjectName('sub');grouping.setWordWrap(True);grouping.hide()
+-  visibility=QLabel('Gdy elementy się pokrywają, ukryj odpowiednią grupę A lub B w drzewie ZW3D.');visibility.setObjectName('sub');visibility.setWordWrap(True);self.visibility_hint=visibility;visibility.hide();self.legend_button=button('Kolory i grupy STEP…',self.show_color_help);el.addWidget(self.legend_button);el.addSpacing(4)
++  visibility=QLabel('Gdy elementy się pokrywają, ukryj odpowiednią grupę A lub B w drzewie ZW3D.');visibility.setObjectName('sub');visibility.setWordWrap(True);self.visibility_hint=visibility;visibility.hide();el.addSpacing(4)
+   self.compare_open={}
+   links=QGridLayout();links.setHorizontalSpacing(6);links.setVerticalSpacing(6)
+-  for i,(text,filename) in enumerate([('Otwórz STEP','POROWNANIE_KOLORY.step'),('Raport zmian','RAPORT.html'),('Zmiany CSV','ZMIANY.csv'),('Folder wyników','')]):
++  for i,(text,filename) in enumerate([('Otwórz STEP','POROWNANIE_KOLORY.step'),('Raport','RAPORT.html'),('BOM A','BOM_A.csv'),('BOM B','BOM_B.csv'),('Zmiany CSV','ZMIANY.csv'),('Folder','')]):
+    b=button(text,lambda checked=False,f=filename:self.open_result('compare',f),filename.endswith('.step'))
+    b.setEnabled(False);self.compare_open[filename]=b;links.addWidget(b,i//2,i%2)
+   el.addLayout(links)
+-  for filename,b in self.compare_open.items():
+-   key=QStyle.SP_DirOpenIcon if not filename else QStyle.SP_DialogOpenButton if filename.endswith('.step') else QStyle.SP_FileIcon
+-   b.setIcon(self.style().standardIcon(key));b.setIconSize(QSize(16,16))
++  # Crisp SVG action icons are applied in apply_theme(), not OS-dependent pixel icons.
+   self.compare_open['POROWNANIE_KOLORY.step'].setToolTip('Otwiera plik w domyślnej aplikacji Windows dla STEP.');body.addWidget(export);lay.addLayout(body,1)
+   self.step_progress_label=QLabel('Model STEP: oczekuje')
+   self.step_progress_label.setObjectName('sub');lay.addWidget(self.step_progress_label)
+   self.progress=QProgressBar();self.progress.setRange(0,100);self.progress.setValue(0);self.progress.setTextVisible(False);lay.addWidget(self.progress)
+-  self.report_progress_label=QLabel('Raporty HTML / BOM: oczekują')
++  self.report_progress_label=QLabel('Raport i BOM: oczekują')
+   self.report_progress_label.setObjectName('sub');lay.addWidget(self.report_progress_label)
+   self.report_progress=QProgressBar();self.report_progress.setRange(0,100);self.report_progress.setValue(0)
+   self.report_progress.setTextVisible(False);lay.addWidget(self.report_progress)
+   self.log=QPlainTextEdit();self.log.setReadOnly(True);self.log.document().setMaximumBlockCount(150);self.log.hide()
+-  foot=QHBoxLayout();label=QLabel('Każde porównanie zapisuje osobny folder wyników.');label.setObjectName('sub');foot.addWidget(label);foot.addStretch();self.reset_button=button('Nowe porównanie',self.reset_session);self.reset_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload));foot.addWidget(self.reset_button);lay.addLayout(foot)
++  foot=QHBoxLayout();label=QLabel('Każde porównanie zapisuje osobny folder wyników.');label.setObjectName('sub');foot.addWidget(label);foot.addStretch();self.reset_button=button('Nowe porównanie',self.reset_session);foot.addWidget(self.reset_button);lay.addLayout(foot)
++ def _build_settings_options(self):
++  """Keep all revision variables in Ustawienia, not in the comparison workspace."""
++  self.export_colors={}
++  for key,caption,default in EXPORT_COLOR_CHOICES:
++   stored=str(self.store.value('export_color_'+key,default))
++   self.export_colors[key]=stored if QColor(stored).isValid() else default
++  self.opacity.setValue(0)
++  self.color_editor=button('Kolory części w STEP…',self.edit_export_colors)
++  self.color_editor.setToolTip('Własny kolor dla każdego rodzaju zmiany')
++  self.output=QLineEdit(str(self.store.value('output',str(Path.home()/'Documents'/'DSCompare'))))
++  folder_line=QHBoxLayout();folder_line.addWidget(self.output,1)
++  self.output_button=button('Wybierz…',self.choose_output);folder_line.addWidget(self.output_button)
++  self.verify_mode=QComboBox()
++  for label,key in [('Automatyczna','auto'),('Szybka — struktura pliku','fast'),('Dokładna — ponowny import','full')]:self.verify_mode.addItem(label,key)
++  self.verify_mode.setCurrentIndex(max(0,self.verify_mode.findData(str(self.store.value('step_verify','auto')))))
++  self.verify_mode.currentIndexChanged.connect(lambda:self.store.setValue('step_verify',self.verify_mode.currentData()))
++  self.verify_mode.setToolTip('Tryb dokładny sprawdza wynikowy STEP ponownym importem.')
++  self.solid_limit=QSpinBox();self.solid_limit.setRange(1,50000)
++  stored=int(self.store.value('solid_limit',20000))
++  if not self.store.value('solid_limit_migrated_r116',False,type=bool):
++   if stored==1000:stored=20000
++   self.store.setValue('solid_limit_migrated_r116',True)
++  self.solid_limit.setValue(max(1,min(50000,stored)))
++  self.solid_limit.setButtonSymbols(QAbstractSpinBox.NoButtons)
++  self.solid_limit.valueChanged.connect(lambda value:self.store.setValue('solid_limit',value))
++  self.full_bom=QCheckBox('Pełny BOM A i B (grupowanie identycznych części)')
++  # One-time migration: older builds had it OFF, hiding the requested BOM.
++  if not self.store.value('bom_default_migrated_r119',False,type=bool):
++   self.store.setValue('full_bom',True);self.store.setValue('bom_default_migrated_r119',True)
++  self.full_bom.setChecked(str(self.store.value('full_bom','true')).lower()=='true')
++  self.full_bom.toggled.connect(lambda checked:self.store.setValue('full_bom',checked))
++  self.full_bom.setToolTip('Tworzy BOM_A.csv i BOM_B.csv, a także tabele BOM w RAPORT.html')
++  self.safe_export=QCheckBox('Bezpieczny STEP do ZW3D (bez współdzielenia geometrii)')
++  self.safe_export.setChecked(str(self.store.value('safe_export','true')).lower()=='true')
++  self.safe_export.toggled.connect(lambda checked:self.store.setValue('safe_export',checked))
++  self.safe_export.setToolTip('Zmniejsza ryzyko artefaktów/obcych części po imporcie do ZW3D; plik STEP może być większy.')
++  settings=self.pages['settings'];layout=settings.layout()
++  left=settings.findChild(QFrame,'card');layout.removeWidget(left)
++  right=QFrame();right.setObjectName('card');form=QFormLayout(right)
++  form.setContentsMargins(17,16,17,16);form.setSpacing(12)
++  heading=QLabel('Eksport i pliki wynikowe');heading.setObjectName('section');form.addRow(heading)
++  folder_widget=QWidget();folder_widget.setLayout(folder_line)
++  form.addRow('Folder wyników',folder_widget)
++  form.addRow('Kolory',self.color_editor)
++  form.addRow('Kontrola STEP',self.verify_mode)
++  form.addRow('Limit brył / plik',self.solid_limit)
++  form.addRow(self.full_bom)
++  form.addRow(self.safe_export)
++  note=QLabel('Z3: wyeksportuj STEP obok pliku Z3 pod tą samą nazwą. Zostanie wykryty automatycznie.')
++  note.setObjectName('sub');note.setWordWrap(True);form.addRow(note)
++  cards=QHBoxLayout();cards.setSpacing(10);cards.addWidget(left,1);cards.addWidget(right,1)
++  layout.insertLayout(2,cards)
++  self._extra_settings_card=right
++
++ def _refresh_action_icons(self,ink,accent):
++  targets=[('run_compare','run',accent),('cancel_compare','cancel',ink),('swap_button','swap',ink),
++           ('reset_button','refresh',ink),('color_editor','colors',ink),('output_button','folder',ink),
++           ('run_mass','mass',accent),('cancel_mass','cancel',ink)]
++  for card in (getattr(self,'a',None),getattr(self,'b',None),getattr(self,'mass_file',None)):
++   if card is not None and hasattr(card,'choose_button'):
++    set_action(card.choose_button,'file',ink)
++  for name,key,color in targets:
++   b=getattr(self,name,None)
++   if b is not None:set_action(b,key,color)
++  for filename,b in getattr(self,'compare_open',{}).items():
++   key=('folder' if not filename else 'bom' if filename.startswith('BOM_') else
++        'report' if filename.endswith('.html') else 'csv' if filename.endswith('.csv') else 'file')
++   set_action(b,key,ink,18)
++  for filename,b in getattr(self,'mass_open',{}).items():
++   key='folder' if not filename else 'report' if filename.endswith('.html') else 'csv'
++   set_action(b,key,ink,18)
++
+  def color_overrides(self):
+   return {key:[QColor(value).red()/255,QColor(value).green()/255,QColor(value).blue()/255]
+           for key,value in self.export_colors.items()}
+@@ -377,15 +376,14 @@
+  def show_color_help(self):
+   self.edit_export_colors()
+ 
+- def toggle_compare_options(self):
+-  expanded=self.param_button.isChecked()
+-  self.param_frame.setVisible(expanded)
+-  self.param_button.setText('Parametry porównania  ▾' if expanded else 'Parametry porównania  ▸')
+  def create_mass(self):
+   super().create_mass()
+   self.mass_summary.setText('Wybierz model i oblicz masy poszczególnych części.')
+   self.pages['mass'].findChild(QLabel,'sub').setText('Oblicz masę z objętości i gęstości materiału podanej poniżej.')
+-  self.pages['settings'].findChild(QFrame,'card').layout().removeWidget(self.density)
++  settings_form=self.pages['settings'].findChild(QFrame,'card').layout()
++  density_label=settings_form.labelForField(self.density)
++  if density_label:density_label.hide()
++  settings_form.removeWidget(self.density)
+   # Remove platform-specific spin arrow controls from density field.
+   from PySide6.QtWidgets import QAbstractSpinBox
+   self.density.setButtonSymbols(QAbstractSpinBox.NoButtons)
+@@ -470,15 +468,14 @@
+   super().start(kind)
+   if self.process is not None:
+    self.started_at=time.monotonic()
+-   if hasattr(self,'param_button'):
+-    self.param_button.setEnabled(False);self.param_frame.setEnabled(False)
++   if hasattr(self,'_extra_settings_card'):self.pages['settings'].setEnabled(False)
+   if hasattr(self,'reset_button'):self.reset_button.setEnabled(self.process is None)
+   if self.process is not None:
+    self.compare_summary.setText('Analiza trwa…' if kind=='compare' else 'Obliczanie masy…')
+    if kind=='compare':
+     self.export_name.setText('Tworzenie nowego STEP…')
+     self.step_progress_label.setText('Model STEP: analiza i eksport…')
+-    self.report_progress_label.setText('Raporty HTML / BOM: oczekują na STEP')
++    self.report_progress_label.setText('Raport i BOM: oczekują na STEP')
+     self.progress.setRange(0,0);self.report_progress.setRange(0,100);self.report_progress.setValue(0)
+     for b in self.compare_open.values():b.setEnabled(False)
+  def poll(self):
+@@ -513,24 +510,21 @@
+    'zapisywanie_bom':'zapis BOM','html':'tworzenie HTML','finalizacja':'końcowe zestawienia','gotowe':'gotowe'}
+   phase=data.get('reports','oczekuje')
+   pct=int(data.get('report_percent',0))
+-  self.report_progress_label.setText(f"Raporty HTML / BOM: {report_labels.get(phase,phase)} · {pct}%")
++  self.report_progress_label.setText(f"Raport i BOM: {report_labels.get(phase,phase)} · {pct}%")
+   self.report_progress.setValue(max(0,min(100,pct)))
+   if data.get('basic_report_ready'):
+    self.results['compare']=folder
+-   self.compare_open['RAPORT.html'].setEnabled((folder/'RAPORT_ZMIAN.html').is_file())
++   self.compare_open['RAPORT.html'].setEnabled((folder/'RAPORT.html').is_file())
+    self.compare_open['ZMIANY.csv'].setEnabled((folder/'ZMIANY.csv').is_file())
+    self.compare_open[''].setEnabled(True)
+   if phase=='gotowe':
+-   for filename in ('RAPORT.html','ZMIANY.csv'):
++   for filename in ('RAPORT.html','ZMIANY.csv','BOM_A.csv','BOM_B.csv'):
+     self.compare_open[filename].setEnabled((folder/filename).exists())
+ 
+  def open_result(self,kind,filename):
+-  if kind=='compare' and filename=='RAPORT.html' and kind in self.results:
+-   folder=Path(self.results[kind])
+-   if (self.process is not None or not (folder/filename).is_file()) and (folder/'RAPORT_ZMIAN.html').is_file():filename='RAPORT_ZMIAN.html'
+   super().open_result(kind,filename)
+  def finished(self,code,status):
+-  super().finished(code,status);self.reset_button.setEnabled(True);self.param_button.setEnabled(True);self.param_frame.setEnabled(True)
++  super().finished(code,status);self.reset_button.setEnabled(True);self.pages['settings'].setEnabled(True)
+   if getattr(self,'completion_ok',False) and not self.was_cancelled and self.task=='compare':
+    ready=self.compare_open['POROWNANIE_KOLORY.step'].isEnabled()
+    self.progress.setRange(0,100);self.progress.setValue(100 if ready else 0)
+@@ -560,20 +554,21 @@
+   self.export_name.setText('STEP gotowy do otwarcia' if ready else 'STEP nie został utworzony')
+   self.export_name.setToolTip(s.get('step_export_error') or str(folder/'POROWNANIE_KOLORY.step'))
+   self.compare_open['POROWNANIE_KOLORY.step'].setEnabled(ready)
++  for name in ('RAPORT.html','BOM_A.csv','BOM_B.csv','ZMIANY.csv',''):
++   self.compare_open[name].setEnabled((folder/name).exists())
+   mode='pełna' if s.get('step_verification')=='pelna_ponowny_import' else 'strukturalna'
+   self.progress.setRange(0,100);self.progress.setValue(100 if ready else 0)
+   self.step_progress_label.setText(f'Model STEP: gotowy · kontrola {mode}' if ready else 'Model STEP: błąd eksportu')
+-  self.report_progress.setValue(100);self.report_progress_label.setText('Raporty HTML / BOM: gotowe · 100%')
++  self.report_progress.setValue(100);self.report_progress_label.setText('Raport i BOM: gotowe · 100%')
+   old=s.get('colors_hex',{}).get('REMOVED','#ff610f');alpha=round((1-s.get('old_alpha',.4))*100)
+   self.legend.setText(f'<span style="color:#24aa67">● Bez zmian / zmiana nazwy</span><br><span style="color:#4b85ff">● Nowa B</span><br><span style="color:#ab73ec">● Nowe położenie B — fiolet</span><br><span style="color:#c7addf">● Stare położenie A — jasny fiolet</span><br><span style="color:{old}">● Usunięte A · {alpha}% przezr.</span><br>● Do sprawdzenia — osobna grupa STEP')
+-  for role,card in [('A',self.a),('B',self.b)]:
+-   file=folder/f'MINIATURA_{role}.json'
+-   if file.exists():
+-    data=json.loads(file.read_text());card.thumbnail.set_data(data);card.caption.setText(f"{s['solids_'+role]} części · miniatura krawędziowa"+(' (uproszczona)' if data.get('truncated') else ''))
++
+  def _tidy_finished_files(self,folder):
+   # Technical files are useful when diagnosing issues, but should not clutter
+   # the user-facing result directory. Move only AFTER load_result has read them.
+   try:
++   for obsolete in ('MINIATURA_A.json','MINIATURA_B.json','RAPORT_ZMIAN.html'):
++    (folder/obsolete).unlink(missing_ok=True)
+    internal=('DIAGNOSTYKA_KOLOROW.json','_POSTEP_V37.jsonl','_WYNIK_V37.json',
+              'BOM_GRUPY_A.json','BOM_GRUPY_B.json','MASA_MAPA.json')
+    tech=folder/'DANE_TECHNICZNE'
+@@ -597,7 +592,7 @@
+   for b in list(self.compare_open.values())+list(self.mass_open.values()):b.setEnabled(False)
+   for label in self.metrics:label.setText('—')
+   self.search.clear();self.select_filter('ALL');self.only_changes.setChecked(False);self.log.clear();self.mass_log.clear();self.progress.setValue(0);self.mass_progress.setValue(0)
+-  self.step_progress_label.setText('Model STEP: oczekuje');self.report_progress_label.setText('Raporty HTML / BOM: oczekują')
++  self.step_progress_label.setText('Model STEP: oczekuje');self.report_progress_label.setText('Raport i BOM: oczekują')
+   self.progress.setRange(0,100);self.report_progress.setRange(0,100);self.report_progress.setValue(0)
+   self.compare_summary.setText('Wybierz dwa modele, aby rozpocząć.');self.mass_summary.setText('Wybierz model do obliczenia masy.');self.export_name.setText('STEP: oczekuje na analizę');self.navigate('compare')
+ 
+--- a/v46/dsac29/icons_r119.py
++++ b/v46/dsac29/icons_r119.py
+@@ -0,0 +1,36 @@
++"""Vector action icons; consistent stroke, spacing, contrast and scaling."""
++from PySide6.QtGui import QIcon, QPainter, QPixmap
++from PySide6.QtCore import Qt
++from PySide6.QtSvg import QSvgRenderer
++
++_PATHS = {
++ 'compare': '<path d="M4 6h6v6H4zM14 12h6v6h-6zM10 9h4m-2-2 2 2-2 2"/>',
++ 'mass': '<path d="M4 7h16M12 7v12M7 19h10M6 7l-3 6h6l-3-6zm12 0-3 6h6l-3-6z"/>',
++ 'settings': '<path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="11" cy="17" r="2" fill="currentColor" stroke="none"/>',
++ 'run': '<path d="m8 5 11 7-11 7z" stroke-linejoin="round"/>',
++ 'cancel': '<circle cx="12" cy="12" r="8"/><path d="M9 9l6 6m0-6-6 6"/>',
++ 'file': '<path d="M5 3h10l4 4v14H5zM15 3v5h4M8 13h8m-8 4h8"/>',
++ 'folder': '<path d="M3 6h7l2 2h9v11H3z"/>',
++ 'report': '<path d="M6 3h9l4 4v14H6zM15 3v5h4M9 12h7M9 16h7"/>',
++ 'csv': '<path d="M5 3h10l4 4v14H5zM15 3v5h4M8 13h8m-8 4h8"/>',
++ 'bom': '<path d="M4 4h16v16H4zM4 10h16M10 4v16m0-10v10"/>',
++ 'swap': '<path d="M4 8h16m-4-4 4 4-4 4M20 16H4m4-4-4 4 4 4"/>',
++ 'refresh': '<path d="M20 10a8 8 0 0 0-14-5L4 7m0-4v4h5M4 14a8 8 0 0 0 14 5l2-2m0 4v-4h-5"/>',
++ 'colors': '<path d="M12 3a9 9 0 1 0 0 18h2a2 2 0 0 0 1-4 2 2 0 0 1 1-3h1a4 4 0 0 0 4-4A9 9 0 0 0 12 3z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>',
++}
++
++def vector_icon(kind, ink='#2866d6'):
++    path=_PATHS[kind]
++    xml=(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" '
++         f'fill="none" stroke="{ink}" color="{ink}" stroke-width="1.9" stroke-linecap="round" '
++         f'stroke-linejoin="round">{path}</svg>')
++    pix=QPixmap(72,72);pix.fill(Qt.transparent)
++    painter=QPainter(pix);painter.setRenderHint(QPainter.Antialiasing)
++    QSvgRenderer(xml.encode('utf-8')).render(painter);painter.end()
++    pix.setDevicePixelRatio(3)
++    return QIcon(pix)
++
++def set_action(button,kind,color='#2866d6',size=20):
++    button.setIcon(vector_icon(kind,color));button.setIconSize(__import__('PySide6.QtCore',fromlist=['QSize']).QSize(size,size))
++    button.setProperty('ds_icon_role',kind)
++    return button
+--- a/v46/dsac29/parallel_import.py
++++ b/v46/dsac29/parallel_import.py
+@@ -0,0 +1,234 @@
++"""Isolated, optional pair-wise STEP import for DS Compare R11.8.
++
++Open CASCADE STEP readers and XCAF documents never share a Python process.
++A native BREP compound + small metadata JSON is the IPC representation.
++Failure always returns to the established serial import, never silently drops solids.
++"""
++from __future__ import annotations
++
++import ctypes
++import json
++import os
++import shutil
++import subprocess
++import sys
++import tempfile
++import time
++from pathlib import Path
++from time import perf_counter
++
++import numpy as np
++
++from .geometry import SolidInfo
++
++
++def _free_memory_bytes():
++    """Conservative, dependency-free available RAM estimate."""
++    if sys.platform == 'win32':
++        from ctypes import wintypes
++        class MEMORYSTATUSEX(ctypes.Structure):
++            _fields_ = [('dwLength', wintypes.DWORD), ('dwMemoryLoad', wintypes.DWORD),
++                        ('ullTotalPhys', ctypes.c_ulonglong), ('ullAvailPhys', ctypes.c_ulonglong),
++                        ('ullTotalPageFile', ctypes.c_ulonglong), ('ullAvailPageFile', ctypes.c_ulonglong),
++                        ('ullTotalVirtual', ctypes.c_ulonglong), ('ullAvailVirtual', ctypes.c_ulonglong),
++                        ('ullAvailExtendedVirtual', ctypes.c_ulonglong)]
++        state = MEMORYSTATUSEX()
++        state.dwLength = ctypes.sizeof(state)
++        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(state)):
++            return int(state.ullAvailPhys)
++    elif sys.platform.startswith('linux'):
++        try:
++            for line in Path('/proc/meminfo').read_text().splitlines():
++                if line.startswith('MemAvailable:'):
++                    return int(line.split()[1]) * 1024
++        except OSError:
++            pass
++    return None
++
++
++def should_parallel(a_path, b_path):
++    mode = os.environ.get('DSCOMPARE_PARALLEL_IMPORT', 'auto').strip().lower()
++    if mode in ('off', '0', 'false', 'nie'):
++        return False, 'tryb wyłączony'
++    if mode not in ('auto', 'on', '1', 'true'):
++        mode = 'auto'
++    a, b = Path(a_path), Path(b_path)
++    sizes = a.stat().st_size, b.stat().st_size
++    if mode == 'auto':
++        # For tiny files process startup + native BREP transfer costs more than saved STEP time.
++        if max(sizes) < 8 * 1024**2:
++            return False, 'małe pliki STEP — import sekwencyjny jest zwykle szybszy'
++        ram = _free_memory_bytes()
++        if ram is None:
++            return False, 'brak wiarygodnej informacji o dostępnej pamięci RAM'
++        if ram < max(2 * 1024**3, 8 * sum(sizes)):
++            return False, 'za mało wolnej pamięci RAM na dwa importery'
++    return True, 'dwa niezależne procesy Open CASCADE'
++
++
++def write_cache(path, solids, diagnostics):
++    """Write every exact native shape in occurrence order, preserving BREP sharing."""
++    from OCP.BRep import BRep_Builder
++    from OCP.BRepTools import BRepTools
++    from OCP.TopoDS import TopoDS_Compound
++    folder = Path(path)
++    folder.mkdir(parents=True, exist_ok=True)
++    builder = BRep_Builder()
++    compound = TopoDS_Compound()
++    builder.MakeCompound(compound)
++    metadata = []
++    for item in solids:
++        builder.Add(compound, item.shape)
++        metadata.append(dict(name=item.name, path=item.path, volume=item.volume, area=item.area,
++                             center=item.center.tolist(), inertia=item.inertia.tolist(),
++                             eigenvalues=item.eigenvalues.tolist(), axes=item.axes.tolist(),
++                             bbox=list(item.bbox), source=item.source, name_origin=item.name_origin))
++    if not BRepTools.Write_s(compound, str(folder / 'shapes.brep')):
++        raise RuntimeError('Nie udało się zapisać pośredniego BREP')
++    (folder / 'shapes.json').write_text(json.dumps({'schema': 1, 'solids': metadata,
++                                                       'diagnostics': diagnostics}, ensure_ascii=False), encoding='utf-8')
++
++
++def read_cache(path):
++    from OCP.BRep import BRep_Builder
++    from OCP.BRepTools import BRepTools
++    from OCP.TopoDS import TopoDS_Shape, TopoDS_Iterator
++    from OCP.TopAbs import TopAbs_SOLID
++    folder = Path(path)
++    meta = json.loads((folder / 'shapes.json').read_text(encoding='utf-8'))
++    if meta.get('schema') != 1:
++        raise RuntimeError('Nieobsługiwana wersja bufora BREP')
++    compound = TopoDS_Shape()
++    if not BRepTools.Read_s(compound, str(folder / 'shapes.brep'), BRep_Builder()):
++        raise RuntimeError('Błąd odczytu pośredniego BREP')
++    it = TopoDS_Iterator(compound, True, True)
++    solids = []
++    for item in meta['solids']:
++        if not it.More():
++            raise RuntimeError('BRAK BRYŁ: niespójna liczba elementów bufora BREP')
++        shape = it.Value()
++        if shape.IsNull() or shape.ShapeType() != TopAbs_SOLID:
++            raise RuntimeError('Nieprawidłowa bryła w buforze BREP')
++        solids.append(SolidInfo(shape=shape, name=item['name'], path=item['path'],
++                                volume=float(item['volume']), area=float(item['area']),
++                                center=np.asarray(item['center'], dtype=float),
++                                inertia=np.asarray(item['inertia'], dtype=float),
++                                eigenvalues=np.asarray(item['eigenvalues'], dtype=float),
++                                axes=np.asarray(item['axes'], dtype=float),
++                                bbox=tuple(item['bbox']), source=item['source'],
++                                name_origin=item['name_origin']))
++        it.Next()
++    if it.More() or not solids:
++        raise RuntimeError('Niespójna liczba brył — bezpieczny powrót do importu sekwencyjnego')
++    return solids, meta['diagnostics']
++
++
++def import_worker(input_path, folder, max_solids, progress=None):
++    """Entry point for --worker import; no process-shared OCC objects."""
++    from .step_io import load_step
++    before = perf_counter()
++    diagnostics = {}
++    def sampled_progress(message):
++        # Avoid thousands of tiny progress writes for assemblies near 50,000 solids.
++        from re import search
++        match = search(r'wczytano (\d+) brył', str(message))
++        if progress and (not match or int(match.group(1)) % 100 == 0):
++            progress(message)
++    solids = load_step(input_path, progress=sampled_progress, diagnostics=diagnostics, max_solids=max_solids)
++    import_s = perf_counter() - before
++    write_cache(folder, solids, diagnostics)
++    (Path(folder) / 'import_timing.json').write_text(json.dumps({'import_s': import_s,
++                                       'count': len(solids)}), encoding='utf-8')
++
++
++def _worker_command(input_path, cache_folder, max_solids):
++    if getattr(sys, 'frozen', False):
++        return [sys.executable, '--worker', 'import', '--input', str(input_path),
++                '--output', str(cache_folder), '--max-solids', str(max_solids)]
++    # During tests and local source runs launch through the same entry script as GUI.
++    script = Path(__file__).resolve().parents[1] / 'DSCompareV3.py'
++    return [sys.executable, str(script), '--worker', 'import', '--input', str(input_path),
++            '--output', str(cache_folder), '--max-solids', str(max_solids)]
++
++
++def load_pair(a_path, b_path, output, max_solids=20000, progress=None, cancelled=None):
++    """Return (A, B, diagnostics, per-file import time, wall time).
++
++    Raises on worker or cache failures so caller can retry with the proven serial loader.
++    """
++    output = Path(output)
++    output.mkdir(parents=True, exist_ok=True)
++    # Native BRep cache can be substantially larger than the STEP input.
++    # Insufficient disk space must not corrupt the comparison folder.
++    step_bytes = Path(a_path).stat().st_size + Path(b_path).stat().st_size
++    if shutil.disk_usage(output).free < max(512 * 1024**2, 6 * step_bytes):
++        raise RuntimeError('Zbyt mało wolnego miejsca na pośrednie pliki BREP')
++    with tempfile.TemporaryDirectory(prefix='DSCompare_import_', dir=str(output)) as tmp:
++        tmp = Path(tmp)
++        running = []
++        began = perf_counter()
++        try:
++            for role, path in (('A', a_path), ('B', b_path)):
++                cache = tmp / role
++                cache.mkdir()
++                log = (cache / 'worker.log').open('w', encoding='utf-8')
++                try:
++                    proc = subprocess.Popen(_worker_command(path, cache, max_solids),
++                                            stdout=log, stderr=subprocess.STDOUT,
++                                            stdin=subprocess.DEVNULL)
++                except BaseException:
++                    log.close()
++                    raise
++                running.append((role, proc, cache, log))
++            if progress:
++                progress('Import równoległy: model A i B otwierane jednocześnie (oddzielne procesy).')
++            positions = {'A': 0, 'B': 0}
++            while any(proc.poll() is None for _, proc, _, _ in running):
++                if cancelled and callable(cancelled) and cancelled():
++                    raise InterruptedError('Import anulowany przez użytkownika')
++                for role, proc, cache, _ in running:
++                    events = cache / '_POSTEP_V37.jsonl'
++                    if events.exists() and progress:
++                        with events.open('r', encoding='utf-8', errors='replace') as event_stream:
++                            event_stream.seek(positions[role])
++                            for row in event_stream:
++                                try:
++                                    message = json.loads(row).get('tekst', '')
++                                    if message:
++                                        progress(f'Model {role}: {message}')
++                                except ValueError:
++                                    pass
++                            positions[role] = event_stream.tell()
++                if any(proc.poll() not in (None, 0) for _, proc, _, _ in running):
++                    raise RuntimeError('Jeden z procesów importu zakończył się niepowodzeniem')
++                time.sleep(0.15)
++            wall = perf_counter() - began
++            for role, proc, cache, log in running:
++                log.close()
++                if proc.returncode:
++                    message = (cache / 'worker.log').read_text(encoding='utf-8', errors='replace')[-2000:]
++                    result = cache / '_WYNIK_V37.json'
++                    if result.exists():
++                        try:
++                            payload=json.loads(result.read_text(encoding='utf-8'))
++                            message = str(payload.get('error', message))[-2000:]
++                        except (OSError, ValueError):
++                            pass
++                    raise RuntimeError(f'Importer {role} zakończył się błędem {proc.returncode}: {message}')
++            (a, da), (b, db) = (read_cache(tmp / 'A'), read_cache(tmp / 'B'))
++            ta = json.loads((tmp / 'A' / 'import_timing.json').read_text(encoding='utf-8'))['import_s']
++            tb = json.loads((tmp / 'B' / 'import_timing.json').read_text(encoding='utf-8'))['import_s']
++            total = perf_counter() - began
++            if progress:
++                progress(f'Import równoległy zakończony: A {len(a)} brył ({ta:.1f} s), B {len(b)} brył ({tb:.1f} s); wraz z odczytem BREP {total:.1f} s.')
++            return a, b, {'A': da, 'B': db}, {'A': ta, 'B': tb}, total
++        finally:
++            for _, proc, _, log in running:
++                if proc.poll() is None:
++                    proc.terminate()
++                    try:proc.wait(timeout=3)
++                    except subprocess.TimeoutExpired:
++                        proc.kill()
++                        proc.wait()
++                if not log.closed:
++                    log.close()
+--- a/v46/dsac29/report.py
++++ b/v46/dsac29/report.py
+@@ -233,9 +233,8 @@
+             if progress:progress('BŁĄD EKSPORTU STEP: '+err)
+     # Reporting begins AFTER STEP is verified. No unnecessary STEP re-import.
+     write_csv(out/'ZMIANY.csv',headers,rows)
+-    from .quick_report import write_quick_report
+-    write_quick_report(out/'RAPORT_ZMIAN.html',headers,rows,a,b,records,density,full_bom,err,context=report_context)
+-    stage.update(basic_report_ready=True,full_bom=full_bom,reports='bom_a' if full_bom else 'html',report_percent=12)
++    # Single final RAPORT.html; no misleading second/early report.
++    stage.update(basic_report_ready=False,full_bom=full_bom,reports='bom_a' if full_bom else 'html',report_percent=12)
+     bom_warnings=[]
+     def safe_groups(parts,role,start,end,known_groups=None):
+         before=len(geometry_context.bom_errors)
+@@ -254,6 +253,7 @@
+             if progress:progress(warning)
+             return [[i] for i in range(len(parts))]
+     bom_seconds=0.0
++    bom_a=[];bom_b=[]
+     if full_bom:
+         bom_start=perf_counter()
+         if progress:progress(f'Etap 2/3: grupowanie BOM A ({len(a)} brył).')
+@@ -313,6 +313,15 @@
+ <div class="panel filters"><label for="status">Rodzaj zmiany: <select id="status"><option value="ALL">Wszystkie</option><option value="SAME">Bez zmian</option><option value="RENAMED">Zmiana nazwy</option><option value="MOVED">Przesunięte</option><option value="ADDED">Nowe</option><option value="REMOVED">Usunięte</option><option value="CHANGED">Zmieniona geometria</option><option value="UNCERTAIN">Do sprawdzenia</option></select></label><input id="search" type="search" placeholder="Szukaj nazwy, ścieżki, uwag…" aria-label="Szukaj w raporcie"><span id="count" aria-live="polite"></span></div>
+ <div style="overflow:auto;max-height:75vh"><table id="table"><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>
+ <script>(function(){{ const rows=[...document.querySelectorAll('#table tbody tr')],q=document.getElementById('search'),filter=document.getElementById('status'),count=document.getElementById('count'); function update(){{let visible=0;const text=q.value.toLocaleLowerCase('pl').trim(),status=filter.value;for(const row of rows){{const ok=(status==='ALL'||row.dataset.status===status)&&row.textContent.toLocaleLowerCase('pl').includes(text);row.hidden=!ok;row.style.display=ok?'':'none';if(ok)visible++;}}count.textContent='Pozycji: '+visible+' / '+rows.length;}}q.addEventListener('input',update);filter.addEventListener('change',update);update();}})();</script></body></html>'''
++    if full_bom:
++        # Full grouped BOM is visible *inside* the only HTML report.
++        sections=[]
++        for label,items in (("A — stara rewizja",bom_a),("B — nowa rewizja",bom_b)):
++            heads=['Nazwa','Ilość','Objętość [mm³]','Masa / szt. [kg]','Masa łączna [kg]','Ścieżka']
++            ths=''.join('<th>'+html.escape(h)+'</th>' for h in heads)
++            cells=''.join('<tr>'+''.join('<td>'+html.escape(_csv_value(v) if isinstance(v,(int,float)) else str(v))+'</td>' for v in item)+'</tr>' for item in items)
++            sections.append(f'<div class="panel"><h2>BOM {html.escape(label)}</h2><p>Grup części: {len(items)} · Wystąpień: {sum(int(x[1]) for x in items)}. CSV z pełnym zestawieniem znajduje się obok raportu.</p><div style="overflow:auto"><table><thead><tr>{ths}</tr></thead><tbody>{cells}</tbody></table></div></div>')
++        htmltxt=htmltxt.replace('<div class="panel legend">',''.join(sections)+'<div class="panel legend">',1)
+     if revision_style:
+         htmltxt=htmltxt.replace(' i ROZNICE_BREP.step (kolorowy model dodanego i usuniętego materiału, jeżeli eksport się powiedzie)', ' (pełne części obu rewizji, jeżeli eksport się powiedzie)')
+     if not full_bom:htmltxt=htmltxt.replace('Tabele BOM_A.csv i BOM_B.csv obejmują ilości.','Pełny BOM wyłączony; porównanie i masa obejmują wszystkie wczytane bryły.')
+@@ -320,7 +329,11 @@
+         (out/'UWAGI_BOM.txt').write_text('\n'.join(bom_warnings),encoding='utf-8')
+         htmltxt=htmltxt.replace('<body>','<body><p role=alert>'+html.escape(' '.join(bom_warnings))+'</p>',1)
+     stage.update(reports='html',report_percent=89)
+-    (out/'RAPORT.html').write_text(htmltxt,encoding='utf-8')
++    final_report=out/'RAPORT.html'
++    draft=out/'RAPORT.html.tmp'
++    draft.write_text(htmltxt,encoding='utf-8')
++    draft.replace(final_report)
++    stage.update(basic_report_ready=True,report_percent=91)
+     if diff_step:
+         if progress:progress('Etap po B-Rep 4/4: obliczanie dodatkowego STEP różnic materiałowych...')
+         try:
+--- a/v46/dsac29/step_io.py
++++ b/v46/dsac29/step_io.py
+@@ -59,8 +59,9 @@
+     roots=TDF_LabelSequence();shape_tool.GetFreeShapes(roots)
+     alphas=[]
+     seen=[]; colored_labels=0;colored_faces=0;missing_bodies=0;missing_faces=0
++    solid_instances=0;non_solid_leaves=0
+     def detect(lab,depth=0):
+-        nonlocal colored_labels,colored_faces,missing_bodies,missing_faces
++        nonlocal colored_labels,colored_faces,missing_bodies,missing_faces,solid_instances,non_solid_leaves
+         if depth>64:raise RuntimeError('Cykliczna struktura STEP')
+         target=TDF_Label()
+         if shape_tool.IsReference_s(lab) and shape_tool.GetReferredShape_s(lab,target):
+@@ -71,6 +72,9 @@
+             return
+         shape=shape_tool.GetShape_s(lab)
+         if shape.IsNull():return
++        native_solids=sum(1 for _ in _solids(shape))
++        solid_instances+=native_solids
++        if native_solids==0:non_solid_leaves+=1
+         color=Quantity_Color()
+         has=(colors.GetColor_s(lab,XCAFDoc_ColorType.XCAFDoc_ColorSurf,color) or
+              colors.GetColor_s(lab,XCAFDoc_ColorType.XCAFDoc_ColorGen,color))
+@@ -89,7 +93,8 @@
+     for idx in range(1,roots.Length()+1):detect(roots.Value(idx))
+     # Diagnostyka zapisanych rekordów stylu STEP, a nie tylko wyglądu CADbro.
+     with p.open('rb') as inp:data=inp.read()
+-    result={'liczba_etykiet':roots.Length(),'bryly_bez_koloru':missing_bodies,'powierzchnie_bez_koloru':missing_faces,
++    result={'liczba_etykiet':roots.Length(),'bryly_wynikowe':solid_instances,
++            'elementy_bez_bryly':non_solid_leaves,'bryly_bez_koloru':missing_bodies,'powierzchnie_bez_koloru':missing_faces,
+             'pokolorowane_etykiety':colored_labels,
+             'pokolorowane_powierzchnie':colored_faces,
+             'brak_kolorow_powierzchni':not bool(colored_faces),
+@@ -265,7 +270,8 @@
+                 if sub.IsNull():raise RuntimeError('Nie można przypisać koloru powierzchni')
+                 self.colors.SetColor(sub,col,XCAFDoc_ColorType.XCAFDoc_ColorSurf)
+                 self.colors.SetColor(sub,col,XCAFDoc_ColorType.XCAFDoc_ColorGen)
+-            self._definitions.setdefault(key,[]).append((local,label,num_faces))
++            if self.reuse_definitions:
++                self._definitions.setdefault(key,[]).append((local,label,num_faces))
+             self.definitions_created+=1
+         else:
+             self.definitions_reused+=1
+@@ -307,6 +313,8 @@
+                     raise RuntimeError('Niepełny zapis kolorów powierzchni STEP')
+                 if diag['pokolorowane_etykiety']!=self.count:
+                     raise RuntimeError('Niepełny zapis elementów STEP')
++                if diag['bryly_wynikowe']!=self.count or diag['elementy_bez_bryly']:
++                    raise RuntimeError('Błąd geometrii eksportu: wynik zawiera nadmiarowe/puste komponenty albo niekompletne bryły')
+                 if diag['powierzchnie_przezroczyste']!=self.transparent_faces:
+                     raise RuntimeError('Niepełny zapis przezroczystości STEP')
+                 diag['weryfikacja']='pelna_ponowny_import'
+@@ -480,6 +488,13 @@
+     import math
+     if not math.isfinite(float(old_alpha)) or not 0.0 <= old_alpha <= 1.0:raise ValueError("Nieprawidłowa przezroczystość")
+     records=list(records)
++    # R11.9: ZW3D-safe mode avoids shared geometry definition references.
++    # Some importers reconstruct their own auxiliary products from a reused label.
++    import os
++    if os.environ.get('DSCOMPARE_SAFE_EXPORT','0')=='1':
++        result=_export_revision_step(path,records,a_parts,b_parts,colors,old_alpha,progress,reuse_definitions=False)
++        result['tryb_zapisu']='bezpieczny_bez_wspoldzielenia'
++        return result
+     try:
+         result=_export_revision_step(path,records,a_parts,b_parts,colors,old_alpha,progress)
+         result['tryb_zapisu']='wspoldzielone_definicje'
+--- a/v46/dsac29/worker_v37.py
++++ b/v46/dsac29/worker_v37.py
+@@ -4,7 +4,7 @@
+ 
+ def main(argv=None):
+     p=argparse.ArgumentParser()
+-    p.add_argument('--worker',required=True,choices=['compare','mass','mesh','detail'])
++    p.add_argument('--worker',required=True,choices=['compare','mass','mesh','detail','import'])
+     p.add_argument('--thumbnails',action='store_true')
+     p.add_argument('--revision-style',action='store_true')
+     p.add_argument('--old-alpha',type=float,default=0.4)
+@@ -18,6 +18,7 @@
+     p.add_argument('--quality',default='normalna')
+     p.add_argument('--generate-step',action='store_true')
+     p.add_argument('--no-bom',action='store_true',help='Only STEP and complete change report; omit grouped BOM')
++    p.add_argument('--safe-export',action='store_true',help='ZW3D-safe export; no shared native B-Rep definitions')
+     p.add_argument('--body-colors',action='store_true',help='Use only solid and definition STEP styling to avoid face-subshape clutter in ZW3D')
+     p.add_argument('--diff-step',action='store_true')
+     p.add_argument('--align',action='store_true')
+@@ -37,11 +38,16 @@
+         with event_file.open('a',encoding='utf-8') as file:
+             file.write(json.dumps({'tekst':str(message)},ensure_ascii=False)+'\n');file.flush()
+     try:
+-        if ns.worker=='compare':
++        if ns.worker=='import':
++            from .parallel_import import import_worker
++            import_worker(ns.input, ns.output, ns.max_solids, emit)
++            payload={'ok':True,'folder':str(folder)}
++        elif ns.worker=='compare':
+             import os
+             os.environ['DSCOMPARE_STEP_SCHEMA']=ns.schema
+             os.environ['DSCOMPARE_STEP_VERIFY']=ns.step_verify
+             os.environ['DSCOMPARE_BODY_COLORS']='1' if ns.body_colors else '0'
++            os.environ['DSCOMPARE_SAFE_EXPORT']='1' if ns.safe_export else '0'
+             from .cli import process
+             palette=json.loads(ns.palette)
+             output,recs,err=process(ns.a,ns.b,ns.output,ns.tolerance,ns.density,
+--- a/v46/dsac29/z3_support.py
++++ b/v46/dsac29/z3_support.py
+@@ -0,0 +1,21 @@
++"""Z3 is proprietary; use a current, explicitly exported companion STEP when available."""
++from pathlib import Path
++
++class NativeZW3DExportRequired(ValueError):
++    pass
++
++def resolve_model(path):
++    source=Path(path).expanduser()
++    if source.suffix.lower()!='.z3':
++        return source
++    if not source.is_file():
++        raise FileNotFoundError(source)
++    # Never rename a native archive to .step. Prefer the newest real STEP next to it.
++    exports=[source.with_suffix(ext) for ext in ('.step','.stp','.STEP','.STP')]
++    candidates=[p for p in exports if p.is_file() and p.stat().st_size>=100]
++    if candidates:
++        newest=max(candidates,key=lambda p:p.stat().st_mtime)
++        if newest.stat().st_mtime+2 >= source.stat().st_mtime:
++            return newest
++        raise NativeZW3DExportRequired(f'Znaleziony STEP ({newest.name}) jest starszy niż plik Z3. Wyeksportuj nowy STEP, aby nie porównać nieaktualnej rewizji.')
++    raise NativeZW3DExportRequired(f'{source.name}: plik Z3 wymaga eksportu do STEP w ZW3D 2019. Zapisz plik {source.stem}.step obok oryginalnego Z3; aplikacja wykryje go automatycznie.')
+--- a/v46/tests/test_r118_parallel_import.py
++++ b/v46/tests/test_r118_parallel_import.py
+@@ -0,0 +1,88 @@
++"""R11.8 — independent OCCT processes, lossless BRep IPC and safe fallback."""
++from pathlib import Path
++import json
++import numpy as np
++
++from dsac29 import parallel_import as parallel
++from dsac29.cli import process
++from dsac29.geometry import describe
++from dsac29.step_io import load_step
++
++HERE=Path(__file__).resolve().parents[1]
++A=HERE/'samples'/'RAMA_REV_03.step'
++B=HERE/'samples'/'RAMA_REV_04.step'
++
++
++def test_automatic_mode_defaults_to_serial_for_small_models(monkeypatch):
++    monkeypatch.delenv('DSCOMPARE_PARALLEL_IMPORT', raising=False)
++    assert not parallel.should_parallel(A, B)[0]
++    monkeypatch.setenv('DSCOMPARE_PARALLEL_IMPORT', 'on')
++    assert parallel.should_parallel(A, B)[0]
++    monkeypatch.setenv('DSCOMPARE_PARALLEL_IMPORT', 'off')
++    assert not parallel.should_parallel(A, B)[0]
++
++
++def test_exact_brep_transfer_preserves_names_and_placements(tmp_path):
++    original=load_step(str(A))
++    parallel.write_cache(tmp_path, original, {'solids': len(original)})
++    rebuilt, stats=parallel.read_cache(tmp_path)
++    assert stats['solids']==len(original)
++    assert len(rebuilt)==len(original)
++    for x, y in zip(original, rebuilt):
++        assert (x.name, x.path, x.source, x.name_origin)==(y.name, y.path, y.source, y.name_origin)
++        assert x.volume==y.volume and x.area==y.area
++        np.testing.assert_allclose(x.center,y.center,rtol=0,atol=0)
++        np.testing.assert_allclose(x.inertia,y.inertia,rtol=0,atol=0)
++        np.testing.assert_allclose(x.axes,y.axes,rtol=0,atol=0)
++        assert x.bbox==y.bbox
++        # Native OCC roundtrip, not just JSON metadata, preserves real geometry.
++        new=describe(y.shape,y.name,y.path)
++        assert np.isclose(new.volume,x.volume,rtol=1e-10,atol=1e-7)
++        np.testing.assert_allclose(new.center,x.center,rtol=0,atol=1e-8)
++
++
++def test_parallel_worker_two_step_models(tmp_path, monkeypatch):
++    monkeypatch.setenv('DSCOMPARE_PARALLEL_IMPORT', 'on')
++    a,b,stats,times,wall=parallel.load_pair(A,B,tmp_path,max_solids=100)
++    assert len(a)==len(load_step(str(A)))==13
++    assert len(b)==len(load_step(str(B)))==13
++    assert stats['A']['solids']==stats['B']['solids']==13
++    assert times['A']>0 and times['B']>0 and wall>0
++    assert not list(tmp_path.glob('DSCompare_import_*'))  # temporary native BREP is cleaned
++
++
++def test_compare_gives_same_classification_after_isolated_import(tmp_path, monkeypatch):
++    monkeypatch.setenv('DSCOMPARE_PARALLEL_IMPORT', 'off')
++    serial=tmp_path/'serial'
++    parallel_dir=tmp_path/'parallel'
++    process(str(A),str(B),str(serial),step=False,diff_step=False,revision_style=True,full_bom=False,progress=None)
++    monkeypatch.setenv('DSCOMPARE_PARALLEL_IMPORT', 'on')
++    process(str(A),str(B),str(parallel_dir),step=False,diff_step=False,revision_style=True,full_bom=False,progress=None)
++    for name in ('ZMIANY.csv','_ETAPY.json'):
++        assert (serial/name).read_bytes()==(parallel_dir/name).read_bytes()
++    sx=json.loads((serial/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
++    px=json.loads((parallel_dir/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
++    for name in ('statuses','solids_A','solids_B','records','mass_A_kg','mass_B_kg'):
++        assert sx[name]==px[name]
++    assert json.loads((parallel_dir/'CZASY_ANALIZY.json').read_text())['import_mode']=='rownolegly_dwa_procesy'
++
++
++def test_parallel_import_failure_retries_sequential(tmp_path, monkeypatch):
++    monkeypatch.setenv('DSCOMPARE_PARALLEL_IMPORT', 'on')
++    def fail(*args,**kwargs):
++        raise RuntimeError('symulowana awaria importera')
++    monkeypatch.setattr(parallel,'load_pair',fail)
++    out=tmp_path/'fallback'
++    process(str(A),str(B),str(out),step=False,diff_step=False,revision_style=True,full_bom=False,progress=None)
++    t=json.loads((out/'CZASY_ANALIZY.json').read_text())
++    assert t['import_mode']=='sekwencyjny_fallback'
++    assert json.loads((out/'PODSUMOWANIE.json').read_text())['solids_A']==13
++
++
++def test_identical_file_optimization_remains(tmp_path, monkeypatch):
++    monkeypatch.setenv('DSCOMPARE_PARALLEL_IMPORT', 'on')
++    out=tmp_path/'same'
++    process(str(A),str(A),str(out),step=False,diff_step=False,revision_style=True,full_bom=False,progress=None)
++    timings=json.loads((out/'CZASY_ANALIZY.json').read_text())
++    assert timings['import_mode']=='sekwencyjny'
++    assert json.loads((out/'PODSUMOWANIE.json').read_text())['statuses']['SAME']==13
+--- a/v46/tests/test_r119_safe_step_bom_z3.py
++++ b/v46/tests/test_r119_safe_step_bom_z3.py
+@@ -0,0 +1,63 @@
++"""R11.9: native ZW3D safeguards, one report, visible grouped BOM, Z3 sidecars."""
++import os,json
++from pathlib import Path
++from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
++from dsac29.z3_support import resolve_model,NativeZW3DExportRequired
++from dsac29.step_io import export_revision_step,inspect_step_colors,load_step
++from dsac29.geometry import describe
++from dsac29.compare import Record
++from dsac29.report import produce
++import pytest
++
++def test_z3_requires_existing_fresh_real_step(tmp_path):
++    z=tmp_path/'REV_A.z3'; z.write_bytes(b'not a step')
++    with pytest.raises(NativeZW3DExportRequired,match='wymaga eksportu'):resolve_model(z)
++    stp=tmp_path/'REV_A.step';stp.write_bytes(b'ISO-10303-21;'+b'x'*300)
++    os.utime(stp,(z.stat().st_mtime+10,)*2)
++    assert resolve_model(z)==stp
++    os.utime(stp,(z.stat().st_mtime-20,)*2)
++    with pytest.raises(NativeZW3DExportRequired,match='starszy'):resolve_model(z)
++
++def test_safe_step_no_reuse_and_exact_solid_count(monkeypatch,tmp_path):
++    monkeypatch.setenv('DSCOMPARE_BODY_COLORS','1')
++    monkeypatch.setenv('DSCOMPARE_SAFE_EXPORT','1')
++    monkeypatch.setenv('DSCOMPARE_STEP_VERIFY','full')
++    box=BRepPrimAPI_MakeBox(20,30,40).Shape()
++    parts=[describe(box,'part',f'part{i}') for i in range(2)]
++    rec=[Record(0,0,'SAME',''),Record(1,1,'SAME','')]
++    dest=tmp_path/'porownanie.step'
++    diag=export_revision_step(dest,rec,parts,parts,old_alpha=1.0)
++    reread=load_step(dest)
++    assert len(reread)==2
++    assert diag['bryly_wynikowe']==2
++    assert diag['definicje_unikalne']==2 and diag['ponownie_uzyte_definicje']==0
++    assert diag['tryb_zapisu']=='bezpieczny_bez_wspoldzielenia'
++    assert not any('ABSR' in p.name for p in reread)
++
++def test_one_html_report_with_both_boms(tmp_path):
++    a=[describe(BRepPrimAPI_MakeBox(12,13,14).Shape(),'A','A')]
++    b=[describe(BRepPrimAPI_MakeBox(12,13,14).Shape(),'B','B')]
++    produce(tmp_path,a,b,[Record(0,0,'SAME','')],generate_step=False,diff_step=False,full_bom=True)
++    html=(tmp_path/'RAPORT.html').read_text()
++    assert (tmp_path/'BOM_A.csv').is_file() and (tmp_path/'BOM_B.csv').is_file()
++    assert 'BOM A' in html and 'BOM B' in html
++    assert not (tmp_path/'RAPORT_ZMIAN.html').exists()
++    assert not (tmp_path/'MINIATURA_A.json').exists()
++    assert json.loads((tmp_path/'_ETAPY.json').read_text())['basic_report_ready']
++
++def test_new_ui_settings_contract():
++    pytest.importorskip('PySide6.QtWidgets')
++    from PySide6.QtWidgets import QApplication
++    from dsac29.gui46 import Window
++    app=QApplication.instance() or QApplication([])
++    w=Window();w.show();app.processEvents()
++    try:
++        assert list(w.nav)==['compare','mass','settings']
++        assert not hasattr(w,'param_button')
++        assert not hasattr(w.a,'thumbnail')
++        assert not w.generate_thumbnails
++        w.navigate('settings');app.processEvents()
++        assert w.safe_export.isVisible() and w.full_bom.isVisible()
++        assert w.cancel_compare.icon().isNull() is False
++        assert all(not b.icon().isNull() for b in w.compare_open.values())
++    finally:w.close()
