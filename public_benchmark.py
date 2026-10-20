@@ -33,7 +33,15 @@ def run(case,a,b,n,full,expected):
             indices=[r[side] for r in records if r[side] is not None]
             assert len(indices)==n and len(set(indices))==n,(side,len(indices),n)
         assert diag['pokolorowane_etykiety']==sum(expected.values())+expected.get('MOVED',0)
-        assert diag['powierzchnie_bez_koloru']==0
+        from dsac29.step_io import inspect_step_colors
+        verify_start=time.perf_counter()
+        readback=inspect_step_colors(str(folder/'POROWNANIE_KOLORY.step'))
+        row['independent_readback']=readback
+        row['independent_readback_s']=round(time.perf_counter()-verify_start,3)
+        assert readback['powierzchnie_bez_koloru']==0 and readback['bryly_bez_koloru']==0
+        assert readback['pokolorowane_etykiety']==sum(expected.values())+expected.get('MOVED',0)
+        if expected.get('REMOVED'):
+            assert .4 in readback['alfy_powierzchni'] and 1.0 in readback['alfy_powierzchni']
         assert (folder/'RAPORT_ZMIAN.html').exists() and (folder/'RAPORT.html').exists()
         assert (folder/'BOM_A.csv').exists()==full
         assert not data['bom_warnings'],data['bom_warnings']
@@ -50,7 +58,7 @@ for name,url,n,sha in cases:
         if url.endswith('.zip'):
             archive=work/'source.zip';archive.write_bytes(blob)
             with zipfile.ZipFile(archive) as z:
-                entries=[x for x in z.namelist() if x.lower().endswith(('.step','.stp'))];assert len(entries)==1
+                entries=[x for x in z.namelist() if Path(x).name=='OLSK small CNC v2_Workshop.step' and not x.startswith('__MACOSX/')];assert len(entries)==1
                 a.write_bytes(z.read(entries[0]))
         else:a.write_bytes(blob)
         assert hashlib.sha256(a.read_bytes()).hexdigest()==sha,'Source hash changed'
@@ -71,7 +79,8 @@ for name,url,n,sha in cases:
             edited.append(('CONTROLLED_NEW',box(60000,60000,60000,37.123,43.456,59.789)))
             aa=work/'controlled_A.step';bb=work/'controlled_B.step';save(aa,originals);save(bb,edited)
             (out/'CONTROLLED_EDITS.json').write_text(json.dumps({'note':'Original public geometry re-exported with stable unique labels in A and B; not an upstream revision','removed_index':removed,'moved_index':moved,'translation_mm':[10000,20000,30000],'added':'box 37.123 x 43.456 x 59.789 mm'},indent=2))
-            run(name+'_controlled_fast',aa,bb,n,False,{'SAME':n-2,'MOVED':1,'REMOVED':1,'ADDED':1})
+            for full in (False,True):
+                run(name+('_controlled_full' if full else '_controlled_fast'),aa,bb,n,full,{'SAME':n-2,'MOVED':1,'REMOVED':1,'ADDED':1})
     except Exception:
         results.append({'case':name+'_setup','status':'FAIL','error':traceback.format_exc()});write()
 assert results and all(r['status']=='PASS' for r in results), 'Public assembly tests failed; see RESULTS.json'

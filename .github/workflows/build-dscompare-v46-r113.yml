@@ -89,6 +89,17 @@ jobs:
           $out=$env:DS_COMPARE_OUT
           python (Join-Path $env:DS_COMPARE_SOURCE 'verify_package.py') $out
           if($LASTEXITCODE -ne 0){throw 'Test gotowego EXE/DLL nie przeszedl'}
+      - name: Spakuj przenosny program
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "$env:DS_COMPARE_OUT/*" -DestinationPath "$env:GITHUB_WORKSPACE/DSCompare_V4_6_R113_Windows_x64_EXE_DLL.zip" -CompressionLevel Optimal
+      - name: Udostepnij gotowy ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-V4.6-R113-Windows-x64-EXE-DLL
+          path: DSCompare_V4_6_R113_Windows_x64_EXE_DLL.zip
+          if-no-files-found: error
+          retention-days: 30
       - name: Testy duzych publicznych zlozen na gotowym EXE
         shell: pwsh
         run: |
@@ -101,15 +112,4 @@ jobs:
           name: DSCompare-R113-PUBLIC-TESTS
           path: PUBLIC_TESTS
           if-no-files-found: warn
-          retention-days: 30
-      - name: Spakuj przenosny program
-        shell: pwsh
-        run: |
-          Compress-Archive -Path "$env:DS_COMPARE_OUT/*" -DestinationPath "$env:GITHUB_WORKSPACE/DSCompare_V4_6_R113_Windows_x64_EXE_DLL.zip" -CompressionLevel Optimal
-      - name: Udostepnij gotowy ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: DSCompare-V4.6-R113-Windows-x64-EXE-DLL
-          path: DSCompare_V4_6_R113_Windows_x64_EXE_DLL.zip
-          if-no-files-found: error
           retention-days: 30
