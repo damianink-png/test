@@ -317,6 +317,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: DSCompare-R1112-Windows-x64-EXE-DLL
-          path: DSCompare_R1110_WINDOWS_x64_EXE_DLL.zip
+          path: DSCompare_R1112_WINDOWS_x64_EXE_DLL.zip
           if-no-files-found: error
           retention-days: 30
