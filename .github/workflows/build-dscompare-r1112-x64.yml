@@ -1,0 +1,324 @@
+name: DSCompare R11.12 Windows x64 - ABSR-free + UI
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'DSCompare_V4_6_R113_ZRODLA.zip'
+      - '.github/workflows/build-dscompare-r1112-x64.yml'
+      - 'patches/r1110_exact_overlay.tar.xz.b64'
+      - 'patches/r1112_geometry_ui.patch.xz.b64'
+      - 'patches/r119_exact_overlay.tar.xz.b64'
+      - 'patches/r117_r2_table_fit.xz.b64'
+      - 'patches/r117_gui_zw3d_overlay.xz.b64'
+      - 'patches/r116_gui_export_overlay.xz.b64'
+      - 'patches/r115_r3_face_identity.xz.b64'
+      - 'patches/r114_boolean_cut_fallback.xz.b64'
+      - 'public_benchmark.py'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 110
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Rozpakuj pelne zrodla R113
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $archive=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_V4_6_R113_ZRODLA.zip'
+          if(-not (Test-Path $archive)){throw 'Brak DSCompare_V4_6_R113_ZRODLA.zip w katalogu glownym repozytorium'}
+          $root=Join-Path $env:RUNNER_TEMP 'dscompare-r113-source'
+          Expand-Archive -Path $archive -DestinationPath $root -Force
+          $src=Join-Path $root 'v46'
+          if(-not (Test-Path (Join-Path $src 'DSCompareV3.py'))){throw 'Brak plikow zrodlowych v46/DSCompareV3.py'}
+          "DS_COMPARE_SOURCE=$src" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DS_COMPARE_OUT=$src/dist/DSCompare" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Zastosuj poprawke R11.4 i sprawdz integralnosc
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; s=Path('patches/r114_boolean_cut_fallback.xz.b64').read_text(encoding='ascii').strip(); raw=lzma.decompress(base64.b64decode(s)); assert hashlib.sha256(raw).hexdigest()=='1d56e0577259f958de1cb7f707ba24e0b84531dfc6b48a55d0a41f08e3f0b86e'; Path('R114.patch').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'Blad weryfikacji SHA R11.4'}
+          Set-Location (Split-Path -Parent $env:DS_COMPARE_SOURCE)
+          git apply --check (Join-Path $env:GITHUB_WORKSPACE 'R114.patch')
+          if($LASTEXITCODE -ne 0){throw 'Poprawka R11.4 nie pasuje do wersji R11.3'}
+          git apply (Join-Path $env:GITHUB_WORKSPACE 'R114.patch')
+          if($LASTEXITCODE -ne 0){throw 'Nie mozna zastosowac poprawki R11.4'}
+          Set-Location $env:GITHUB_WORKSPACE
+      - name: Wstaw zweryfikowana poprawke R11.5
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; src=Path('patches/r115_r3_face_identity.xz.b64').read_text(encoding='ascii'); b=lzma.decompress(base64.b64decode(src)); assert hashlib.sha256(b).hexdigest()=='c08b8d8221e4454191837c78ca771cb22ab632e4a756f1943bb6ea5effa94150'; Path('R115_R3_BUNDLE.zip').write_bytes(b)"
+          if($LASTEXITCODE -ne 0){throw 'Blad sumy kontrolnej R115'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R115_R3_BUNDLE.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']); t=(p/'dsac29/geometry.py').read_text(encoding='utf8'); assert 'def _precise_world_bounds' in t and 'definitely_different_surfaces' in t; assert (p/'tests/test_r115_bounds_and_recovery.py').exists();print('R115 R3 sources verified')"
+          if($LASTEXITCODE -ne 0){throw 'Zly pakiet R115'}
+      - name: Zastosuj R11.6 - eksport STEP, poprawki UI, limity i nazwy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r116_gui_export_overlay.xz.b64').read_text(encoding='ascii'))); assert hashlib.sha256(raw).hexdigest()=='2c96f807c3309eec584d773189e6787e1f1fd82c381417f2521479b80ad4a760'; Path('R116_OVERLAY.zip').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R116 checksum mismatch'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R116_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']); t=(p/'dsac29/gui46.py').read_text(encoding='utf8'); assert 'solid_limit_migrated_r116' in t;assert (p/'tests/test_r116_large_models_ui_names.py').exists(); assert (p/'README_R116.txt').exists();assert (p/'dsac29/geometry.py').exists(); print('R116 overlay verified')"
+          if($LASTEXITCODE -ne 0){throw 'Bad R116 source files'}
+      - name: Zastosuj R11.7 - kolory każdej kategorii i uproszczony STEP do ZW3D
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import lzma,base64,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r117_gui_zw3d_overlay.xz.b64').read_text('ascii'))); assert hashlib.sha256(raw).hexdigest()=='365d01a406891d8923f2604a7eab9c5b658ac9ee65d2d765b45f17ed500abb4c'; Path('R117_OVERLAY.zip').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R117 checksum mismatch'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R117_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']);t=(p/'dsac29/gui46.py').read_text(encoding='utf8');assert 'def edit_export_colors' in t and 'self.zw3d_body_colors=True' in t;assert (p/'tests/test_r117_z3d_body_color_and_ui.py').exists();print('R117 sources PASS')"
+          if($LASTEXITCODE -ne 0){throw 'R117 GUI/STEP source mismatch'}
+      - name: R11.7 R2 - tabelki bez poziomego przewijania
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib;raw=lzma.decompress(base64.b64decode(Path('patches/r117_r2_table_fit.xz.b64').read_text('ascii')));assert hashlib.sha256(raw).hexdigest()=='3f6d8b42d54b251717cc64410d4755f051e1d9dcba320564b543579b314b42e5';Path('R117_R2_OVERLAY.zip').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R117 R2 checksum mismatch'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R117_R2_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path;p=Path(os.environ['DS_COMPARE_SOURCE']);s=(p/'dsac29/gui46.py').read_text(encoding='utf8');assert 'self.compare_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)' in s;print('R117 R2 layout verified')"
+          if($LASTEXITCODE -ne 0){throw 'R117 R2 missing table fix'}
+      - name: Restore exact R11.9 source files and verify checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location $env:GITHUB_WORKSPACE
+          @'
+          import base64, hashlib, io, lzma, os, tarfile
+          from pathlib import Path
+          s = ''.join(Path('patches/r119_exact_overlay.tar.xz.b64').read_text(encoding='ascii').split())
+          raw = base64.b64decode(s)
+          expected = '4109382f362d6b9e78bc1f4485a413605daf8a119ad8fefcea529f34814a40c1'
+          assert hashlib.sha256(raw).hexdigest() == expected, 'Overlay SHA256 mismatch'
+          parent = Path(os.environ['DS_COMPARE_SOURCE']).parent
+          with tarfile.open(fileobj=io.BytesIO(lzma.decompress(raw)), mode='r:') as archive:
+              files = archive.getmembers()
+              assert all(f.isfile() and f.name.startswith('v46/') and '..' not in Path(f.name).parts for f in files), 'Invalid tar entry'
+              archive.extractall(parent)
+          expected_sha = {
+              'dsac29/gui46.py':'a8398d30a56843963df8320bdd3ca5c6932aabb2e5f7ebee31dbc65f4ad3dcff',
+              'dsac29/parallel_import.py':'3f9cbb3b17a72b9635a0c83f8ef2e583322ffd802dcdf401605d2d506d49e2ac',
+              'dsac29/step_io.py':'f08fd8727bea37067da1322a672251326a0f071d2061c13237b20777d49dd0f2',
+              'dsac29/icons_r119.py':'ece4ab850978fd32da4ef661a323f90e778b97048d65abc1815b67d4696edd1f',
+          }
+          src = Path(os.environ['DS_COMPARE_SOURCE'])
+          for key, digest in expected_sha.items():
+              actual=hashlib.sha256((src/key).read_bytes()).hexdigest()
+              assert actual==digest, f'SHA mismatch: {key}'
+          print('DS Compare R11.9 exact overlay verified and installed')
+          '@ | Set-Content R119_restore.py -Encoding UTF8
+          python R119_restore.py
+          if($LASTEXITCODE -ne 0){throw 'Restore of exact R11.9 sources failed'}
+      - name: Fix missing standard streams in frozen windowless EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          from pathlib import Path
+          import os
+          p = Path(os.environ['DS_COMPARE_SOURCE'])/'DSCompareV3.py'
+          s = p.read_text(encoding='utf-8')
+          assert s.startswith('"""DS Compare V4.6 entry.')
+          original = 'import sys\n'
+          replacement = 'import sys\nif getattr(sys, "frozen", False):\n    import os\n    if sys.stdout is None: sys.stdout=open(os.devnull,"w",encoding="utf-8")\n    if sys.stderr is None: sys.stderr=open(os.devnull,"w",encoding="utf-8")\n'
+          assert original in s
+          p.write_text(s.replace(original,replacement,1),encoding='utf-8')
+          print('Win32 no-console stream compatibility enabled')
+          '@ | Set-Content -Path R119_stdio_fix.py -Encoding UTF8
+          python R119_stdio_fix.py
+          if($LASTEXITCODE -ne 0){throw 'Cannot patch windowless startup'}
+      - name: Restore exact R11.10 module replacements
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import os,base64,hashlib,io,lzma,tarfile
+          from pathlib import Path
+          path=Path(os.environ['GITHUB_WORKSPACE'])/'patches/r1110_exact_overlay.tar.xz.b64'
+          payload=base64.b64decode(''.join(path.read_text(encoding='ascii').split()))
+          assert hashlib.sha256(payload).hexdigest()=='a18a44197d1baccbf6be08976eac4663f550f93f97765b72bc4413c0b0df9eda','R1110 archive checksum'
+          parent=Path(os.environ['DS_COMPARE_SOURCE']).parent
+          with tarfile.open(fileobj=io.BytesIO(lzma.decompress(payload)),mode='r:') as tar:
+              entries=tar.getmembers()
+              assert len(entries)==8 and all(e.isfile() and e.name.startswith('v46/') and '..' not in Path(e.name).parts for e in entries)
+              tar.extractall(parent)
+          known={'dsac29/gui46.py':'49b233338a2ea984a01f19d3fd939e1acf7b7e41821087df5294be0e54b3f794','dsac29/report.py':'3250651f5a2949ad04a601ef8504572a551d64edca97c2b26a7ee519ab992979'}
+          src=Path(os.environ['DS_COMPARE_SOURCE'])
+          for name,digest in known.items():
+              assert hashlib.sha256((src/name).read_bytes()).hexdigest()==digest,name
+          assert (src/'tests/test_r120_bom_speed_and_report_layout.py').is_file()
+          print('R11.10 full module overlay PASS')
+          '@ | Set-Content R1110_restore.py -Encoding UTF8
+          python R1110_restore.py
+          if($LASTEXITCODE -ne 0){throw 'Restore of DSCompare R11.10 modules failed'}
+      - name: Apply R11.12 ABSR-free export, compact layout, BOM report fix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=Split-Path -Parent $env:DS_COMPARE_SOURCE
+          Set-Location $src
+          @'
+          import hashlib,base64,lzma,os
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE'])
+          f=root/'patches/r1112_geometry_ui.patch.xz.b64'
+          data=lzma.decompress(base64.b64decode(''.join(f.read_text(encoding='ascii').split())))
+          assert hashlib.sha256(data).hexdigest()=='83026c4c1a7858c4a7de1718235e6a739acb5ec95da9f26d4a5be95bb5f877af', 'Invalid R1112 patch SHA256'
+          (root/'R1112.patch').write_bytes(data)
+          print('Patch verified',len(data))
+          '@ | Set-Content (Join-Path $env:GITHUB_WORKSPACE 'R1112_PATCH_CHECK.py') -Encoding UTF8
+          python (Join-Path $env:GITHUB_WORKSPACE 'R1112_PATCH_CHECK.py')
+          if($LASTEXITCODE -ne 0){throw 'R1112 patch invalid'}
+          $patch=Join-Path $env:GITHUB_WORKSPACE 'R1112.patch'
+          git apply --check $patch
+          if($LASTEXITCODE -ne 0){throw 'R1112 changes not compatible with R1110 source'}
+          git apply $patch
+          if($LASTEXITCODE -ne 0){throw 'R1112 patch application failed'}
+          python -c "from pathlib import Path;import hashlib,os;p=Path(os.environ['DS_COMPARE_SOURCE']);expected={'dsac29/gui46.py':'095876b43b3abbbd3513629580aaf53b75edae9cb516a962ef0ca454f3c9cb4f','dsac29/step_io.py':'7922525fcfc965f86dad502641259c78538bd3d0c10d06546689083fd0189003','dsac29/report.py':'10c466778b27959ecb6b6cf3f7d80b252cbfa0c6dbf63908286bab612081959e','dsac29/worker_v37.py':'81cf1c0b9ae2c88539dc16602808c40abccf1960e51642d9014d249de4eae0b7','dsac29/gui45.py':'6a7a60864042ad1042c5eaffcadd22c34ad77b3fe9c62e894628edc7338bcb6e'};[(lambda f,h: (_ for _ in ()).throw(ValueError(str(f))) if hashlib.sha256(f.read_bytes()).hexdigest()!=h else None)(p/k,v) for k,v in expected.items()];print('R1112 sources verified')"
+          if($LASTEXITCODE -ne 0){throw 'R1112 file verification failed'}
+          Set-Location $env:GITHUB_WORKSPACE
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r (Join-Path $env:DS_COMPARE_SOURCE 'requirements.txt') 'PySide6>=6.8,<6.10' 'vtk>=9.6,<9.7' 'cadquery-ocp==7.9.3.1.1' 'cadquery-ocp-proxy==7.9.3.1.1' 'pytest>=8,<10' 'pyinstaller>=6.11,<7'
+          if($LASTEXITCODE -ne 0){throw 'Package installation failed'}
+          python -m pip check
+          if($LASTEXITCODE -ne 0){throw 'Dependency conflict'}
+      - name: Test R11.9 source, geometry and GUI
+        shell: pwsh
+        run: |
+          Set-Location $env:DS_COMPARE_SOURCE
+          python -c "from pathlib import Path;p=Path('tests/test_v46_ui_speed.py');s=p.read_text(encoding='utf8');s=s.replace('assert not errors,errors','print(\"WORKER_GUI_ERRORS:\",repr(errors),flush=True);assert not errors,errors');p.write_text(s,encoding='utf8')"
+          python -m pytest -s -q tests
+          if($LASTEXITCODE -ne 0){throw 'R119 regression tests failed: see WORKER_GUI_ERRORS above'}
+          python -c "from PySide6 import QtWidgets;import dsac29.gui46,dsac29.parallel_import,dsac29.icons_r119;print('R119 GUI imports PASS')"
+          if($LASTEXITCODE -ne 0){throw 'R119 Python import failed'}
+      - name: Compile DSCompare.exe for Windows x64
+        shell: pwsh
+        run: |
+          Set-Location $env:DS_COMPARE_SOURCE
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" DSCompareV3.py
+          if($LASTEXITCODE -ne 0){throw 'PyInstaller Windows build failed'}
+          if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSCompare.exe'))){throw 'Missing DSCompare.exe'}
+      - name: Compile ZW3D bridge DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $where=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs=& $where -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if(-not $vs){throw 'Missing MSVC'}
+          $env:DS_COMPARE_VCVARS=Join-Path $vs 'VC/Auxiliary/Build/vcvars64.bat'
+          & cmd.exe /d /c (Join-Path $env:DS_COMPARE_SOURCE 'bridge/build_bridge_wrapper.cmd')
+          if($LASTEXITCODE -ne 0){throw 'ZW3D bridge DLL build failed'}
+          if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSAssemblyCompare2019.dll'))){throw 'Missing ZW3D bridge DLL'}
+      - name: Smoke-test compiled EXE, BOM and STEP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=$env:DS_COMPARE_OUT
+          $src=$env:DS_COMPARE_SOURCE
+          $exe=Join-Path $out 'DSCompare.exe'
+          $env:DSCOMPARE_PARALLEL_IMPORT='on'
+          $result=Join-Path $env:RUNNER_TEMP 'R119_SMOKE_RESULTS'
+          $p=Start-Process -FilePath $exe -ArgumentList @('--worker','compare','--a',(Join-Path $src 'samples/RAMA_REV_03.step'),'--b',(Join-Path $src 'samples/RAMA_REV_04.step'),'--output',$result,'--generate-step','--revision-style','--safe-export','--body-colors','--step-verify','full') -Wait -PassThru
+          $fullCode=$p.ExitCode
+          Write-Host "R119 FULL MODE EXIT=$fullCode"
+          if(Test-Path $result){Get-ChildItem $result | Select-Object Name,Length | Out-String | Write-Host}
+          $errfile=Join-Path $result '_WYNIK_V37.json'
+          if(Test-Path $errfile){Get-Content $errfile -Encoding UTF8 -Raw | Write-Host}
+          $events=Join-Path $result '_POSTEP_V37.jsonl'
+          if(Test-Path $events){Get-Content $events -Encoding UTF8 -Tail 20 | Write-Host}
+          $fastResult=Join-Path $env:RUNNER_TEMP 'R119_FAST_MODE'
+          $p=Start-Process -FilePath $exe -ArgumentList @('--worker','compare','--a',(Join-Path $src 'samples/RAMA_REV_03.step'),'--b',(Join-Path $src 'samples/RAMA_REV_04.step'),'--output',$fastResult,'--generate-step','--revision-style','--safe-export','--body-colors','--step-verify','fast') -Wait -PassThru
+          $fastCode=$p.ExitCode
+          Write-Host "R119 FAST MODE EXIT=$fastCode"
+          if(Test-Path $fastResult){Get-ChildItem $fastResult | Select-Object Name,Length | Out-String | Write-Host}
+          $errfile=Join-Path $fastResult '_WYNIK_V37.json'
+          if(Test-Path $errfile){Get-Content $errfile -Encoding UTF8 -Raw | Write-Host}
+          if($fullCode -ne 0 -or $fastCode -ne 0){throw "Frozen EXE full=$fullCode fast=$fastCode failed"}
+          foreach($name in @('POROWNANIE_KOLORY.step','BOM_A.csv','BOM_B.csv','RAPORT.html','ZMIANY.csv','PODSUMOWANIE.json')){
+            if(-not (Test-Path (Join-Path $result $name))){throw "Missing R119 result $name"}
+          }
+          if(Test-Path (Join-Path $result 'RAPORT_ZMIAN.html')){throw 'Obsolete second report generated'}
+          $summary=Get-Content (Join-Path $result 'PODSUMOWANIE.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+          if($summary.solids_A -ne 13 -or $summary.solids_B -ne 13){throw 'Unexpected solids count in R119 EXE'}
+          Remove-Item Env:DSCOMPARE_PARALLEL_IMPORT
+          $p=Start-Process -FilePath $exe -ArgumentList @('--smoke-test-ui',(Join-Path $env:RUNNER_TEMP 'R119_UI_SMOKE')) -Wait -PassThru
+          if($p.ExitCode -ne 0){throw "R119 GUI smoke failed exit=$($p.ExitCode)"}
+      - name: Verify fast BOM and HTML-only report
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path $env:DS_COMPARE_OUT 'DSCompare.exe'
+          $src=$env:DS_COMPARE_SOURCE
+          $result=Join-Path $env:RUNNER_TEMP 'R1110_FAST_BOM_RESULTS'
+          $p=Start-Process -FilePath $exe -ArgumentList @('--worker','compare','--a',(Join-Path $src 'samples/MODEL_A.step'),'--b',(Join-Path $src 'samples/MODEL_B.step'),'--output',$result,'--fast-bom','--no-bom-csv','--revision-style') -Wait -PassThru
+          if($p.ExitCode -ne 0){throw "R1110 fast BOM EXE exited $($p.ExitCode)"}
+          if(-not (Test-Path (Join-Path $result 'RAPORT.html'))){throw 'R1110 missing HTML report'}
+          if(Test-Path (Join-Path $result 'BOM_A.csv')){throw 'R1110 unexpectedly created BOM A CSV'}
+          if(Test-Path (Join-Path $result 'BOM_B.csv')){throw 'R1110 unexpectedly created BOM B CSV'}
+          $html=Get-Content (Join-Path $result 'RAPORT.html') -Raw -Encoding UTF8
+          if($html -notmatch '<details class="panel bom-panel">'){throw 'R1110 missing collapsible BOM'}
+          $data=Get-Content (Join-Path $result 'PODSUMOWANIE.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+          if($data.bom_mode -ne 'szybki' -or $data.bom_csv){throw 'R1110 fast BOM flags ignored'}
+          Write-Host 'R11.10 HTML-only fast BOM smoke PASS'
+      - name: Check default Windows worker has no ABSR containers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'R1112_NO_ABSR'
+          $exe=Join-Path $env:DS_COMPARE_OUT 'DSCompare.exe'
+          $src=$env:DS_COMPARE_SOURCE
+          $p=Start-Process -FilePath $exe -ArgumentList @('--worker','compare','--a',(Join-Path $src 'samples/RAMA_REV_03.step'),'--b',(Join-Path $src 'samples/RAMA_REV_04.step'),'--output',$root,'--generate-step','--revision-style','--no-bom','--step-verify','fast') -Wait -PassThru
+          if($p.ExitCode -ne 0){throw "R1112 EXE comparison failed: $($p.ExitCode)"}
+          @'
+          import re,os,json
+          from pathlib import Path
+          p=Path(os.environ['RUNNER_TEMP'])/'R1112_NO_ABSR'
+          raw=(p/'POROWNANIE_KOLORY.step').read_bytes()
+          d=json.loads((p/'PODSUMOWANIE.json').read_text(encoding='utf8'))
+          expected=sum(2 if x['status'] in ('CHANGED','MOVED','UNCERTAIN') else 1 for x in d['records'])
+          products=len(re.findall(rb'(?m)^#\d+\s*=\s*PRODUCT\(',raw))
+          assert products==expected,(products,expected)
+          assert b'NEXT_ASSEMBLY_USAGE_OCCURRENCE' not in raw
+          assert not re.search(rb'(?m)^#\d+\s*=\s*SHAPE_REPRESENTATION\(',raw)
+          assert b'ABSR1' not in raw
+          assert 'plaski STEP' in (p/'RAPORT.html').read_text(encoding='utf8')
+          print('R1112 safe STEP verified, products:',products)
+          '@ | Set-Content (Join-Path $env:GITHUB_WORKSPACE 'R1112_STEP_CHECK.py') -Encoding UTF8
+          python (Join-Path $env:GITHUB_WORKSPACE 'R1112_STEP_CHECK.py')
+          if($LASTEXITCODE -ne 0){throw 'R1112 unsafe STEP export or report mismatch'}
+      - name: Package portable Windows program
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=$env:DS_COMPARE_OUT
+          foreach($name in @('README_R119.txt','README_R120.txt','README_R1111.txt','UTWORZ_SKROT_START.cmd','UTWORZ_SKROT_START.ps1')){
+            Copy-Item (Join-Path $env:DS_COMPARE_SOURCE $name) (Join-Path $out $name) -Force
+          }
+          foreach($name in @('DSCompare.exe','DSAssemblyCompare2019.dll')){
+            $sha=(Get-FileHash (Join-Path $out $name) -Algorithm SHA256).Hash
+            "$name $sha" | Add-Content (Join-Path $out 'SHA256.txt')
+          }
+          'R1112_COMPILED_WINDOWS_x64__ZW3D2019_ABSR_IMPORT_NOT_VERIFIED' | Set-Content (Join-Path $out 'STATUS.txt')
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1112_WINDOWS_x64_EXE_DLL.zip'
+          Compress-Archive -Path "$out/*" -DestinationPath $dest -CompressionLevel Optimal
+          if(-not (Test-Path $dest)){throw 'Missing ZIP'}
+      - name: Upload compiled DSCompare R11.12 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R1112-Windows-x64-EXE-DLL
+          path: DSCompare_R1110_WINDOWS_x64_EXE_DLL.zip
+          if-no-files-found: error
+          retention-days: 30
