@@ -3,7 +3,7 @@ Compare only independent, first-time analyses and exact BOM/classification, no w
 """
 import os,sys,json,time,traceback,subprocess
 from pathlib import Path
-from benchmarks.r1113_large_benchmark import large_pair,public_pair,PUBLIC
+from r1113_large_benchmark import large_pair,public_pair,PUBLIC
 repo=Path(sys.argv[1]).resolve()
 new=Path(sys.argv[2]).resolve()
 old=Path(sys.argv[3]).resolve()
