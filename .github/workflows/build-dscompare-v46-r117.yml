@@ -70,7 +70,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          python -c "from pathlib import Path;import lzma,base64,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r117_gui_zw3d_overlay.xz.b64').read_text('ascii'))); assert hashlib.sha256(raw).hexdigest()=='f8c1c2ded6d5f8b1e3e1428655289b0577553e8430c94ba720886c9c4a2b3c7c'; Path('R117_OVERLAY.zip').write_bytes(raw)"
+          python -c "from pathlib import Path;import lzma,base64,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r117_gui_zw3d_overlay.xz.b64').read_text('ascii'))); assert hashlib.sha256(raw).hexdigest()=='365d01a406891d8923f2604a7eab9c5b658ac9ee65d2d765b45f17ed500abb4c'; Path('R117_OVERLAY.zip').write_bytes(raw)"
           if($LASTEXITCODE -ne 0){throw 'R117 checksum mismatch'}
           Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R117_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
           python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']);t=(p/'dsac29/gui46.py').read_text(encoding='utf8');assert 'def edit_export_colors' in t and 'self.zw3d_body_colors=True' in t;assert (p/'tests/test_r117_z3d_body_color_and_ui.py').exists();print('R117 sources PASS')"
