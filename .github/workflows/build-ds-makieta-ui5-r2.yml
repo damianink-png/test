@@ -1,0 +1,68 @@
+name: DS Makieta UI5 R2 - nose face hotfix x64
+on:
+  push:
+    branches:
+      - fix/ds-makieta-ui5-r2-nose-trim
+    paths:
+      - .github/workflows/build-ds-makieta-ui5-r2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract V36 UI5 R1 source archive
+        shell: pwsh
+        run: |
+          Expand-Archive -LiteralPath 'DS_Makieta_V36_UI5_R1_KOMPILACJA_JEDNYM_BAT.zip' -DestinationPath 'makieta_src' -Force
+          if (!(Test-Path 'makieta_src/DS_Makieta_UI5/source/DSMakieta2019.cpp')) { throw 'Missing source' }
+      - name: Apply R2 bounded-face nose trim correction
+        shell: pwsh
+        run: |
+          $path = 'makieta_src/DS_Makieta_UI5/source/DSMakieta2019.cpp'
+          $s = [IO.File]::ReadAllText((Resolve-Path $path))
+          $a = '  svxBndBox bounds={};if(!readBounds(ids[j],bounds)||boxDistance(endpoint,bounds)>m.width*2)continue;'
+          $b = '  // NOS_GORA uses the infinite end plane of PAS_GORA: lateral rail spacing must not reject it.' + "`n" + '  if(!noseTopStart){svxBndBox bounds={};if(!readBounds(ids[j],bounds)||boxDistance(endpoint,bounds)>m.width*2)continue;}'
+          $c = '   svxBndBox fb={};if(!p_cvxPartInqFaceBox||p_cvxPartInqFaceBox(faces[k],&fb))continue;' + "`n" + '   double score=boxDistance(endpoint,fb);'
+          $d = '   // The nose is centered between rails; score its plane distance, not lateral face distance.' + "`n" + '   svxBndBox fb={};if(!noseTopStart&&(!p_cvxPartInqFaceBox||p_cvxPartInqFaceBox(faces[k],&fb)))continue;' + "`n" + '   double score=noseTopStart?fabs(dot(vsub(endpoint,q),nv)):boxDistance(endpoint,fb);'
+          $s = $s.Replace("`r`n", "`n")
+          if (!$s.Contains($a) -or !$s.Contains($c)) { throw 'Source differs from expected UI5 R1 - patch not applied' }
+          $s = $s.Replace($a,$b).Replace($c,$d)
+          [IO.File]::WriteAllText((Resolve-Path $path),$s,[Text.Encoding]::UTF8)
+          if (!$s.Contains('double score=noseTopStart?fabs(dot(vsub(endpoint,q),nv)):boxDistance(endpoint,fb);')) { throw 'Patch verification failed' }
+      - name: Offline source and UI tests
+        shell: pwsh
+        working-directory: makieta_src/DS_Makieta_UI5
+        run: |
+          python tests/source_and_ui_check.py
+          if ($LASTEXITCODE -ne 0) { throw 'Source test failed' }
+          python tests/build_contract_check.py
+          if ($LASTEXITCODE -ne 0) { throw 'Build contract failed' }
+      - name: Compile Windows x64 DLL
+        shell: pwsh
+        working-directory: makieta_src/DS_Makieta_UI5
+        run: |
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File '.\KOMPILUJ_MAKIETE.ps1'
+          if ($LASTEXITCODE -ne 0) { throw "Compilation failed: $LASTEXITCODE" }
+      - name: Confirm output
+        shell: pwsh
+        run: |
+          $dir = 'makieta_src/DS_Makieta_UI5/output'
+          if (!(Test-Path "$dir/DSMakieta2019.dll") -or !(Test-Path "$dir/DSAssembly2019.dll") -or (Get-Content "$dir/STATUS_KOMPILACJI.txt" -Raw).Trim() -ne 'BUILD_OK') { throw 'Build verification failed' }
+          Write-Host "DLL SHA256: $((Get-FileHash "$dir/DSMakieta2019.dll" -Algorithm SHA256).Hash)"
+      - name: Upload compiled R2 DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: DS-Makieta-V36-UI5-R2-NOS-GORA-x64-DLL
+          path: |
+            makieta_src/DS_Makieta_UI5/output/DSMakieta2019.dll
+            makieta_src/DS_Makieta_UI5/output/DSAssembly2019.dll
+            makieta_src/DS_Makieta_UI5/output/DS_Makieta_UI5_DLL_GOTOWE.zip
+            makieta_src/DS_Makieta_UI5/output/STATUS_KOMPILACJI.txt
+            makieta_src/DS_Makieta_UI5/output/KOMPILACJA_MAKIETA.log
+          if-no-files-found: error
