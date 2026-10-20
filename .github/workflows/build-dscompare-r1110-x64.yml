@@ -5,7 +5,7 @@ on:
     paths:
       - 'DSCompare_V4_6_R113_ZRODLA.zip'
       - '.github/workflows/build-dscompare-r1110-x64.yml'
-      - 'patches/r1110_bom_ui.patch'
+      - 'patches/r1110_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
       - 'patches/r117_gui_zw3d_overlay.xz.b64'
@@ -136,20 +136,30 @@ jobs:
           '@ | Set-Content -Path R119_stdio_fix.py -Encoding UTF8
           python R119_stdio_fix.py
           if($LASTEXITCODE -ne 0){throw 'Cannot patch windowless startup'}
-      - name: Apply R11.10 BOM and UI improvements
+      - name: Restore exact R11.10 module replacements
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $src=Split-Path -Parent $env:DS_COMPARE_SOURCE
-          Set-Location $src
-          $patch=Join-Path $env:GITHUB_WORKSPACE 'patches/r1110_bom_ui.patch'
-          git apply --check $patch
-          if($LASTEXITCODE -ne 0){throw 'R11.10 patch failed source compatibility check'}
-          git apply $patch
-          if($LASTEXITCODE -ne 0){throw 'R11.10 source patch failed'}
-          python -c "from pathlib import Path; import os; p=Path(os.environ['DS_COMPARE_SOURCE']); s=(p/'dsac29/report.py').read_text(encoding='utf8'); assert 'fast_proven_only=False' in s and '<details class=' in s; assert (p/'tests/test_r120_bom_speed_and_report_layout.py').exists(); print('R11.10 source verified')"
-          if($LASTEXITCODE -ne 0){throw 'R11.10 patch integrity error'}
-          Set-Location $env:GITHUB_WORKSPACE
+          @'
+          import os,base64,hashlib,io,lzma,tarfile
+          from pathlib import Path
+          path=Path(os.environ['GITHUB_WORKSPACE'])/'patches/r1110_exact_overlay.tar.xz.b64'
+          payload=base64.b64decode(''.join(path.read_text(encoding='ascii').split()))
+          assert hashlib.sha256(payload).hexdigest()=='a18a44197d1baccbf6be08976eac4663f550f93f97765b72bc4413c0b0df9eda','R1110 archive checksum'
+          parent=Path(os.environ['DS_COMPARE_SOURCE']).parent
+          with tarfile.open(fileobj=io.BytesIO(lzma.decompress(payload)),mode='r:') as tar:
+              entries=tar.getmembers()
+              assert len(entries)==8 and all(e.isfile() and e.name.startswith('v46/') and '..' not in Path(e.name).parts for e in entries)
+              tar.extractall(parent)
+          known={'dsac29/gui46.py':'49b233338a2ea984a01f19d3fd939e1acf7b7e41821087df5294be0e54b3f794','dsac29/report.py':'3250651f5a2949ad04a601ef8504572a551d64edca97c2b26a7ee519ab992979'}
+          src=Path(os.environ['DS_COMPARE_SOURCE'])
+          for name,digest in known.items():
+              assert hashlib.sha256((src/name).read_bytes()).hexdigest()==digest,name
+          assert (src/'tests/test_r120_bom_speed_and_report_layout.py').is_file()
+          print('R11.10 full module overlay PASS')
+          '@ | Set-Content R1110_restore.py -Encoding UTF8
+          python R1110_restore.py
+          if($LASTEXITCODE -ne 0){throw 'Restore of DSCompare R11.10 modules failed'}
       - name: Install Python dependencies
         shell: pwsh
         run: |
