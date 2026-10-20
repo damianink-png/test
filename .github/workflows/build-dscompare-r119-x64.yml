@@ -138,7 +138,7 @@ jobs:
         shell: pwsh
         run: |
           Set-Location $env:DS_COMPARE_SOURCE
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" DSCompareV3.py
+          python -m PyInstaller --noconfirm --clean --onedir --console --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" DSCompareV3.py
           if($LASTEXITCODE -ne 0){throw 'PyInstaller Windows build failed'}
           if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSCompare.exe'))){throw 'Missing DSCompare.exe'}
       - name: Compile ZW3D bridge DLL
@@ -162,13 +162,21 @@ jobs:
           $env:DSCOMPARE_PARALLEL_IMPORT='on'
           $result=Join-Path $env:RUNNER_TEMP 'R119_SMOKE_RESULTS'
           & $exe --worker compare --a (Join-Path $src 'samples/RAMA_REV_03.step') --b (Join-Path $src 'samples/RAMA_REV_04.step') --output $result --generate-step --revision-style --safe-export --body-colors --step-verify full
-          if($LASTEXITCODE -ne 0){
-            $errfile=Join-Path $result '_WYNIK_V37.json'
-            if(Test-Path $errfile){Get-Content $errfile -Encoding UTF8 -Raw | Write-Host}
-            $events=Join-Path $result '_POSTEP_V37.jsonl'
-            if(Test-Path $events){Get-Content $events -Encoding UTF8 -Tail 20 | Write-Host}
-            throw 'Frozen EXE comparison failed: see worker JSON details above'
-          }
+          $fullCode=$LASTEXITCODE
+          Write-Host "R119 FULL MODE EXIT=$fullCode"
+          if(Test-Path $result){Get-ChildItem $result | Select-Object Name,Length | Out-String | Write-Host}
+          $errfile=Join-Path $result '_WYNIK_V37.json'
+          if(Test-Path $errfile){Get-Content $errfile -Encoding UTF8 -Raw | Write-Host}
+          $events=Join-Path $result '_POSTEP_V37.jsonl'
+          if(Test-Path $events){Get-Content $events -Encoding UTF8 -Tail 20 | Write-Host}
+          $fastResult=Join-Path $env:RUNNER_TEMP 'R119_FAST_MODE'
+          & $exe --worker compare --a (Join-Path $src 'samples/RAMA_REV_03.step') --b (Join-Path $src 'samples/RAMA_REV_04.step') --output $fastResult --generate-step --revision-style --safe-export --body-colors --step-verify fast
+          $fastCode=$LASTEXITCODE
+          Write-Host "R119 FAST MODE EXIT=$fastCode"
+          if(Test-Path $fastResult){Get-ChildItem $fastResult | Select-Object Name,Length | Out-String | Write-Host}
+          $errfile=Join-Path $fastResult '_WYNIK_V37.json'
+          if(Test-Path $errfile){Get-Content $errfile -Encoding UTF8 -Raw | Write-Host}
+          if($fullCode -ne 0 -or $fastCode -ne 0){throw "Frozen EXE full=$fullCode fast=$fastCode failed"}
           foreach($name in @('POROWNANIE_KOLORY.step','BOM_A.csv','BOM_B.csv','RAPORT.html','ZMIANY.csv','PODSUMOWANIE.json')){
             if(-not (Test-Path (Join-Path $result $name))){throw "Missing R119 result $name"}
           }
