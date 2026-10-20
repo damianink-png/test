@@ -179,8 +179,8 @@ jobs:
           $exe=Join-Path $out 'DSCompare.exe'
           $env:DSCOMPARE_PARALLEL_IMPORT='on'
           $result=Join-Path $env:RUNNER_TEMP 'R119_SMOKE_RESULTS'
-          & $exe --worker compare --a (Join-Path $src 'samples/RAMA_REV_03.step') --b (Join-Path $src 'samples/RAMA_REV_04.step') --output $result --generate-step --revision-style --safe-export --body-colors --step-verify full
-          $fullCode=$LASTEXITCODE
+          $p=Start-Process -FilePath $exe -ArgumentList @('--worker','compare','--a',(Join-Path $src 'samples/RAMA_REV_03.step'),'--b',(Join-Path $src 'samples/RAMA_REV_04.step'),'--output',$result,'--generate-step','--revision-style','--safe-export','--body-colors','--step-verify','full') -Wait -PassThru
+          $fullCode=$p.ExitCode
           Write-Host "R119 FULL MODE EXIT=$fullCode"
           if(Test-Path $result){Get-ChildItem $result | Select-Object Name,Length | Out-String | Write-Host}
           $errfile=Join-Path $result '_WYNIK_V37.json'
@@ -188,8 +188,8 @@ jobs:
           $events=Join-Path $result '_POSTEP_V37.jsonl'
           if(Test-Path $events){Get-Content $events -Encoding UTF8 -Tail 20 | Write-Host}
           $fastResult=Join-Path $env:RUNNER_TEMP 'R119_FAST_MODE'
-          & $exe --worker compare --a (Join-Path $src 'samples/RAMA_REV_03.step') --b (Join-Path $src 'samples/RAMA_REV_04.step') --output $fastResult --generate-step --revision-style --safe-export --body-colors --step-verify fast
-          $fastCode=$LASTEXITCODE
+          $p=Start-Process -FilePath $exe -ArgumentList @('--worker','compare','--a',(Join-Path $src 'samples/RAMA_REV_03.step'),'--b',(Join-Path $src 'samples/RAMA_REV_04.step'),'--output',$fastResult,'--generate-step','--revision-style','--safe-export','--body-colors','--step-verify','fast') -Wait -PassThru
+          $fastCode=$p.ExitCode
           Write-Host "R119 FAST MODE EXIT=$fastCode"
           if(Test-Path $fastResult){Get-ChildItem $fastResult | Select-Object Name,Length | Out-String | Write-Host}
           $errfile=Join-Path $fastResult '_WYNIK_V37.json'
@@ -202,8 +202,8 @@ jobs:
           $summary=Get-Content (Join-Path $result 'PODSUMOWANIE.json') -Raw -Encoding UTF8 | ConvertFrom-Json
           if($summary.solids_A -ne 13 -or $summary.solids_B -ne 13){throw 'Unexpected solids count in R119 EXE'}
           Remove-Item Env:DSCOMPARE_PARALLEL_IMPORT
-          & $exe --smoke-test-ui (Join-Path $env:RUNNER_TEMP 'R119_UI_SMOKE')
-          if($LASTEXITCODE -ne 0){throw 'R119 GUI smoke failed'}
+          $p=Start-Process -FilePath $exe -ArgumentList @('--smoke-test-ui',(Join-Path $env:RUNNER_TEMP 'R119_UI_SMOKE')) -Wait -PassThru
+          if($p.ExitCode -ne 0){throw "R119 GUI smoke failed exit=$($p.ExitCode)"}
       - name: Package portable Windows program
         shell: pwsh
         run: |
