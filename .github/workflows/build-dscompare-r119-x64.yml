@@ -1,0 +1,178 @@
+name: DSCompare R11.9 Windows x64 (compiled ZIP)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'DSCompare_V4_6_R113_ZRODLA.zip'
+      - '.github/workflows/build-dscompare-r119-x64.yml'
+      - 'patches/r119_exact_update.patch'
+      - 'patches/r117_r2_table_fit.xz.b64'
+      - 'patches/r117_gui_zw3d_overlay.xz.b64'
+      - 'patches/r116_gui_export_overlay.xz.b64'
+      - 'patches/r115_r3_face_identity.xz.b64'
+      - 'patches/r114_boolean_cut_fallback.xz.b64'
+      - 'public_benchmark.py'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 110
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Rozpakuj pelne zrodla R113
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $archive=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_V4_6_R113_ZRODLA.zip'
+          if(-not (Test-Path $archive)){throw 'Brak DSCompare_V4_6_R113_ZRODLA.zip w katalogu glownym repozytorium'}
+          $root=Join-Path $env:RUNNER_TEMP 'dscompare-r113-source'
+          Expand-Archive -Path $archive -DestinationPath $root -Force
+          $src=Join-Path $root 'v46'
+          if(-not (Test-Path (Join-Path $src 'DSCompareV3.py'))){throw 'Brak plikow zrodlowych v46/DSCompareV3.py'}
+          "DS_COMPARE_SOURCE=$src" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DS_COMPARE_OUT=$src/dist/DSCompare" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Zastosuj poprawke R11.4 i sprawdz integralnosc
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; s=Path('patches/r114_boolean_cut_fallback.xz.b64').read_text(encoding='ascii').strip(); raw=lzma.decompress(base64.b64decode(s)); assert hashlib.sha256(raw).hexdigest()=='1d56e0577259f958de1cb7f707ba24e0b84531dfc6b48a55d0a41f08e3f0b86e'; Path('R114.patch').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'Blad weryfikacji SHA R11.4'}
+          Set-Location (Split-Path -Parent $env:DS_COMPARE_SOURCE)
+          git apply --check (Join-Path $env:GITHUB_WORKSPACE 'R114.patch')
+          if($LASTEXITCODE -ne 0){throw 'Poprawka R11.4 nie pasuje do wersji R11.3'}
+          git apply (Join-Path $env:GITHUB_WORKSPACE 'R114.patch')
+          if($LASTEXITCODE -ne 0){throw 'Nie mozna zastosowac poprawki R11.4'}
+          Set-Location $env:GITHUB_WORKSPACE
+      - name: Wstaw zweryfikowana poprawke R11.5
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; src=Path('patches/r115_r3_face_identity.xz.b64').read_text(encoding='ascii'); b=lzma.decompress(base64.b64decode(src)); assert hashlib.sha256(b).hexdigest()=='c08b8d8221e4454191837c78ca771cb22ab632e4a756f1943bb6ea5effa94150'; Path('R115_R3_BUNDLE.zip').write_bytes(b)"
+          if($LASTEXITCODE -ne 0){throw 'Blad sumy kontrolnej R115'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R115_R3_BUNDLE.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']); t=(p/'dsac29/geometry.py').read_text(encoding='utf8'); assert 'def _precise_world_bounds' in t and 'definitely_different_surfaces' in t; assert (p/'tests/test_r115_bounds_and_recovery.py').exists();print('R115 R3 sources verified')"
+          if($LASTEXITCODE -ne 0){throw 'Zly pakiet R115'}
+      - name: Zastosuj R11.6 - eksport STEP, poprawki UI, limity i nazwy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r116_gui_export_overlay.xz.b64').read_text(encoding='ascii'))); assert hashlib.sha256(raw).hexdigest()=='2c96f807c3309eec584d773189e6787e1f1fd82c381417f2521479b80ad4a760'; Path('R116_OVERLAY.zip').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R116 checksum mismatch'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R116_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']); t=(p/'dsac29/gui46.py').read_text(encoding='utf8'); assert 'solid_limit_migrated_r116' in t;assert (p/'tests/test_r116_large_models_ui_names.py').exists(); assert (p/'README_R116.txt').exists();assert (p/'dsac29/geometry.py').exists(); print('R116 overlay verified')"
+          if($LASTEXITCODE -ne 0){throw 'Bad R116 source files'}
+      - name: Zastosuj R11.7 - kolory każdej kategorii i uproszczony STEP do ZW3D
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import lzma,base64,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r117_gui_zw3d_overlay.xz.b64').read_text('ascii'))); assert hashlib.sha256(raw).hexdigest()=='365d01a406891d8923f2604a7eab9c5b658ac9ee65d2d765b45f17ed500abb4c'; Path('R117_OVERLAY.zip').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R117 checksum mismatch'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R117_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']);t=(p/'dsac29/gui46.py').read_text(encoding='utf8');assert 'def edit_export_colors' in t and 'self.zw3d_body_colors=True' in t;assert (p/'tests/test_r117_z3d_body_color_and_ui.py').exists();print('R117 sources PASS')"
+          if($LASTEXITCODE -ne 0){throw 'R117 GUI/STEP source mismatch'}
+      - name: R11.7 R2 - tabelki bez poziomego przewijania
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib;raw=lzma.decompress(base64.b64decode(Path('patches/r117_r2_table_fit.xz.b64').read_text('ascii')));assert hashlib.sha256(raw).hexdigest()=='3f6d8b42d54b251717cc64410d4755f051e1d9dcba320564b543579b314b42e5';Path('R117_R2_OVERLAY.zip').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R117 R2 checksum mismatch'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R117_R2_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path;p=Path(os.environ['DS_COMPARE_SOURCE']);s=(p/'dsac29/gui46.py').read_text(encoding='utf8');assert 'self.compare_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)' in s;print('R117 R2 layout verified')"
+          if($LASTEXITCODE -ne 0){throw 'R117 R2 missing table fix'}
+      - name: Apply R11.9 changes and verify sources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location (Split-Path -Parent $env:DS_COMPARE_SOURCE)
+          $patch=Join-Path $env:GITHUB_WORKSPACE 'patches/r119_exact_update.patch'
+          git apply --check $patch
+          if($LASTEXITCODE -ne 0){throw 'R119 patch differs from R117 R2 source'}
+          git apply $patch
+          if($LASTEXITCODE -ne 0){throw 'R119 patch application failed'}
+          python -c "from pathlib import Path;import os,hashlib;root=Path(os.environ['DS_COMPARE_SOURCE']);files={'dsac29/gui46.py':'a8398d30a56843963df8320bdd3ca5c6932aabb2e5f7ebee31dbc65f4ad3dcff','dsac29/parallel_import.py':'3f9cbb3b17a72b9635a0c83f8ef2e583322ffd802dcdf401605d2d506d49e2ac','dsac29/step_io.py':'f08fd8727bea37067da1322a672251326a0f071d2061c13237b20777d49dd0f2'};[(lambda f,h: (_ for _ in ()).throw(ValueError(str(f))) if hashlib.sha256(f.read_bytes()).hexdigest()!=h else None)(root/k,v) for k,v in files.items()];print('DSCompare R119 source checksum PASS')"
+          if($LASTEXITCODE -ne 0){throw 'Invalid R119 source checksum'}
+          Set-Location $env:GITHUB_WORKSPACE
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r (Join-Path $env:DS_COMPARE_SOURCE 'requirements.txt') 'PySide6>=6.8,<6.10' 'vtk>=9.6,<9.7' 'cadquery-ocp==7.9.3.1.1' 'cadquery-ocp-proxy==7.9.3.1.1' 'pytest>=8,<10' 'pyinstaller>=6.11,<7'
+          if($LASTEXITCODE -ne 0){throw 'Package installation failed'}
+          python -m pip check
+          if($LASTEXITCODE -ne 0){throw 'Dependency conflict'}
+      - name: Test R11.9 source, geometry and GUI
+        shell: pwsh
+        run: |
+          Set-Location $env:DS_COMPARE_SOURCE
+          python -m pytest -q tests
+          if($LASTEXITCODE -ne 0){throw 'R119 regression tests failed'}
+          python -c "from PySide6 import QtWidgets;import dsac29.gui46,dsac29.parallel_import,dsac29.icons_r119;print('R119 GUI imports PASS')"
+          if($LASTEXITCODE -ne 0){throw 'R119 Python import failed'}
+      - name: Compile DSCompare.exe for Windows x64
+        shell: pwsh
+        run: |
+          Set-Location $env:DS_COMPARE_SOURCE
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" DSCompareV3.py
+          if($LASTEXITCODE -ne 0){throw 'PyInstaller Windows build failed'}
+          if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSCompare.exe'))){throw 'Missing DSCompare.exe'}
+      - name: Compile ZW3D bridge DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $where=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs=& $where -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if(-not $vs){throw 'Missing MSVC'}
+          $env:DS_COMPARE_VCVARS=Join-Path $vs 'VC/Auxiliary/Build/vcvars64.bat'
+          & cmd.exe /d /c (Join-Path $env:DS_COMPARE_SOURCE 'bridge/build_bridge_wrapper.cmd')
+          if($LASTEXITCODE -ne 0){throw 'ZW3D bridge DLL build failed'}
+          if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSAssemblyCompare2019.dll'))){throw 'Missing ZW3D bridge DLL'}
+      - name: Smoke-test compiled EXE, BOM and STEP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=$env:DS_COMPARE_OUT
+          $src=$env:DS_COMPARE_SOURCE
+          $exe=Join-Path $out 'DSCompare.exe'
+          $env:DSCOMPARE_PARALLEL_IMPORT='on'
+          $result=Join-Path $env:RUNNER_TEMP 'R119_SMOKE_RESULTS'
+          & $exe --worker compare --a (Join-Path $src 'samples/RAMA_REV_03.step') --b (Join-Path $src 'samples/RAMA_REV_04.step') --output $result --generate-step --revision-style --safe-export --body-colors --step-verify full
+          if($LASTEXITCODE -ne 0){throw 'Frozen EXE comparison failed'}
+          foreach($name in @('POROWNANIE_KOLORY.step','BOM_A.csv','BOM_B.csv','RAPORT.html','ZMIANY.csv','PODSUMOWANIE.json')){
+            if(-not (Test-Path (Join-Path $result $name))){throw "Missing R119 result $name"}
+          }
+          if(Test-Path (Join-Path $result 'RAPORT_ZMIAN.html')){throw 'Obsolete second report generated'}
+          $summary=Get-Content (Join-Path $result 'PODSUMOWANIE.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+          if($summary.solids_A -ne 13 -or $summary.solids_B -ne 13){throw 'Unexpected solids count in R119 EXE'}
+          Remove-Item Env:DSCOMPARE_PARALLEL_IMPORT
+          & $exe --smoke-test-ui (Join-Path $env:RUNNER_TEMP 'R119_UI_SMOKE')
+          if($LASTEXITCODE -ne 0){throw 'R119 GUI smoke failed'}
+      - name: Package portable Windows program
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=$env:DS_COMPARE_OUT
+          foreach($name in @('README_R119.txt','UTWORZ_SKROT_START.cmd','UTWORZ_SKROT_START.ps1')){
+            Copy-Item (Join-Path $env:DS_COMPARE_SOURCE $name) (Join-Path $out $name) -Force
+          }
+          foreach($name in @('DSCompare.exe','DSAssemblyCompare2019.dll')){
+            $sha=(Get-FileHash (Join-Path $out $name) -Algorithm SHA256).Hash
+            "$name $sha" | Add-Content (Join-Path $out 'SHA256.txt')
+          }
+          'R119_COMPILED_WINDOWS_x64__Z3_NATIVE_RUNTIME_NOT_VERIFIED' | Set-Content (Join-Path $out 'STATUS.txt')
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R119_WINDOWS_x64_EXE_DLL.zip'
+          Compress-Archive -Path "$out/*" -DestinationPath $dest -CompressionLevel Optimal
+          if(-not (Test-Path $dest)){throw 'Missing ZIP'}
+      - name: Upload compiled DSCompare R11.9 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R119-Windows-x64-EXE-DLL
+          path: DSCompare_R119_WINDOWS_x64_EXE_DLL.zip
+          if-no-files-found: error
+          retention-days: 30
