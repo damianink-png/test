@@ -129,8 +129,9 @@ jobs:
         shell: pwsh
         run: |
           Set-Location $env:DS_COMPARE_SOURCE
-          python -m pytest -q tests
-          if($LASTEXITCODE -ne 0){throw 'R119 regression tests failed'}
+          python -c "from pathlib import Path;p=Path('tests/test_v46_ui_speed.py');s=p.read_text(encoding='utf8');s=s.replace('assert not errors,errors','print(\"WORKER_GUI_ERRORS:\",repr(errors),flush=True);assert not errors,errors');p.write_text(s,encoding='utf8')"
+          python -m pytest -s -q tests
+          if($LASTEXITCODE -ne 0){throw 'R119 regression tests failed: see WORKER_GUI_ERRORS above'}
           python -c "from PySide6 import QtWidgets;import dsac29.gui46,dsac29.parallel_import,dsac29.icons_r119;print('R119 GUI imports PASS')"
           if($LASTEXITCODE -ne 0){throw 'R119 Python import failed'}
       - name: Compile DSCompare.exe for Windows x64
