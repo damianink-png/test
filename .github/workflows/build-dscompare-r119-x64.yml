@@ -117,6 +117,24 @@ jobs:
           '@ | Set-Content R119_restore.py -Encoding UTF8
           python R119_restore.py
           if($LASTEXITCODE -ne 0){throw 'Restore of exact R11.9 sources failed'}
+      - name: Fix missing standard streams in frozen windowless EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          from pathlib import Path
+          import os
+          p = Path(os.environ['DS_COMPARE_SOURCE'])/'DSCompareV3.py'
+          s = p.read_text(encoding='utf-8')
+          assert s.startswith('"""DS Compare V4.6 entry.')
+          original = 'import sys\n'
+          replacement = 'import sys\nif getattr(sys, "frozen", False):\n    import os\n    if sys.stdout is None: sys.stdout=open(os.devnull,"w",encoding="utf-8")\n    if sys.stderr is None: sys.stderr=open(os.devnull,"w",encoding="utf-8")\n'
+          assert original in s
+          p.write_text(s.replace(original,replacement,1),encoding='utf-8')
+          print('Win32 no-console stream compatibility enabled')
+          '@ | Set-Content -Path R119_stdio_fix.py -Encoding UTF8
+          python R119_stdio_fix.py
+          if($LASTEXITCODE -ne 0){throw 'Cannot patch windowless startup'}
       - name: Install Python dependencies
         shell: pwsh
         run: |
@@ -138,7 +156,7 @@ jobs:
         shell: pwsh
         run: |
           Set-Location $env:DS_COMPARE_SOURCE
-          python -m PyInstaller --noconfirm --clean --onedir --console --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" DSCompareV3.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" DSCompareV3.py
           if($LASTEXITCODE -ne 0){throw 'PyInstaller Windows build failed'}
           if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSCompare.exe'))){throw 'Missing DSCompare.exe'}
       - name: Compile ZW3D bridge DLL
