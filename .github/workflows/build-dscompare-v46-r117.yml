@@ -64,7 +64,7 @@ jobs:
           python -c "from pathlib import Path;import base64,lzma,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r116_gui_export_overlay.xz.b64').read_text(encoding='ascii'))); assert hashlib.sha256(raw).hexdigest()=='2c96f807c3309eec584d773189e6787e1f1fd82c381417f2521479b80ad4a760'; Path('R116_OVERLAY.zip').write_bytes(raw)"
           if($LASTEXITCODE -ne 0){throw 'R116 checksum mismatch'}
           Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R116_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
-          python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']); t=(p/'dsac29/gui46.py').read_text(encoding='utf8'); assert 'solid_limit_migrated_r116' in t;assert (p/'tests/test_r116_large_models_ui_names.py').exists(); assert (p/'README_R117.txt').exists();assert (p/'dsac29/geometry.py').exists(); print('R116 overlay verified')"
+          python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']); t=(p/'dsac29/gui46.py').read_text(encoding='utf8'); assert 'solid_limit_migrated_r116' in t;assert (p/'tests/test_r116_large_models_ui_names.py').exists(); assert (p/'README_R116.txt').exists();assert (p/'dsac29/geometry.py').exists(); print('R116 overlay verified')"
           if($LASTEXITCODE -ne 0){throw 'Bad R116 source files'}
       - name: Zastosuj R11.7 - kolory każdej kategorii i uproszczony STEP do ZW3D
         shell: pwsh
