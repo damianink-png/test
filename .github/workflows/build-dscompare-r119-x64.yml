@@ -5,7 +5,7 @@ on:
     paths:
       - 'DSCompare_V4_6_R113_ZRODLA.zip'
       - '.github/workflows/build-dscompare-r119-x64.yml'
-      - 'patches/r119_exact_update.patch'
+      - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
       - 'patches/r117_gui_zw3d_overlay.xz.b64'
       - 'patches/r116_gui_export_overlay.xz.b64'
@@ -86,19 +86,37 @@ jobs:
           Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R117_R2_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
           python -c "import os;from pathlib import Path;p=Path(os.environ['DS_COMPARE_SOURCE']);s=(p/'dsac29/gui46.py').read_text(encoding='utf8');assert 'self.compare_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)' in s;print('R117 R2 layout verified')"
           if($LASTEXITCODE -ne 0){throw 'R117 R2 missing table fix'}
-      - name: Apply R11.9 changes and verify sources
+      - name: Restore exact R11.9 source files and verify checksum
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          Set-Location (Split-Path -Parent $env:DS_COMPARE_SOURCE)
-          $patch=Join-Path $env:GITHUB_WORKSPACE 'patches/r119_exact_update.patch'
-          git apply --check $patch
-          if($LASTEXITCODE -ne 0){throw 'R119 patch differs from R117 R2 source'}
-          git apply $patch
-          if($LASTEXITCODE -ne 0){throw 'R119 patch application failed'}
-          python -c "from pathlib import Path;import os,hashlib;root=Path(os.environ['DS_COMPARE_SOURCE']);files={'dsac29/gui46.py':'a8398d30a56843963df8320bdd3ca5c6932aabb2e5f7ebee31dbc65f4ad3dcff','dsac29/parallel_import.py':'3f9cbb3b17a72b9635a0c83f8ef2e583322ffd802dcdf401605d2d506d49e2ac','dsac29/step_io.py':'f08fd8727bea37067da1322a672251326a0f071d2061c13237b20777d49dd0f2'};[(lambda f,h: (_ for _ in ()).throw(ValueError(str(f))) if hashlib.sha256(f.read_bytes()).hexdigest()!=h else None)(root/k,v) for k,v in files.items()];print('DSCompare R119 source checksum PASS')"
-          if($LASTEXITCODE -ne 0){throw 'Invalid R119 source checksum'}
           Set-Location $env:GITHUB_WORKSPACE
+          @'
+          import base64, hashlib, io, lzma, os, tarfile
+          from pathlib import Path
+          s = ''.join(Path('patches/r119_exact_overlay.tar.xz.b64').read_text(encoding='ascii').split())
+          raw = base64.b64decode(s)
+          expected = '4109382f362d6b9e78bc1f4485a413605daf8a119ad8fefcea529f34814a40c1'
+          assert hashlib.sha256(raw).hexdigest() == expected, 'Overlay SHA256 mismatch'
+          parent = Path(os.environ['DS_COMPARE_SOURCE']).parent
+          with tarfile.open(fileobj=io.BytesIO(lzma.decompress(raw)), mode='r:') as archive:
+              files = archive.getmembers()
+              assert all(f.isfile() and f.name.startswith('v46/') and '..' not in Path(f.name).parts for f in files), 'Invalid tar entry'
+              archive.extractall(parent)
+          expected_sha = {
+              'dsac29/gui46.py':'a8398d30a56843963df8320bdd3ca5c6932aabb2e5f7ebee31dbc65f4ad3dcff',
+              'dsac29/parallel_import.py':'3f9cbb3b17a72b9635a0c83f8ef2e583322ffd802dcdf401605d2d506d49e2ac',
+              'dsac29/step_io.py':'f08fd8727bea37067da1322a672251326a0f071d2061c13237b20777d49dd0f2',
+              'dsac29/icons_r119.py':'ece4ab850978fd32da4ef661a323f90e778b97048d65abc1815b67d4696edd1f',
+          }
+          src = Path(os.environ['DS_COMPARE_SOURCE'])
+          for key, digest in expected_sha.items():
+              actual=hashlib.sha256((src/key).read_bytes()).hexdigest()
+              assert actual==digest, f'SHA mismatch: {key}'
+          print('DS Compare R11.9 exact overlay verified and installed')
+          '@ | Set-Content R119_restore.py -Encoding UTF8
+          python R119_restore.py
+          if($LASTEXITCODE -ne 0){throw 'Restore of exact R11.9 sources failed'}
       - name: Install Python dependencies
         shell: pwsh
         run: |
