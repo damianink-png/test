@@ -14,7 +14,7 @@ with zipfile.ZipFile(io.BytesIO(data)) as z:
     Path("OLSK_faces.step").write_bytes(z.read(name))
 parts=load_step("OLSK_faces.step",max_solids=5000)
 print("IMPORT",len(parts),flush=True)
-for i,j in [(102,104),(100,106),(240,242),(26,90),(102,110)]:
+for i,j in [(102,104),(100,106),(240,242),(102,110)]:
     a,b=parts[i],parts[j]
     print("PAIR",i,j,a.name,b.name,flush=True)
     keyset=set()
