@@ -10,6 +10,7 @@ on:
       - 'benchmarks/r1113_large_benchmark.py'
       - 'benchmarks/r1114_import_cache_benchmark.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
+      - 'benchmarks/r1115_cold_process_probe.py'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
       - 'patches/r117_gui_zw3d_overlay.xz.b64'
@@ -288,42 +289,10 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Package installation failed'}
           python -m pip check
           if($LASTEXITCODE -ne 0){throw 'Dependency conflict'}
-      - name: Profile parallel native property computations without changing geometry
+      - name: Benchmark exact properties with independent native BREP workers
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
-          @'
-          import os,time,urllib.request,hashlib
-          from pathlib import Path
-          from concurrent.futures import ThreadPoolExecutor
-          from dsac29.step_io import load_step
-          from dsac29.geometry import describe
-          url='https://raw.githubusercontent.com/TheRobotStudio/SO-ARM100/a758567c3978dfeefe282ede0500085a48fe8f78/STEP/SO101/SO101%20Assembly.step'
-          dest=Path(os.environ['RUNNER_TEMP'])/'SO101_cold_thread_probe.step'
-          data=urllib.request.urlopen(url,timeout=120).read()
-          assert hashlib.sha256(data).hexdigest()=='f754be35708382b05ce65768ae33c612f91dca11ad19d14807dc637eb944ba3d'
-          dest.write_bytes(data);os.environ['DSCOMPARE_IMPORT_CACHE']='off'
-          start=time.perf_counter()
-          solids=load_step(str(dest),max_solids=5000)
-          print('INITIAL IMPORT S',round(time.perf_counter()-start,3),'solids',len(solids),flush=True)
-          # Compute exact properties on the same independent shapes.
-          def job(p):
-              z=describe(p.shape,p.name,p.path,p.source)
-              return (z.volume,z.area,tuple(z.center),z.bbox)
-          base=[]
-          for workers in (1,4,8):
-              start=time.perf_counter()
-              if workers==1: values=[job(p) for p in solids]
-              else:
-                  with ThreadPoolExecutor(max_workers=workers) as pool: values=list(pool.map(job,solids))
-              t=time.perf_counter()-start
-              if workers==1:base=values
-              else:
-                  assert len(values)==len(base)
-                  for a,b in zip(base,values):
-                      assert all(abs(x-y)<=max(1e-9,abs(x)*1e-11) for x,y in zip((a[0],a[1]),(b[0],b[1]))),('Mismatch',a,b)
-              print('EXACT PROPERTIES',workers,'THREADS:',round(t,3),'s; verified',len(values),flush=True)
-          '@ | Set-Content (Join-Path $env:GITHUB_WORKSPACE 'R1115_threads_probe.py') -Encoding UTF8
-          python (Join-Path $env:GITHUB_WORKSPACE 'R1115_threads_probe.py')
-          if($LASTEXITCODE -ne 0){throw 'Threaded property measurement failed'}
+          python benchmarks/r1115_cold_process_probe.py
+          if($LASTEXITCODE -ne 0){throw 'R11.15 multi-process probe failed'}
