@@ -299,22 +299,22 @@ jobs:
           old="  cache_setting=str(self.store.value('import_cache','true')).lower()=='true'"
           assert old in s,'cache option layout has changed'
           new="""  # The user usually compares each STEP only once: do not hash/save a multi-GB cache by default.
-  # One-time settings migration turns legacy R11.14 auto-on into cold-first OFF.
-  if str(self.store.value('cold_first_default_r1115','false')).lower()!='true':
-   self.store.setValue('import_cache',False)
-   self.store.setValue('cold_first_default_r1115',True)
-  cache_setting=str(self.store.value('import_cache','false')).lower()=='true'"""
+            # One-time settings migration turns legacy R11.14 auto-on into cold-first OFF.
+            if str(self.store.value('cold_first_default_r1115','false')).lower()!='true':
+             self.store.setValue('import_cache',False)
+             self.store.setValue('cold_first_default_r1115',True)
+            cache_setting=str(self.store.value('import_cache','false')).lower()=='true'"""
           s=s.replace(old,new,1)
           p.write_text(s,encoding='utf8')
           p=root/'dsac29/step_io.py';s=p.read_text(encoding='utf8')
           old="reader=STEPCAFControl_Reader();reader.SetNameMode(True);reader.SetColorMode(False)"
           assert old in s
           new="""reader=STEPCAFControl_Reader();reader.SetNameMode(True);reader.SetColorMode(False)
-    # Native source materials, layers, PMI and properties do not influence
-    # DS Compare's exact solids, names, custom density, color-coded output or BOM.
-    for mode_name in ('SetLayerMode','SetMatMode','SetPropsMode','SetGDTMode'):
-        setter=getattr(reader,mode_name,None)
-        if setter is not None:setter(False)"""
+              # Native source materials, layers, PMI and properties do not influence
+              # DS Compare's exact solids, names, custom density, color-coded output or BOM.
+              for mode_name in ('SetLayerMode','SetMatMode','SetPropsMode','SetGDTMode'):
+                  setter=getattr(reader,mode_name,None)
+                  if setter is not None:setter(False)"""
           s=s.replace(old,new,1)
           p.write_text(s,encoding='utf8')
           assert s.count('reader.SetNameMode(True);reader.SetColorMode(False)')==1
