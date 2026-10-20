@@ -1,0 +1,59 @@
+name: DS Compare R11.5 - five unresolved surface deviations
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/diagnostic-r115-r2-metrics.yml'
+      - 'patches/r115_r2_surface_witness.xz.b64'
+permissions:
+  contents: read
+jobs:
+  olsk:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Reconstruct R11.4 source
+        shell: pwsh
+        run: |
+          Expand-Archive -LiteralPath DSCompare_V4_6_R113_ZRODLA.zip -DestinationPath "$env:RUNNER_TEMP/occt_bom" -Force
+          python -c "from pathlib import Path;import base64,lzma,hashlib; data=lzma.decompress(base64.b64decode(Path('patches/r114_boolean_cut_fallback.xz.b64').read_text('ascii'))); assert hashlib.sha256(data).hexdigest()=='1d56e0577259f958de1cb7f707ba24e0b84531dfc6b48a55d0a41f08e3f0b86e';Path('R114_BOM.patch').write_bytes(data)"
+          if($LASTEXITCODE -ne 0){throw 'Cannot decode'}
+          Set-Location "$env:RUNNER_TEMP/occt_bom"
+          git apply --check "$env:GITHUB_WORKSPACE/R114_BOM.patch"
+          if($LASTEXITCODE -ne 0){throw 'Cannot validate source patch'}
+          git apply "$env:GITHUB_WORKSPACE/R114_BOM.patch"
+          if($LASTEXITCODE -ne 0){throw 'Cannot patch source'}
+          Set-Location $env:GITHUB_WORKSPACE
+      - name: Apply R11.5 sources after R11.4 baseline
+        shell: pwsh
+        run: |
+          python -c "from pathlib import Path;import lzma,base64,hashlib; b=lzma.decompress(base64.b64decode(Path('patches/r115_r2_surface_witness.xz.b64').read_text('ascii')));assert hashlib.sha256(b).hexdigest()=='ad8e754f676b8f9477d0216781dfa6f854b504675507162539717a1e6399c641';Path('R115_R2_BUNDLE.zip').write_bytes(b)"
+          if($LASTEXITCODE -ne 0){throw 'R115 checksum invalid'}
+          Expand-Archive -LiteralPath R115_R2_BUNDLE.zip -DestinationPath "$env:RUNNER_TEMP/occt_bom" -Force
+          python -c "import os;from pathlib import Path; p=Path(os.environ['RUNNER_TEMP'])/'occt_bom/v46/dsac29/geometry.py';assert 'definitely_different_surfaces' in p.read_text(encoding='utf8');print('R115 geometry verified')"
+          if($LASTEXITCODE -ne 0){throw 'R115 missing'}
+      - name: Install pinned newer geometry engine
+        shell: pwsh
+        run: |
+          python -m pip install -r "$env:RUNNER_TEMP/occt_bom/v46/requirements.txt" 'cadquery-ocp==7.9.3.1.1' 'vtk>=9.6,<9.7'
+          if($LASTEXITCODE -ne 0){throw 'Dependency install failed'}
+      - name: Verify public OLSK full BOM without errors
+        shell: pwsh
+        timeout-minutes: 12
+        run: |
+          python -u diagnostics/r115_five_surface_metrics.py "$env:RUNNER_TEMP/occt_bom/v46" 2>&1 | Tee-Object R115_FIVE_METRICS.txt
+          if($LASTEXITCODE -ne 0){throw 'Surface diagnostic failed'}
+      - name: Keep BOM accuracy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R115-R2-Five-Contacts
+          path: R115_FIVE_METRICS.txt
+          retention-days: 30
