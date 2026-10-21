@@ -1,4 +1,4 @@
-name: DS Compare R11.22 - stable Windows + batch mass + subassemblies
+name: DS Compare R11.23 - responsive Qt UI and single Windows EXE
 on:
   workflow_dispatch:
   push:
@@ -22,6 +22,10 @@ on:
       - 'scripts/r1122_mass_groups_patch.py'
       - 'scripts/r1122_single_mass_batch.py'
       - 'scripts/r1122_smoke.py'
+      - 'scripts/r1123_mass_drop.py'
+      - 'scripts/r1123_mass_ui_patch.py'
+      - 'scripts/r1123_settings_patch.py'
+      - 'scripts/r1123_ui_smoke.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -453,6 +457,17 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R11.22 mass/group source patch failed'}
           python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui45.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/worker_v37.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/mass_batch.py')
           if($LASTEXITCODE -ne 0){throw 'R11.22 Python syntax failed'}
+      - name: Install R11.23 - unified drop zone, centered settings and readable table
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Copy-Item -LiteralPath "$env:GITHUB_WORKSPACE/scripts/r1123_mass_drop.py" -Destination "$env:DS_COMPARE_SOURCE/dsac29/mass_drop.py" -Force
+          python scripts/r1123_mass_ui_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.23 drag-drop/UI patch failed'}
+          python scripts/r1123_settings_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.23 settings patch failed'}
+          python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/mass_drop.py')
+          if($LASTEXITCODE -ne 0){throw 'R11.23 Python source invalid'}
       - name: Install Python dependencies
         shell: pwsh
         run: |
@@ -507,6 +522,15 @@ jobs:
           $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
           python scripts/r1122_smoke.py
           if($LASTEXITCODE -ne 0){throw 'R11.22 mass/group/UI smoke failed'}
+      - name: R11.23 - test drag/drop, centered forms and expanded mass table
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
+          python scripts/r1123_ui_smoke.py
+          if($LASTEXITCODE -ne 0){throw 'R11.23 UI regression failed'}
       - name: Verify actual assembly tree, all solids and no orphan ABSR STEP products
         shell: pwsh
         env:
@@ -516,64 +540,54 @@ jobs:
           $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
           python scripts/r1119_structural_smoke.py
           if($LASTEXITCODE -ne 0){throw 'R11.19 STEP structural verification failed'}
-      - name: Compile stable Windows folder application without _MEI cleanup
+      - name: Compile portable SINGLE DSCompare.exe for Windows x64
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           Set-Location $env:DS_COMPARE_SOURCE
           $dist=Join-Path $env:DS_COMPARE_SOURCE 'dist'
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --hidden-import dsac29.import_cache --hidden-import dsac29.gui_modern --hidden-import dsac29.zw3d_launcher --add-data "build_info.json;." --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" --distpath "$dist" DSCompareV3.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --hidden-import dsac29.import_cache --hidden-import dsac29.gui_modern --hidden-import dsac29.zw3d_launcher --hidden-import dsac29.mass_batch --hidden-import dsac29.mass_drop --add-data "build_info.json;." --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" --distpath "$dist" DSCompareV3.py
           if($LASTEXITCODE -ne 0){throw 'PyInstaller --onefile failed'}
-          $exe=Join-Path $dist 'DSCompare/DSCompare.exe'
-          if(-not (Test-Path $exe)){throw 'Missing single DSCompare.exe'}
-          if(-not (Test-Path (Join-Path $dist 'DSCompare/_internal'))){throw 'Missing onedir _internal dependencies'}
-          "DSCOMPARE_ONEDIR_EXE=$exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "Stable ONEDIR binary OK: $((Get-Item $exe).Length) bytes"
-      - name: Check Windows application startup without _MEI temporary folder
+          $exe=Join-Path $dist 'DSCompare.exe'
+          if(-not (Test-Path $exe)){throw 'Missing standalone DSCompare.exe'}
+          $files=@(Get-ChildItem $dist -File)
+          if($files.Count -ne 1 -or $files[0].Name -ne 'DSCompare.exe'){throw 'Dist must contain one executable only'}
+          "DSCOMPARE_ONEFILE_EXE=$exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Portable standalone EXE: $((Get-Item $exe).Length) bytes"
+      - name: Smoke startup of actual single-file EXE
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           $ErrorActionPreference='Stop'
-          $exe=$env:DSCOMPARE_ONEDIR_EXE
+          $exe=$env:DSCOMPARE_ONEFILE_EXE
           if(-not (Test-Path $exe)){throw 'Single EXE missing'}
-          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_ONEFILE_UI'
+          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1123_UI'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
-          # A real PyInstaller --onefile run must extract the Qt/OCP dependencies
-          # into Windows TEMP before running the UI.
           $p=Start-Process -FilePath $exe -ArgumentList @('--smoke-test-ui',$dest) -Wait -PassThru
-          if($p.ExitCode -ne 0){throw "Single-file EXE did not start: $($p.ExitCode)"}
-          $status=Join-Path $dest 'UI_OK.json'
-          if(-not (Test-Path $status)){throw 'Single-file UI smoke marker missing'}
-          Write-Host 'One-file executable: UI startup PASS'
-      - name: Package R11.22 stable onedir Windows application
+          if($p.ExitCode -ne 0){throw "Single EXE launch failed: $($p.ExitCode)"}
+          if(-not (Test-Path (Join-Path $dest 'UI_OK.json'))){throw 'No UI smoke result'}
+          Write-Host 'Portable EXE startup PASS'
+      - name: Package one executable in single ZIP
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $src=$env:DS_COMPARE_OUT
-          $exe=Join-Path $src 'DSCompare.exe'
-          if(-not (Test-Path $exe)){throw 'Missing onedir EXE'}
-          if(-not (Test-Path (Join-Path $src '_internal'))){throw 'Missing onedir runtime'}
-          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1122_WINDOWS_x64.zip'
-          $readme=Join-Path $src 'INSTRUKCJA.txt'
-          @'
-          DS COMPARE R11.22 - Windows x64
-          1. Rozpakuj caly folder DSCompare z tego archiwum.
-          2. Uruchom DSCompare\DSCompare.exe.
-          3. Nie przenos samego EXE - folder _internal jest wymagany.
-          4. Masa czesci: Dodaj pliki / Dodaj folder / Resetuj dane.
-          5. Podzlozenia STEP sa domyslnie wlaczone. Importer ZW3D 2019 moze
-             wyswietlac ich puste kontenery jako ABSR. Tryb plaski w
-             Ustawieniach usuwa podzlozenia i kontenery (ale traci drzewo).
-          6. Wyniki masy: RAPORT_MASY.html i MODELE/ z raportami szczegolowymi.
-          '@ | Set-Content -LiteralPath $readme -Encoding UTF8
-          Compress-Archive -LiteralPath $src -DestinationPath $out -CompressionLevel Optimal
+          $exe=$env:DSCOMPARE_ONEFILE_EXE
+          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1123_JEDEN_EXE_WINDOWS_x64.zip'
+          Compress-Archive -LiteralPath $exe -DestinationPath $out -CompressionLevel Optimal
           if(-not (Test-Path $out)){throw 'ZIP missing'}
-          Write-Host "Created stable Windows ZIP: $((Get-Item $out).Length)"
-      - name: Upload stable Windows application package
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $z=[IO.Compression.ZipFile]::OpenRead($out)
+          try {
+            $entries=@($z.Entries | Where-Object { $_.Name })
+            if($entries.Count -ne 1 -or $entries[0].FullName -ne 'DSCompare.exe'){throw 'ZIP must contain only DSCompare.exe'}
+          }
+          finally {$z.Dispose()}
+          Write-Host "R11.23 ONE EXE ZIP: $((Get-Item $out).Length) bytes"
+      - name: Upload ONE EXE Windows ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-R1122-Windows-x64-Stable
-          path: DSCompare_R1122_WINDOWS_x64.zip
+          name: DSCompare-R1123-ONE-EXE-Windows-x64
+          path: DSCompare_R1123_JEDEN_EXE_WINDOWS_x64.zip
           if-no-files-found: error
           retention-days: 30
