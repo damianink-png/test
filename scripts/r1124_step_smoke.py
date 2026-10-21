@@ -41,6 +41,12 @@ with TemporaryDirectory() as tmp:
     assert twin_diag['liczba_polaczen_podzlozen']==0,twin_diag
     assert twin_diag['liczba_produktow_step']==root['realne_bryly_w_raporcie'],twin_diag
     assert inspect_step_colors(str(twin))['elementy_bez_bryly']==0
+    groups=folder/'TEST_ABSR'/'GRUPY_BEZ_KORZENIA'/'STEP_GRUPY_BEZ_KORZENIA.step'
+    assert groups.is_file(),diag
+    group_diag=inspect(groups)
+    assert group_diag['liczba_produktow_step']==root['liczba_produktow_step']-1,group_diag
+    assert 0<group_diag['liczba_polaczen_podzlozen']<root['liczba_polaczen_podzlozen'],group_diag
+    assert inspect_step_colors(str(groups))['elementy_bez_bryly']==0
     assert not (folder/'TEST_ABSR'/'BLAD_TESTU_ABSR.txt').exists()
     os.environ['DSCOMPARE_ABSR_TEST_OUTPUT']='0'
 app=QApplication.instance() or QApplication([])
