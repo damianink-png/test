@@ -1,4 +1,4 @@
-name: DS Compare R11.20 - rounded UI + grouped STEP single EXE
+name: DS Compare R11.21 - rounded UI + grouped STEP single EXE
 on:
   workflow_dispatch:
   push:
@@ -17,6 +17,8 @@ on:
       - 'scripts/r1119_structural_smoke.py'
       - 'scripts/r1120_light_theme_patch.py'
       - 'scripts/r1120_theme_smoke.py'
+      - 'scripts/r1121_tabs_palette_absr.py'
+      - 'scripts/r1121_smoke.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -431,6 +433,14 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R11.20 UI source patch failed'}
           python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/step_io.py')
           if($LASTEXITCODE -ne 0){throw 'R11.20 invalid Python'}
+      - name: R11.21 - fix clipped tabs, flat ABSR-free STEP and color modal
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/r1121_tabs_palette_absr.py
+          if($LASTEXITCODE -ne 0){throw 'R11.21 source patch failed'}
+          python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui46.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui45.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/worker_v37.py')
+          if($LASTEXITCODE -ne 0){throw 'R11.21 Python syntax failure'}
       - name: Install Python dependencies
         shell: pwsh
         run: |
@@ -467,6 +477,15 @@ jobs:
           $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
           python scripts/r1120_theme_smoke.py
           if($LASTEXITCODE -ne 0){throw 'R11.20 GUI visual controls regression'}
+      - name: R11.21 - check uncut navigation, colors and real solid-only STEP
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
+          python scripts/r1121_smoke.py
+          if($LASTEXITCODE -ne 0){throw 'R11.21 UI/STEP regression failed'}
       - name: Verify actual assembly tree, all solids and no orphan ABSR STEP products
         shell: pwsh
         env:
@@ -507,12 +526,12 @@ jobs:
           $status=Join-Path $dest 'UI_OK.json'
           if(-not (Test-Path $status)){throw 'Single-file UI smoke marker missing'}
           Write-Host 'One-file executable: UI startup PASS'
-      - name: Package R11.20 one-file executable
+      - name: Package R11.21 one-file executable
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           $exe=$env:DSCOMPARE_ONEFILE_EXE
-          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1120_JEDEN_EXE_Windows_x64.zip'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1121_JEDEN_EXE_Windows_x64.zip'
           Compress-Archive -LiteralPath $exe -DestinationPath $out -CompressionLevel Optimal
           if(-not (Test-Path $out)){throw 'ZIP missing'}
           Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -527,7 +546,7 @@ jobs:
       - name: Upload Windows ONE EXE package
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-R1120-ONE-EXE-Windows-x64
-          path: DSCompare_R1120_JEDEN_EXE_Windows_x64.zip
+          name: DSCompare-R1121-ONE-EXE-Windows-x64
+          path: DSCompare_R1121_JEDEN_EXE_Windows_x64.zip
           if-no-files-found: error
           retention-days: 30
