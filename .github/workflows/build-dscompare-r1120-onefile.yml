@@ -33,6 +33,7 @@ on:
       - 'scripts/r1124_step_patch.py'
       - 'scripts/r1124_step_smoke.py'
       - 'scripts/r1124_rootless_patch.py'
+      - 'scripts/r1124_perf_reliability_patch.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -491,6 +492,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R11.24 STEP/ABSR patch failed'}
           python scripts/r1124_rootless_patch.py
           if($LASTEXITCODE -ne 0){throw 'R11.24 rootless STEP patch failed'}
+          python scripts/r1124_perf_reliability_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.24 performance/reliability patch failed'}
           python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/step_io.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/step_diagnostics.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py')
           if($LASTEXITCODE -ne 0){throw 'R11.24 source syntax failure'}
       - name: Install Python dependencies
