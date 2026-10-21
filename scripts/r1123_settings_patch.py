@@ -106,5 +106,21 @@ entry_text=entry.read_text(encoding='utf8')
 old="assert not w.centralWidget().findChildren(QScrollArea), 'unexpected window scrollbars'"
 assert entry_text.count(old)==1, 'packaged smoke compatibility anchor changed'
 entry_text=entry_text.replace(old,"assert len(w.centralWidget().findChildren(QScrollArea))==2, 'mass and settings should have responsive scroll containers'",1)
+# A frozen windowed EXE must not show a blocking crash dialog during CI smoke.
+start=entry_text.index("        if args.smoke_test_ui:\n")
+end=entry_text.index("        from dsac29.diagnostics import install_diagnostics\n",start)
+prefix=entry_text[start:start+len("        if args.smoke_test_ui:\n")]
+original=entry_text[start+len(prefix):end]
+wrapped=(prefix+"            try:\n"
+  +''.join('    '+line for line in original.splitlines(keepends=True))
+  +"            except Exception:\n"
+  +"                import os,traceback\n"
+  +"                from pathlib import Path\n"
+  +"                try:\n"
+  +"                    dest=Path(args.smoke_test_ui);dest.mkdir(parents=True,exist_ok=True)\n"
+  +"                    (dest/'UI_ERROR.txt').write_text(traceback.format_exc(),encoding='utf8')\n"
+  +"                except Exception:pass\n"
+  +"                os._exit(5)\n")
+entry_text=entry_text[:start]+wrapped+entry_text[end:]
 entry.write_text(entry_text,encoding='utf8')
 print('R11.23 stable settings forms installed')
