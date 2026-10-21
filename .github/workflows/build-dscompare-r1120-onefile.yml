@@ -565,7 +565,11 @@ jobs:
           $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1123_UI'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           $p=Start-Process -FilePath $exe -ArgumentList @('--smoke-test-ui',$dest) -Wait -PassThru
-          if($p.ExitCode -ne 0){throw "Single EXE launch failed: $($p.ExitCode)"}
+          if($p.ExitCode -ne 0){
+            $err=Join-Path $dest 'UI_ERROR.txt'
+            if(Test-Path $err){Get-Content $err | Write-Host}
+            throw "Single EXE launch failed: $($p.ExitCode)"
+          }
           if(-not (Test-Path (Join-Path $dest 'UI_OK.json'))){throw 'No UI smoke result'}
           Write-Host 'Portable EXE startup PASS'
       - name: Package one executable in single ZIP
