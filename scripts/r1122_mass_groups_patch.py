@@ -49,7 +49,8 @@ replace('dsac29/worker_v37.py',
  "    p.add_argument('--inputs-file',default='',help='JSON list of CAD model paths for batch mass')")
 replace('dsac29/worker_v37.py',
  "            from .single_mass import analyze_single\n            output,s=analyze_single(ns.input,ns.output,ns.density,progress=emit,preview=not ns.no_preview,max_solids=ns.max_solids)",
- """            from .single_mass import analyze_single,analyze_many
+ """            from .single_mass import analyze_single
+            from .mass_batch import analyze_many
             if ns.inputs_file:
                 files=json.loads(Path(ns.inputs_file).read_text(encoding='utf8'))
                 output,s=analyze_many(files,ns.output,ns.density,progress=emit,max_solids=ns.max_solids)
