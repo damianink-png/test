@@ -85,4 +85,10 @@ s=p.read_text('utf8')
 s=s.replace('  # This unsafe option is intentionally retired: export always writes solid-only STEP.','  # Flat/legacy switch retired: validated native hierarchy is the only visible export.')
 p.write_text(s,encoding='utf8')
 (root/"VERSION.txt").write_text("R11.19\n",encoding="utf8")
+info=root/"build_info.json"
+if info.is_file():
+    import json
+    metadata=json.loads(info.read_text(encoding="utf8"))
+    metadata["version"]="R11.19 · GitHub "+os.environ.get("GITHUB_SHA","")[:8]
+    info.write_text(json.dumps(metadata,ensure_ascii=False),encoding="utf8")
 print("R11.19 native group exporter installed")
