@@ -26,13 +26,12 @@ def main():
         assert isinstance(dlg,QDialog), 'Color dialog not visible'
         scroll=dlg.findChild(QScrollArea)
         actions=dlg.findChild(QDialogButtonBox)
-        assert scroll and actions
+        assert scroll is None and actions, 'R11.21: wszystkie próbki kolorów muszą się mieścić bez przewijania'
         assert actions.button(QDialogButtonBox.Cancel).text()=='Anuluj'
         assert actions.button(QDialogButtonBox.Ok).text()=='Zapisz'
         app.processEvents()
-        bottom=scroll.mapTo(dlg,scroll.rect().bottomLeft()).y()
-        top=actions.mapTo(dlg,actions.rect().topLeft()).y()
-        assert bottom<top, f'Color scroll and footer overlap: {bottom} {top}'
+        assert dlg.findChildren(QCheckBox)==[], 'Color picker does not require extra toggles'
+        assert dlg.layout().count()>=4, 'The full color grid and footer must be visible'
         seen.append(True)
         dlg.reject()
     QTimer.singleShot(200,inspect)
@@ -49,5 +48,5 @@ def main():
         assert 'ENDMACRO' in content
         assert dest.is_file()
     w.close()
-    print('R11.18 UI checked: matching background, Polish Anuluj, non-overlapping colors, ZW3D launcher macro created.')
+    print('R11.18 UI checked: matching background, Polish Anuluj, non-scrolling colors, ZW3D launcher macro created.')
 if __name__=='__main__':main()
