@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from PySide6.QtWidgets import QApplication,QFormLayout,QScrollArea
+from PySide6.QtWidgets import QApplication,QFormLayout,QScrollArea,QFrame
 from PySide6.QtCore import Qt,QMimeData,QUrl
 from dsac29.gui46 import Window
 from dsac29.mass_drop import MassDropArea
@@ -38,8 +38,8 @@ with TemporaryDirectory() as folder:
   for width in (800,1200):
    w.resize(width,750);app.processEvents()
    assert w.mass_reset.width()>=w.mass_reset.fontMetrics().horizontalAdvance('Resetuj dane')+20
-   for box in w.findChildren(QFormLayout):
-    assert box.rowWrapPolicy()==QFormLayout.WrapLongRows
+   for card in w.findChildren(QFrame,'settings-card'):
+    assert card.layout().rowWrapPolicy()==QFormLayout.WrapLongRows
    assert w.output_button.width()>0
  assert w.schema.isEditable() and w.schema.lineEdit().isReadOnly()
  assert w.schema.lineEdit().alignment() & Qt.AlignHCenter
