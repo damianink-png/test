@@ -21,20 +21,20 @@ change("  self._theme_select=QComboBox();self._theme_select.addItems(['Ciemny','
        "  self.zw3d_macro_button.clicked.connect(self.create_zw3d_macro)\n"
        "  gp.addRow('Integracja ZW3D',self.zw3d_macro_button)\n"
        "  self._theme_select=QComboBox();self._theme_select.addItems(['Ciemny','Jasny'])")
-anchor="  def apply_theme(self,name):\n"
+anchor=" def apply_theme(self,name):\n"
 assert anchor in text
-fn="""  def create_zw3d_macro(self):
-   from .zw3d_launcher import create_macro
-   try:
-    path=create_macro()
-    QMessageBox.information(self,'Uruchamianie z ZW3D 2019',
-      'Przygotowano makro:\\n'+str(path)+
-      '\\n\\nWczytaj ten plik .mac w menedżerze makr ZW3D 2019 i przypisz do przycisku. '+
+fn=""" def create_zw3d_macro(self):
+  from .zw3d_launcher import create_macro
+  try:
+   path=create_macro()
+   QMessageBox.information(self,'Uruchamianie z ZW3D 2019',
+      'Przygotowano makro:\n'+str(path)+
+      '\n\nWczytaj ten plik .mac w menedżerze makr ZW3D 2019 i przypisz do przycisku. '+
       'Makro wywołuje aktualną lokalizację DSCompare.exe. Po przeniesieniu EXE utwórz makro ponownie. '+
       'Działanie w ZW3D 2019 wymaga sprawdzenia na zainstalowanym programie.')
-    if os.name=='nt':os.startfile(str(path.parent))
-   except (OSError,ValueError,RuntimeError) as exc:
-    QMessageBox.warning(self,'Integracja ZW3D','Nie udało się utworzyć makra: '+str(exc))
+   if os.name=='nt':os.startfile(str(path.parent))
+  except (OSError,ValueError,RuntimeError) as exc:
+   QMessageBox.warning(self,'Integracja ZW3D','Nie udało się utworzyć makra: '+str(exc))
 """
 text=text.replace(anchor,fn+anchor,1)
 g.write_text(text,encoding="utf-8")
