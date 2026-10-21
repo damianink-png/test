@@ -1,0 +1,473 @@
+name: DSCompare R11.17 Windows x64 UI hotfix
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'DSCompare_V4_6_R113_ZRODLA.zip'
+      - '.github/workflows/build-dscompare-r1117-x64.yml'
+      - 'patches/r1110_exact_overlay.tar.xz.b64'
+      - 'patches/r1112_exact_overlay.tar.xz.b64'
+      - 'benchmarks/r1113_large_benchmark.py'
+      - 'benchmarks/r1115_cold_once_benchmark.py'
+      - 'patches/r1116_exact_ui_overlay.tar.xz.b64'
+      - 'patches/r1117_exact_ui_fixes.tar.xz.b64'
+      - 'patches/r1114_exact_overlay.tar.xz.b64'
+      - 'patches/r119_exact_overlay.tar.xz.b64'
+      - 'patches/r117_r2_table_fit.xz.b64'
+      - 'patches/r117_gui_zw3d_overlay.xz.b64'
+      - 'patches/r116_gui_export_overlay.xz.b64'
+      - 'patches/r115_r3_face_identity.xz.b64'
+      - 'patches/r114_boolean_cut_fallback.xz.b64'
+      - 'public_benchmark.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 140
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+      - name: Rozpakuj pelne zrodla R113
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $archive=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_V4_6_R113_ZRODLA.zip'
+          if(-not (Test-Path $archive)){throw 'Brak DSCompare_V4_6_R113_ZRODLA.zip w katalogu glownym repozytorium'}
+          $root=Join-Path $env:RUNNER_TEMP 'dscompare-r113-source'
+          Expand-Archive -Path $archive -DestinationPath $root -Force
+          $src=Join-Path $root 'v46'
+          if(-not (Test-Path (Join-Path $src 'DSCompareV3.py'))){throw 'Brak plikow zrodlowych v46/DSCompareV3.py'}
+          "DS_COMPARE_SOURCE=$src" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DS_COMPARE_OUT=$src/dist/DSCompare" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Zastosuj poprawke R11.4 i sprawdz integralnosc
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; s=Path('patches/r114_boolean_cut_fallback.xz.b64').read_text(encoding='ascii').strip(); raw=lzma.decompress(base64.b64decode(s)); assert hashlib.sha256(raw).hexdigest()=='1d56e0577259f958de1cb7f707ba24e0b84531dfc6b48a55d0a41f08e3f0b86e'; Path('R114.patch').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'Blad weryfikacji SHA R11.4'}
+          Set-Location (Split-Path -Parent $env:DS_COMPARE_SOURCE)
+          git apply --check (Join-Path $env:GITHUB_WORKSPACE 'R114.patch')
+          if($LASTEXITCODE -ne 0){throw 'Poprawka R11.4 nie pasuje do wersji R11.3'}
+          git apply (Join-Path $env:GITHUB_WORKSPACE 'R114.patch')
+          if($LASTEXITCODE -ne 0){throw 'Nie mozna zastosowac poprawki R11.4'}
+          Set-Location $env:GITHUB_WORKSPACE
+      - name: Wstaw zweryfikowana poprawke R11.5
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; src=Path('patches/r115_r3_face_identity.xz.b64').read_text(encoding='ascii'); b=lzma.decompress(base64.b64decode(src)); assert hashlib.sha256(b).hexdigest()=='c08b8d8221e4454191837c78ca771cb22ab632e4a756f1943bb6ea5effa94150'; Path('R115_R3_BUNDLE.zip').write_bytes(b)"
+          if($LASTEXITCODE -ne 0){throw 'Blad sumy kontrolnej R115'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R115_R3_BUNDLE.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']); t=(p/'dsac29/geometry.py').read_text(encoding='utf8'); assert 'def _precise_world_bounds' in t and 'definitely_different_surfaces' in t; assert (p/'tests/test_r115_bounds_and_recovery.py').exists();print('R115 R3 sources verified')"
+          if($LASTEXITCODE -ne 0){throw 'Zly pakiet R115'}
+      - name: Zastosuj R11.6 - eksport STEP, poprawki UI, limity i nazwy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r116_gui_export_overlay.xz.b64').read_text(encoding='ascii'))); assert hashlib.sha256(raw).hexdigest()=='2c96f807c3309eec584d773189e6787e1f1fd82c381417f2521479b80ad4a760'; Path('R116_OVERLAY.zip').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R116 checksum mismatch'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R116_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']); t=(p/'dsac29/gui46.py').read_text(encoding='utf8'); assert 'solid_limit_migrated_r116' in t;assert (p/'tests/test_r116_large_models_ui_names.py').exists(); assert (p/'README_R116.txt').exists();assert (p/'dsac29/geometry.py').exists(); print('R116 overlay verified')"
+          if($LASTEXITCODE -ne 0){throw 'Bad R116 source files'}
+      - name: Zastosuj R11.7 - kolory każdej kategorii i uproszczony STEP do ZW3D
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import lzma,base64,hashlib; raw=lzma.decompress(base64.b64decode(Path('patches/r117_gui_zw3d_overlay.xz.b64').read_text('ascii'))); assert hashlib.sha256(raw).hexdigest()=='365d01a406891d8923f2604a7eab9c5b658ac9ee65d2d765b45f17ed500abb4c'; Path('R117_OVERLAY.zip').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R117 checksum mismatch'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R117_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path; p=Path(os.environ['DS_COMPARE_SOURCE']);t=(p/'dsac29/gui46.py').read_text(encoding='utf8');assert 'def edit_export_colors' in t and 'self.zw3d_body_colors=True' in t;assert (p/'tests/test_r117_z3d_body_color_and_ui.py').exists();print('R117 sources PASS')"
+          if($LASTEXITCODE -ne 0){throw 'R117 GUI/STEP source mismatch'}
+      - name: R11.7 R2 - tabelki bez poziomego przewijania
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import base64,lzma,hashlib;raw=lzma.decompress(base64.b64decode(Path('patches/r117_r2_table_fit.xz.b64').read_text('ascii')));assert hashlib.sha256(raw).hexdigest()=='3f6d8b42d54b251717cc64410d4755f051e1d9dcba320564b543579b314b42e5';Path('R117_R2_OVERLAY.zip').write_bytes(raw)"
+          if($LASTEXITCODE -ne 0){throw 'R117 R2 checksum mismatch'}
+          Expand-Archive -LiteralPath "$env:GITHUB_WORKSPACE/R117_R2_OVERLAY.zip" -DestinationPath (Split-Path -Parent $env:DS_COMPARE_SOURCE) -Force
+          python -c "import os;from pathlib import Path;p=Path(os.environ['DS_COMPARE_SOURCE']);s=(p/'dsac29/gui46.py').read_text(encoding='utf8');assert 'self.compare_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)' in s;print('R117 R2 layout verified')"
+          if($LASTEXITCODE -ne 0){throw 'R117 R2 missing table fix'}
+      - name: Restore exact R11.9 source files and verify checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location $env:GITHUB_WORKSPACE
+          @'
+          import base64, hashlib, io, lzma, os, tarfile
+          from pathlib import Path
+          s = ''.join(Path('patches/r119_exact_overlay.tar.xz.b64').read_text(encoding='ascii').split())
+          raw = base64.b64decode(s)
+          expected = '4109382f362d6b9e78bc1f4485a413605daf8a119ad8fefcea529f34814a40c1'
+          assert hashlib.sha256(raw).hexdigest() == expected, 'Overlay SHA256 mismatch'
+          parent = Path(os.environ['DS_COMPARE_SOURCE']).parent
+          with tarfile.open(fileobj=io.BytesIO(lzma.decompress(raw)), mode='r:') as archive:
+              files = archive.getmembers()
+              assert all(f.isfile() and f.name.startswith('v46/') and '..' not in Path(f.name).parts for f in files), 'Invalid tar entry'
+              archive.extractall(parent)
+          expected_sha = {
+              'dsac29/gui46.py':'a8398d30a56843963df8320bdd3ca5c6932aabb2e5f7ebee31dbc65f4ad3dcff',
+              'dsac29/parallel_import.py':'3f9cbb3b17a72b9635a0c83f8ef2e583322ffd802dcdf401605d2d506d49e2ac',
+              'dsac29/step_io.py':'f08fd8727bea37067da1322a672251326a0f071d2061c13237b20777d49dd0f2',
+              'dsac29/icons_r119.py':'ece4ab850978fd32da4ef661a323f90e778b97048d65abc1815b67d4696edd1f',
+          }
+          src = Path(os.environ['DS_COMPARE_SOURCE'])
+          for key, digest in expected_sha.items():
+              actual=hashlib.sha256((src/key).read_bytes()).hexdigest()
+              assert actual==digest, f'SHA mismatch: {key}'
+          print('DS Compare R11.9 exact overlay verified and installed')
+          '@ | Set-Content R119_restore.py -Encoding UTF8
+          python R119_restore.py
+          if($LASTEXITCODE -ne 0){throw 'Restore of exact R11.9 sources failed'}
+      - name: Fix missing standard streams in frozen windowless EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          from pathlib import Path
+          import os
+          p = Path(os.environ['DS_COMPARE_SOURCE'])/'DSCompareV3.py'
+          s = p.read_text(encoding='utf-8')
+          assert s.startswith('"""DS Compare V4.6 entry.')
+          original = 'import sys\n'
+          replacement = 'import sys\nif getattr(sys, "frozen", False):\n    import os\n    if sys.stdout is None: sys.stdout=open(os.devnull,"w",encoding="utf-8")\n    if sys.stderr is None: sys.stderr=open(os.devnull,"w",encoding="utf-8")\n'
+          assert original in s
+          p.write_text(s.replace(original,replacement,1),encoding='utf-8')
+          print('Win32 no-console stream compatibility enabled')
+          '@ | Set-Content -Path R119_stdio_fix.py -Encoding UTF8
+          python R119_stdio_fix.py
+          if($LASTEXITCODE -ne 0){throw 'Cannot patch windowless startup'}
+      - name: Restore exact R11.10 module replacements
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import os,base64,hashlib,io,lzma,tarfile
+          from pathlib import Path
+          path=Path(os.environ['GITHUB_WORKSPACE'])/'patches/r1110_exact_overlay.tar.xz.b64'
+          payload=base64.b64decode(''.join(path.read_text(encoding='ascii').split()))
+          assert hashlib.sha256(payload).hexdigest()=='a18a44197d1baccbf6be08976eac4663f550f93f97765b72bc4413c0b0df9eda','R1110 archive checksum'
+          parent=Path(os.environ['DS_COMPARE_SOURCE']).parent
+          with tarfile.open(fileobj=io.BytesIO(lzma.decompress(payload)),mode='r:') as tar:
+              entries=tar.getmembers()
+              assert len(entries)==8 and all(e.isfile() and e.name.startswith('v46/') and '..' not in Path(e.name).parts for e in entries)
+              tar.extractall(parent)
+          known={'dsac29/gui46.py':'49b233338a2ea984a01f19d3fd939e1acf7b7e41821087df5294be0e54b3f794','dsac29/report.py':'3250651f5a2949ad04a601ef8504572a551d64edca97c2b26a7ee519ab992979'}
+          src=Path(os.environ['DS_COMPARE_SOURCE'])
+          for name,digest in known.items():
+              assert hashlib.sha256((src/name).read_bytes()).hexdigest()==digest,name
+          assert (src/'tests/test_r120_bom_speed_and_report_layout.py').is_file()
+          print('R11.10 full module overlay PASS')
+          '@ | Set-Content R1110_restore.py -Encoding UTF8
+          python R1110_restore.py
+          if($LASTEXITCODE -ne 0){throw 'Restore of DSCompare R11.10 modules failed'}
+      - name: Restore exact verified R11.12 sources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import hashlib,base64,lzma,os,io,tarfile
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE'])
+          p=root/'patches/r1112_exact_overlay.tar.xz.b64'
+          data=base64.b64decode(''.join(p.read_text(encoding='ascii').split()))
+          assert hashlib.sha256(data).hexdigest()=='44d0c52f741770051844e337002a6251f91d211c92af233c180187ba37eae890','R1112 archive checksum'
+          out=Path(os.environ['DS_COMPARE_SOURCE']).parent
+          with tarfile.open(fileobj=io.BytesIO(lzma.decompress(data)),mode='r:') as z:
+              members=z.getmembers()
+              assert all(m.isfile() and m.name.startswith('v46/') and '..' not in Path(m.name).parts for m in members)
+              z.extractall(out)
+          target=Path(os.environ['DS_COMPARE_SOURCE'])
+          checks={'dsac29/gui46.py':'095876b43b3abbbd3513629580aaf53b75edae9cb516a962ef0ca454f3c9cb4f','dsac29/step_io.py':'7922525fcfc965f86dad502641259c78538bd3d0c10d06546689083fd0189003','dsac29/report.py':'10c466778b27959ecb6b6cf3f7d80b252cbfa0c6dbf63908286bab612081959e','dsac29/worker_v37.py':'81cf1c0b9ae2c88539dc16602808c40abccf1960e51642d9014d249de4eae0b7','dsac29/gui45.py':'6a7a60864042ad1042c5eaffcadd22c34ad77b3fe9c62e894628edc7338bcb6e'}
+          for name,digest in checks.items():
+              assert hashlib.sha256((target/name).read_bytes()).hexdigest()==digest, f'Bad R1112 file: {name}'
+          print('R1112 exact source verified and restored, files',len(members))
+          '@ | Set-Content (Join-Path $env:GITHUB_WORKSPACE 'R1112_restore.py') -Encoding UTF8
+          python (Join-Path $env:GITHUB_WORKSPACE 'R1112_restore.py')
+          if($LASTEXITCODE -ne 0){throw 'R1112 source overlay verification failed'}
+      - name: Preserve R11.12 sources and install R11.13 exact native-definition optimization
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $baseline=Join-Path $env:RUNNER_TEMP 'r1112_source_snapshot'
+          Copy-Item -LiteralPath $env:DS_COMPARE_SOURCE -Destination $baseline -Recurse -Force
+          "DS_COMPARE_BASELINE_SOURCE=$baseline" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          @'
+          import os,hashlib
+          from pathlib import Path
+          root=Path(os.environ['DS_COMPARE_SOURCE'])
+          p=root/'dsac29/compare.py'
+          s=p.read_text(encoding='utf8')
+          old="""    # Keep the Python TShape handles alive for the entire comparison. OCP's
+              # wrappers are weakly cached; hashing a temporary TShape() on each pass
+              # can give a DIFFERENT key despite IsPartner() being true.
+              _handles_a=[s.shape.TShape() for s in a]
+              _handles_b=[s.shape.TShape() for s in b]
+              group_a=[id(t) for t in _handles_a]
+              group_b=[id(t) for t in _handles_b]
+          """
+          new="""    # Native IsPartner() identity, shared by matching and exact BOM.
+              from .geometry_registry import GeometryRegistry
+              geometry_context = geometry_context if geometry_context is not None else GeometryRegistry()
+              group_a=[geometry_context.definition(s) for s in a]
+              group_b=[geometry_context.definition(s) for s in b]
+          """
+          assert old in s, 'R11.12 matching registry anchor mismatch'
+          s=s.replace(old,new)
+          old="""    from .geometry_registry import GeometryRegistry
+              geometry_context = geometry_context if geometry_context is not None else GeometryRegistry()
+              def exact_same_definition(s,t,ga,gb):
+                  return geometry_context.same_definition(s,t)
+          """
+          new="""    def exact_same_definition(s,t,ga,gb):
+                  return ga == gb or geometry_context.same_definition(s,t)
+          """
+          assert old in s,'R11.12 duplicate registry init differs'
+          s=s.replace(old,new)
+          old="""    free_a=set(range(len(a))); free_b=set(range(len(b)))
+              out=[]; checks=0
+          """
+          new="""    free_a=set(range(len(a))); free_b=set(range(len(b)))
+              norm_a=[_normalized_name(p.name) for p in a]
+              norm_b=[_normalized_name(p.name) for p in b]
+              out=[]; checks=0
+          """
+          assert old in s
+          s=s.replace(old,new)
+          assert s.count('(_normalized_name(s.name) == _normalized_name(b[j].name)) == names_equal')==2
+          s=s.replace('(_normalized_name(s.name) == _normalized_name(b[j].name)) == names_equal','(norm_a[i] == norm_b[j]) == names_equal')
+          old="""            distances=dict(zip(js,np.linalg.norm(np.array([b[j].center for j in js])-s.center,axis=1))) if js else {}"""
+          assert old in s
+          s=s.replace(old,"            distances={j: float(np.linalg.norm(b[j].center-s.center)) for j in js}")
+          assert 'by_name[_normalized_name(b[j].name)].append(j)' in s
+          s=s.replace('by_name[_normalized_name(b[j].name)].append(j)','by_name[norm_b[j]].append(j)')
+          assert 'candidates=set(by_name.get(_normalized_name(s.name),()))' in s
+          s=s.replace('candidates=set(by_name.get(_normalized_name(s.name),()))','candidates=set(by_name.get(norm_a[i],()))')
+          assert 'same_name=bool(_normalized_name(s.name)) and _normalized_name(s.name)==_normalized_name(t.name)' in s
+          s=s.replace('same_name=bool(_normalized_name(s.name)) and _normalized_name(s.name)==_normalized_name(t.name)','same_name=bool(norm_a[i]) and norm_a[i]==norm_b[j]')
+          assert 'renamed=_normalized_name(a[i].name)!=_normalized_name(b[j].name)' in s
+          s=s.replace('renamed=_normalized_name(a[i].name)!=_normalized_name(b[j].name)','renamed=norm_a[i]!=norm_b[j]')
+          p.write_text(s,encoding='utf8')
+          print('R11.13 optimized compare.py SHA256',hashlib.sha256(p.read_bytes()).hexdigest())
+          '@ | Set-Content -Path (Join-Path $env:GITHUB_WORKSPACE 'R1113_optimize.py') -Encoding UTF8
+          python (Join-Path $env:GITHUB_WORKSPACE 'R1113_optimize.py')
+          if($LASTEXITCODE -ne 0){throw 'R11.13 source optimization failed'}
+      - name: Restore verified R11.14 source overlay and cache implementation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import os, base64, hashlib, lzma, tarfile, io
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE'])
+          payload=''.join((root/'patches/r1114_exact_overlay.tar.xz.b64').read_text(encoding='ascii').split())
+          raw=base64.b64decode(payload)
+          assert hashlib.sha256(raw).hexdigest()=='3a04e9734f96698bb33064bc94fb97d2c42b5237275b24a21e1fe4fbf7337080'
+          with tarfile.open(fileobj=io.BytesIO(lzma.decompress(raw)),mode='r:') as tar:
+              members=tar.getmembers()
+              assert len(members)==9
+              assert all(item.isfile() and item.name.startswith('v46/') and '..' not in Path(item.name).parts for item in members)
+              tar.extractall(Path(os.environ['DS_COMPARE_SOURCE']).parent)
+          p=Path(os.environ['DS_COMPARE_SOURCE'])
+          checks={'dsac29/import_cache.py':'fadfd0a42defc3ad54166304127e53bce5f493169370c430dd8ee1d9a8e9dcff','dsac29/parallel_import.py':'5eb3affb7c6f849b4c4b97474ffea18aa72fb4f603639ac202f1863a57e499ec','dsac29/gui46.py':'9b3390529377fd1a29975c7822ec91bcc8e6d6d506a1ec6fed2b0570b5af7f6e','dsac29/step_io.py':'4528f84f03c15660705135e8b303e609876cceeeb594efa77a1429c89709b955'}
+          for path, sha in checks.items():
+              assert hashlib.sha256((p/path).read_bytes()).hexdigest()==sha,f'Bad R11.14 source: {path}'
+          print('R11.14 verified cache + Qt UI installed')
+          '@ | Set-Content -Path (Join-Path $env:GITHUB_WORKSPACE 'R1114_restore.py') -Encoding UTF8
+          python (Join-Path $env:GITHUB_WORKSPACE 'R1114_restore.py')
+          if($LASTEXITCODE -ne 0){throw 'R1114 overlay validation failed'}
+      - name: Optimize one-time cold STEP import without approximating geometry
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          from pathlib import Path
+          import os
+          root=Path(os.environ['DS_COMPARE_SOURCE'])
+          p=root/'dsac29/import_cache.py'
+          s=p.read_text(encoding='utf8')
+          old="os.environ.get('DSCOMPARE_IMPORT_CACHE', 'auto')"
+          assert old in s
+          s=s.replace(old,"os.environ.get('DSCOMPARE_IMPORT_CACHE', 'off')",1)
+          s=s.replace("else 'auto'","else 'off'",1)
+          p.write_text(s,encoding='utf8')
+          p=root/'dsac29/gui46.py';s=p.read_text(encoding='utf8')
+          old="  cache_setting=str(self.store.value('import_cache','true')).lower()=='true'"
+          assert old in s,'cache option layout has changed'
+          new="""  # The user usually compares each STEP only once: do not hash/save a multi-GB cache by default.
+            # One-time settings migration turns legacy R11.14 auto-on into cold-first OFF.
+            if str(self.store.value('cold_first_default_r1115','false')).lower()!='true':
+             self.store.setValue('import_cache',False)
+             self.store.setValue('cold_first_default_r1115',True)
+            cache_setting=str(self.store.value('import_cache','false')).lower()=='true'"""
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf8')
+          p=root/'dsac29/step_io.py';s=p.read_text(encoding='utf8')
+          old="reader=STEPCAFControl_Reader();reader.SetNameMode(True);reader.SetColorMode(False)"
+          assert old in s
+          new="""reader=STEPCAFControl_Reader();reader.SetNameMode(True);reader.SetColorMode(False)
+              # Native source materials, layers, PMI and properties do not influence
+              # DS Compare's exact solids, names, custom density, color-coded output or BOM.
+              for mode_name in ('SetLayerMode','SetMatMode','SetPropsMode','SetGDTMode'):
+                  setter=getattr(reader,mode_name,None)
+                  if setter is not None:setter(False)"""
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf8')
+          assert s.count('reader.SetNameMode(True);reader.SetColorMode(False)')==1
+          (root/'README_R1115.txt').write_text(
+              'DS Compare R11.15 — pierwsza analiza STEP:\n'
+              'Trwały cache B-Rep domyślnie wyłączony; opcjonalny w Ustawieniach.\n'
+              'Nie zmieniono obliczania dokładnej powierzchni/masy, reguł BOM ani klasyfikacji B-Rep.\n'
+              'Import bez nieużywanych metadanych źródłowych (kolor/layer/material/PMI).\n'
+              'STEP bez pustych elementów ABSR, równoległy import A/B i interfejs R11.14 zachowane.\n'
+              'Wyniki wydajności z GitHub Actions dotyczą testowanych modeli, nie gwarantują zysku na każdym STEP.\n',
+              encoding='utf8')
+          print('R11.15 cold-first defaults applied')
+          '@ | Set-Content (Join-Path $env:GITHUB_WORKSPACE 'R1115_cold_patch.py') -Encoding UTF8
+          python (Join-Path $env:GITHUB_WORKSPACE 'R1115_cold_patch.py')
+          if($LASTEXITCODE -ne 0){throw 'R11.15 cold-first patch failed'}
+      - name: Restore exact R11.16 modern UI and verified-safe STEP exporter
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import os,base64,lzma,hashlib,tarfile,io,json
+          from pathlib import Path
+          encoded=''.join(Path('patches/r1116_exact_ui_overlay.tar.xz.b64').read_text(encoding='ascii').split())
+          binary=base64.b64decode(encoded)
+          assert hashlib.sha256(binary).hexdigest()=='ec835b7756dd6474d57b350c40f651a6db8aa359d8d2bf16494fb7b41fe86d48','R11.16 overlay SHA mismatch'
+          root=Path(os.environ['DS_COMPARE_SOURCE']).parent
+          with tarfile.open(fileobj=io.BytesIO(lzma.decompress(binary)),mode='r:') as tar:
+              members=tar.getmembers()
+              assert all(m.isfile() and m.name.startswith('v46/') and '..' not in Path(m.name).parts for m in members)
+              tar.extractall(root)
+          src=Path(os.environ['DS_COMPARE_SOURCE'])
+          assert (src/'dsac29/gui_modern.py').exists()
+          assert 'from .gui_modern import ModernWindow as Window' in (src/'dsac29/gui46.py').read_text(encoding='utf8')
+          assert 'produkt_step' in (src/'dsac29/step_io.py').read_text(encoding='utf8')
+          version=(src/'VERSION.txt').read_text('utf8').strip()
+          revision=os.environ['GITHUB_SHA'][:8]
+          (src/'build_info.json').write_text(json.dumps({'version':f'{version} · GitHub {revision}','commit':os.environ['GITHUB_SHA'],'platform':'Windows x64','ui':'PySide6'},ensure_ascii=False),encoding='utf8')
+          print('UI R11.16 modern, native animation, version metadata and safe-STEP grouping manifest installed')
+          '@ | Set-Content R1116_overlay_restore.py -Encoding UTF8
+          python R1116_overlay_restore.py
+          if($LASTEXITCODE -ne 0){throw 'R1116 source restore failed'}
+      - name: R11.16 compatibility hotfix for older mass FileCard chooser
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import os
+          from pathlib import Path
+          p=Path(os.environ['DS_COMPARE_SOURCE'])/'dsac29/gui_modern.py'
+          s=p.read_text(encoding='utf8')
+          old="  tile.choose_button.setText('Wybierz plik');tile.choose_button.setMinimumWidth(120);layout.addWidget(tile.choose_button,alignment=Qt.AlignCenter)"
+          new="  if not hasattr(tile,'choose_button'):tile.choose_button=next((w for w in tile.findChildren(QPushButton) if 'Wybierz' in w.text()),None)\n  if tile.choose_button is None:raise RuntimeError('Brak przycisku wyboru pliku CAD')\n"+old
+          assert old in s
+          p.write_text(s.replace(old,new,1),encoding='utf8')
+          print('Mass FileCard chooser compatibility applied')
+          '@ | Set-Content R1116_mass_compat.py -Encoding UTF8
+          python R1116_mass_compat.py
+          if($LASTEXITCODE -ne 0){throw 'Modern mass chooser hotfix failed'}
+      - name: Restore R11.17 Qt GUI improvements and STEP status layers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import os,base64,lzma,hashlib,tarfile,io,json
+          from pathlib import Path
+          encoded=''.join(Path('patches/r1117_exact_ui_fixes.tar.xz.b64').read_text(encoding='ascii').split())
+          binary=base64.b64decode(encoded)
+          assert hashlib.sha256(binary).hexdigest()=='b91b03026982a169142640e6ebb8101522cd4233174d6094b585a8857822a5b6', 'R1117 overlay mismatch'
+          root=Path(os.environ['DS_COMPARE_SOURCE']).parent
+          with tarfile.open(fileobj=io.BytesIO(lzma.decompress(binary)),mode='r:') as tar:
+              members=tar.getmembers()
+              assert members and all(x.isfile() and x.name.startswith('v46/') and '..' not in Path(x.name).parts for x in members)
+              tar.extractall(root)
+          src=Path(os.environ['DS_COMPARE_SOURCE'])
+          assert 'def new_comparison(self)' in (src/'dsac29/gui_modern.py').read_text(encoding='utf8')
+          assert 'self.layers.SetLayer' in (src/'dsac29/step_io.py').read_text(encoding='utf8')
+          version=(src/'VERSION.txt').read_text(encoding='utf8').strip()
+          assert version=='4.6 R11.17'
+          revision=os.environ['GITHUB_SHA'][:8]
+          (src/'build_info.json').write_text(json.dumps({'version':f'{version} · GitHub {revision}','commit':os.environ['GITHUB_SHA'],'platform':'Windows x64','ui':'PySide6'},ensure_ascii=False),encoding='utf8')
+          print('R11.17 UI+STEP status layers installed')
+          '@ | Set-Content R1117_restore.py -Encoding UTF8
+          python R1117_restore.py
+          if($LASTEXITCODE -ne 0){throw 'R11.17 overlay restore failed'}
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r (Join-Path $env:DS_COMPARE_SOURCE 'requirements.txt') 'PySide6>=6.8,<6.10' 'vtk>=9.6,<9.7' 'cadquery-ocp==7.9.3.1.1' 'cadquery-ocp-proxy==7.9.3.1.1' 'pytest>=8,<10' 'pyinstaller>=6.11,<7'
+          if($LASTEXITCODE -ne 0){throw 'Package installation failed'}
+          python -m pip check
+          if($LASTEXITCODE -ne 0){throw 'Dependency conflict'}
+      - name: Check Qt layout and new comparison button without CAD benchmarks
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location $env:DS_COMPARE_SOURCE
+          python -m pytest -q tests/test_r1117_gui_state.py
+          if($LASTEXITCODE -ne 0){throw 'R11.17 Qt regression failed'}
+      - name: Compile DSCompare.exe for Windows x64
+        shell: pwsh
+        run: |
+          Set-Location $env:DS_COMPARE_SOURCE
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --hidden-import dsac29.import_cache --hidden-import dsac29.gui_modern --add-data "build_info.json;." --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" DSCompareV3.py
+          if($LASTEXITCODE -ne 0){throw 'PyInstaller Windows build failed'}
+          if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSCompare.exe'))){throw 'Missing DSCompare.exe'}
+      - name: Compile ZW3D bridge DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $where=Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs=& $where -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if(-not $vs){throw 'Missing MSVC'}
+          $env:DS_COMPARE_VCVARS=Join-Path $vs 'VC/Auxiliary/Build/vcvars64.bat'
+          & cmd.exe /d /c (Join-Path $env:DS_COMPARE_SOURCE 'bridge/build_bridge_wrapper.cmd')
+          if($LASTEXITCODE -ne 0){throw 'ZW3D bridge DLL build failed'}
+          if(-not (Test-Path (Join-Path $env:DS_COMPARE_OUT 'DSAssemblyCompare2019.dll'))){throw 'Missing ZW3D bridge DLL'}
+      - name: Confirm compiled Windows GUI starts
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=$env:DS_COMPARE_SOURCE
+          $exe=Join-Path $env:DS_COMPARE_OUT 'DSCompare.exe'
+          $dest=Join-Path $env:RUNNER_TEMP 'R1117_GUI'
+          $p=Start-Process -FilePath $exe -ArgumentList @('--smoke-test-ui',$dest) -Wait -PassThru
+          if($p.ExitCode -ne 0){throw "Compiled R11.17 UI smoke failed: $($p.ExitCode)"}
+          if(-not (Test-Path (Join-Path $dest 'UI_OK.json'))){throw 'Qt smoke did not complete'}
+      - name: Package portable Windows program
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=$env:DS_COMPARE_OUT
+          foreach($name in @('README_R119.txt','README_R120.txt','README_R1111.txt','README_R1112.txt','README_R1114.txt','UTWORZ_SKROT_START.cmd','UTWORZ_SKROT_START.ps1')){
+            Copy-Item (Join-Path $env:DS_COMPARE_SOURCE $name) (Join-Path $out $name) -Force
+          }
+          foreach($name in @('DSCompare.exe','DSAssemblyCompare2019.dll')){
+            $sha=(Get-FileHash (Join-Path $out $name) -Algorithm SHA256).Hash
+            "$name $sha" | Add-Content (Join-Path $out 'SHA256.txt')
+          }
+          'R1117_QT_UI_FIXES_SAFE_STEP_LAYERS_NOT_NATIVE_ASSEMBLY' | Set-Content (Join-Path $out 'STATUS.txt')
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1117_WINDOWS_x64_EXE_DLL.zip'
+          Compress-Archive -Path "$out/*" -DestinationPath $dest -CompressionLevel Optimal
+          if(-not (Test-Path $dest)){throw 'Missing ZIP'}
+      - name: Upload compiled DSCompare R11.17 ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R1117-Windows-x64-EXE-DLL
+          path: DSCompare_R1117_WINDOWS_x64_EXE_DLL.zip
+          if-no-files-found: error
+          retention-days: 30
