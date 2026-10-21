@@ -100,4 +100,11 @@ if meta.exists():
  data['ui']='centered controls, wrapped settings cards, mass drag/drop, 5-column readable table'
  data['step_note']='Native assembly containers are necessary; cannot safely delete in exported STEP'
  meta.write_text(json.dumps(data,ensure_ascii=False),encoding='utf8')
+# Update the packaged GUI smoke mode: responsive scroll panes are intentional.
+entry=root/'DSCompareV3.py'
+entry_text=entry.read_text(encoding='utf8')
+old="assert not w.centralWidget().findChildren(QScrollArea), 'unexpected window scrollbars'"
+assert entry_text.count(old)==1, 'packaged smoke compatibility anchor changed'
+entry_text=entry_text.replace(old,"assert len(w.centralWidget().findChildren(QScrollArea))==2, 'mass and settings should have responsive scroll containers'",1)
+entry.write_text(entry_text,encoding='utf8')
 print('R11.23 stable settings forms installed')
