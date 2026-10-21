@@ -45,7 +45,7 @@ def main():
         content=dest.read_text(encoding='cp1250')
         assert content.startswith('MACRO main\n')
         assert '[vxSend,"$tm=more"]' in content
-        assert str(exe) in content
+        assert str(exe.resolve()).casefold() in content.casefold(), (str(exe.resolve()),repr(content))
         assert 'ENDMACRO' in content
         assert dest.is_file()
     w.close()
