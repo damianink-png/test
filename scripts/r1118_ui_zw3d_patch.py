@@ -42,32 +42,32 @@ g.write_text(text,encoding="utf-8")
 # Color dialog: protect last status swatch from footer at 125/150/200% DPI.
 p=root/"dsac29"/"gui46.py"
 t=p.read_text("utf8")
-old="   dlg.setMinimumWidth(465)"
+old="  dlg.setMinimumWidth(465)"
 assert old in t
-t=t.replace(old,"   dlg.setMinimumWidth(510);dlg.setMinimumHeight(435);dlg.resize(580,535)\n   dlg.setStyleSheet(self.styleSheet())",1)
-old="   root=QVBoxLayout(dlg)"
+t=t.replace(old,"  dlg.setMinimumWidth(510);dlg.setMinimumHeight(435);dlg.resize(580,535)\n  dlg.setStyleSheet(self.styleSheet())",1)
+old="  root=QVBoxLayout(dlg)"
 assert old in t
-t=t.replace(old,"   root=QVBoxLayout(dlg);root.setSpacing(12);root.setContentsMargins(18,18,18,18)",1)
-old="   root.addLayout(grid)"
+t=t.replace(old,"  root=QVBoxLayout(dlg);root.setSpacing(12);root.setContentsMargins(18,18,18,18)",1)
+old="  root.addLayout(grid)"
 assert old in t
-new="""   from PySide6.QtWidgets import QScrollArea,QWidget
-   grid_host=QWidget(dlg)
-   grid.setContentsMargins(4,4,4,4)
-   grid.setVerticalSpacing(12)
-   grid_host.setLayout(grid)
-   scroll=QScrollArea(dlg)
-   scroll.setWidgetResizable(True)
-   scroll.setFrameShape(QFrame.NoFrame)
-   scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-   scroll.setWidget(grid_host)
-   root.addWidget(scroll,1)
+new="""  from PySide6.QtWidgets import QScrollArea,QWidget
+  grid_host=QWidget(dlg)
+  grid.setContentsMargins(4,4,4,4)
+  grid.setVerticalSpacing(12)
+  grid_host.setLayout(grid)
+  scroll=QScrollArea(dlg)
+  scroll.setWidgetResizable(True)
+  scroll.setFrameShape(QFrame.NoFrame)
+  scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+  scroll.setWidget(grid_host)
+  root.addWidget(scroll,1)
 """
 t=t.replace(old,new,1)
-old="   actions=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)"
+old="  actions=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)"
 assert old in t
-t=t.replace(old,"   actions=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)\n"
-                "   actions.button(QDialogButtonBox.Ok).setText('Zapisz')\n"
-                "   actions.button(QDialogButtonBox.Cancel).setText('Anuluj')",1)
+t=t.replace(old,"  actions=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)\n"
+                "  actions.button(QDialogButtonBox.Ok).setText('Zapisz')\n"
+                "  actions.button(QDialogButtonBox.Cancel).setText('Anuluj')",1)
 p.write_text(t,encoding="utf8")
 
 module=root/"dsac29"/"zw3d_launcher.py"
