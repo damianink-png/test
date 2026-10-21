@@ -28,6 +28,8 @@ on:
       - 'scripts/r1123_ui_smoke.py'
       - 'scripts/r1123_real_screenshots.py'
       - 'scripts/r1124_inspect.py'
+      - 'scripts/r1124_inspect_more.py'
+      - 'scripts/r1124_step_diagnostics.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -475,6 +477,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           python scripts/r1124_inspect.py
+          python scripts/r1124_inspect_more.py
           if($LASTEXITCODE -ne 0){throw 'Source inspection failed'}
       - name: Install Python dependencies
         shell: pwsh
