@@ -26,6 +26,7 @@ on:
       - 'scripts/r1123_mass_ui_patch.py'
       - 'scripts/r1123_settings_patch.py'
       - 'scripts/r1123_ui_smoke.py'
+      - 'scripts/r1123_real_screenshots.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -531,6 +532,23 @@ jobs:
           $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
           python scripts/r1123_ui_smoke.py
           if($LASTEXITCODE -ne 0){throw 'R11.23 UI regression failed'}
+      - name: Capture authentic screenshots from the running Windows Qt program
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
+          $env:SCREENSHOT_OUT=Join-Path $env:GITHUB_WORKSPACE 'real_screenshots'
+          python scripts/r1123_real_screenshots.py
+          if($LASTEXITCODE -ne 0){throw 'Screenshot capture from actual Qt program failed'}
+      - name: Upload real R11.23 screenshots (light and dark, all tabs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R1123-REAL-Qt-Screenshots
+          path: real_screenshots/*.png
+          if-no-files-found: error
+          retention-days: 30
       - name: Verify actual assembly tree, all solids and no orphan ABSR STEP products
         shell: pwsh
         env:
