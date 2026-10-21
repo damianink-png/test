@@ -28,8 +28,8 @@ fn=""" def create_zw3d_macro(self):
   try:
    path=create_macro()
    QMessageBox.information(self,'Uruchamianie z ZW3D 2019',
-      'Przygotowano makro:\n'+str(path)+
-      '\n\nWczytaj ten plik .mac w menedżerze makr ZW3D 2019 i przypisz do przycisku. '+
+      'Przygotowano makro:\\n'+str(path)+
+      '\\n\\nWczytaj ten plik .mac w menedżerze makr ZW3D 2019 i przypisz do przycisku. '+
       'Makro wywołuje aktualną lokalizację DSCompare.exe. Po przeniesieniu EXE utwórz makro ponownie. '+
       'Działanie w ZW3D 2019 wymaga sprawdzenia na zainstalowanym programie.')
    if os.name=='nt':os.startfile(str(path.parent))
