@@ -1,0 +1,40 @@
+name: DSCompare R11.18 ZIP with one EXE
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/package-r1118-single-exe.yml'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  pack:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Download verified compiled R11.18 onefile binary from successful build
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $stage=Join-Path $env:RUNNER_TEMP 'r1118_original'
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          gh run download 39581016282 --repo damianink-png/test --name DSCompare-R1118-ONE-EXE-Windows-x64 --dir $stage
+          if($LASTEXITCODE -ne 0){throw 'Cannot retrieve compiled Windows R11.18 artifact'}
+          $archives=@(Get-ChildItem -Path $stage -Filter '*.zip' -File)
+          if($archives.Count -ne 1){throw "Expected one nested ZIP, found $($archives.Count)"}
+          Expand-Archive -LiteralPath $archives[0].FullName -DestinationPath (Join-Path $stage 'inner') -Force
+          $files=@(Get-ChildItem -Path (Join-Path $stage 'inner') -Recurse -File)
+          if($files.Count -ne 1 -or $files[0].Name -ne 'DSCompare.exe'){throw 'Original ZIP must contain exactly DSCompare.exe'}
+          Copy-Item -LiteralPath $files[0].FullName -Destination (Join-Path $env:GITHUB_WORKSPACE 'DSCompare.exe')
+          $exe=Join-Path $env:GITHUB_WORKSPACE 'DSCompare.exe'
+          if((Get-Item $exe).Length -lt 100000000){throw 'Compiled EXE is unexpectedly small'}
+          Write-Host "Portable Windows EXE SHA256: $((Get-FileHash $exe -Algorithm SHA256).Hash)"
+      - name: Upload artifact ZIP containing only one EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R1118-JEDEN-PLIK-EXE
+          path: DSCompare.exe
+          if-no-files-found: error
+          retention-days: 30
