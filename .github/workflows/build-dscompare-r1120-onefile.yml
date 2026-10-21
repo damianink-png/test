@@ -1,4 +1,4 @@
-name: DS Compare R11.23 - responsive Qt UI and single Windows EXE
+name: DS Compare R11.24 - STEP diagnosis, performance and stable reports
 on:
   workflow_dispatch:
   push:
@@ -27,6 +27,7 @@ on:
       - 'scripts/r1123_settings_patch.py'
       - 'scripts/r1123_ui_smoke.py'
       - 'scripts/r1123_real_screenshots.py'
+      - 'scripts/r1124_inspect.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -469,6 +470,12 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R11.23 settings patch failed'}
           python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/mass_drop.py')
           if($LASTEXITCODE -ne 0){throw 'R11.23 Python source invalid'}
+      - name: Inspect CAD and UI source baseline for R11.24 precision patches
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/r1124_inspect.py
+          if($LASTEXITCODE -ne 0){throw 'Source inspection failed'}
       - name: Install Python dependencies
         shell: pwsh
         run: |
