@@ -87,7 +87,7 @@ def create_macro(executable=None, output_dir=None):
     exe=Path(executable or sys.executable).resolve()
     if not exe.is_file() or exe.suffix.casefold() != ".exe":
         raise ValueError("Wymagany istniejący plik programu DSCompare.exe")
-    if any(x in str(exe) for x in ('"', "\\\\n", "\\\\r")):
+    if '"' in str(exe) or chr(10) in str(exe) or chr(13) in str(exe):
         raise ValueError("Niepoprawna ścieżka do programu")
     target=Path(output_dir) if output_dir is not None else (
         Path(os.environ.get("APPDATA") or (Path.home()/"AppData"/"Roaming"))
