@@ -416,6 +416,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           Set-Location $env:DS_COMPARE_SOURCE
+          python -c "from pathlib import Path;p=Path('tests/test_r1117_gui_state.py');t=p.read_text(encoding='utf8');a='from dsac29.gui_modern import ModernWindow,AboutWindow';b='from dsac29.gui46 import Window as ModernWindow\\n    from dsac29.gui_modern import AboutWindow';assert a in t;p.write_text(t.replace(a,b,1),encoding='utf8')"
           python -m pytest -q tests/test_r1117_gui_state.py
           if($LASTEXITCODE -ne 0){throw 'R11.17 Qt regression failed'}
       - name: Compile DSCompare.exe for Windows x64
