@@ -12,11 +12,11 @@ from dsac29.step_diagnostics import inspect
 from PySide6.QtWidgets import QApplication
 from dsac29.gui46 import Window
 
-def make(name,x):
+def make(name,x,length=20):
     tr=gp_Trsf();tr.SetTranslation(gp_Vec(float(x),0,0))
-    return describe(BRepPrimAPI_MakeBox(20,15,10).Shape().Located(TopLoc_Location(tr)),name,name)
+    return describe(BRepPrimAPI_MakeBox(length,15,10).Shape().Located(TopLoc_Location(tr)),name,name)
 a=[make('identyczna',0),make('usunieta',30)]
-b=[make('identyczna',0),make('nowa',70)]
+b=[make('identyczna',0),make('nowa',70,27)]
 rows=compare(a,b,revision_only=True)
 assert {'SAME','REMOVED','ADDED'}.issubset({r.status for r in rows}),rows
 with TemporaryDirectory() as tmp:
