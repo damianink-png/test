@@ -11,6 +11,7 @@ import os
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QFontDatabase
 
 from dsac29.gui46 import Window
 
@@ -18,9 +19,14 @@ root = Path(os.environ.get("SCREENSHOT_OUT", "real_screenshots")).resolve()
 root.mkdir(parents=True, exist_ok=True)
 app = QApplication.instance() or QApplication([])
 app.setQuitOnLastWindowClosed(False)
+families = QFontDatabase.families()
+print("Qt font families:", families[:50])
+font = "Segoe UI" if "Segoe UI" in families else "Arial" if "Arial" in families else "Tahoma"
+app.setFont(QFont(font, 10))
+print("Using font:", font, "platform:", app.platformName())
 window = Window()
 window.setWindowTitle("DS Compare")
-window.resize(1440, 960)
+window.resize(1600, 1000)
 window.show()
 app.processEvents()
 
@@ -31,7 +37,7 @@ mapping = (
 )
 manifest = {
     "capture": "actual DS Compare R11.23 PySide6.QtWidgets screens",
-    "method": "QWidget.grab on windows-2022 GitHub runner with QT_QPA_PLATFORM=offscreen",
+    "method": "QWidget.grab on windows-2022 GitHub runner with QT_QPA_PLATFORM=windows",
     "source": "dsac29.gui46.Window",
     "images": [],
 }
@@ -39,12 +45,12 @@ for theme, theme_label in (("Ciemny", "Ciemny"), ("Jasny", "Jasny")):
     window.apply_theme(theme)
     for tab, label in mapping:
         window.navigate(tab)
-        window.resize(1440, 960)
+        window.resize(1600, 1000)
         app.processEvents()
         assert window.nav[tab].isChecked(), f"Wrong tab selected: {tab}"
         # Screenshots are from live window. Nothing is drawn by image tooling.
         pixmap = window.grab()
-        assert pixmap.width() >= 1400 and pixmap.height() >= 900, (
+        assert pixmap.width() >= 1500 and pixmap.height() >= 950, (
             label, pixmap.width(), pixmap.height()
         )
         output = root / f"DSCompare_R1123_{label}_{theme_label}.png"
