@@ -28,7 +28,7 @@ with TemporaryDirectory() as temp:
   files.append(path)
  w._mass_add(files)
  assert len(w.mass_inputs)==2
- assert w.mass_file.path.text()==str(files[0])
+ assert Path(w.mass_file.path.text()).samefile(files[0]),(w.mass_file.path.text(),str(files[0]))
  assert not w.mass_actions.isVisible()
  result,summary=analyze_many([str(p) for p in files],folder/'outputs',7850,progress=lambda s:None,max_solids=20000)
  assert summary['liczba_plikow']==2,summary
