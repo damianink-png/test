@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt,QMimeData,QUrl
 from dsac29.gui46 import Window
 from dsac29.mass_drop import MassDropArea
 app=QApplication.instance() or QApplication([])
-w=Window();w.show()
+w=Window();w.show();w.navigate('mass');app.processEvents()
 assert isinstance(w.mass_drop,MassDropArea)
 assert w.mass_drop.acceptDrops()
 assert w.mass_reset.parentWidget() is not w.mass_drop
