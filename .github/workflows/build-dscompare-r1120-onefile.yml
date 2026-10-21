@@ -535,7 +535,7 @@ jobs:
       - name: Capture authentic screenshots from the running Windows Qt program
         shell: pwsh
         env:
-          QT_QPA_PLATFORM: offscreen
+          QT_QPA_PLATFORM: windows
         run: |
           $ErrorActionPreference='Stop'
           $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
