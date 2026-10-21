@@ -550,7 +550,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $src=Join-Path $env:DS_COMPARE_OUT 'DSCompare'
+          $src=$env:DS_COMPARE_OUT
           $exe=Join-Path $src 'DSCompare.exe'
           if(-not (Test-Path $exe)){throw 'Missing onedir EXE'}
           if(-not (Test-Path (Join-Path $src '_internal'))){throw 'Missing onedir runtime'}
