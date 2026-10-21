@@ -34,6 +34,7 @@ on:
       - 'scripts/r1124_step_smoke.py'
       - 'scripts/r1124_rootless_patch.py'
       - 'scripts/r1124_perf_reliability_patch.py'
+      - 'scripts/r1124_moved_smoke.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -576,6 +577,15 @@ jobs:
           path: real_screenshots/*.png
           if-no-files-found: error
           retention-days: 30
+      - name: R11.24 - check moved count parity in revision comparison
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
+          python scripts/r1124_moved_smoke.py
+          if($LASTEXITCODE -ne 0){throw 'R11.24 moved-count regression failed'}
       - name: R11.24 - test grouped and ABSR-free STEP variants with verified solids
         shell: pwsh
         env:
