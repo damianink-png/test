@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import csv,json,os
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QSettings
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.STEPControl import STEPControl_Writer,STEPControl_AsIs
 from OCP.IFSelect import IFSelect_RetDone
@@ -10,6 +11,8 @@ from dsac29.gui46 import Window
 from dsac29.mass_batch import analyze_many
 
 app=QApplication.instance() or QApplication([])
+# Earlier R11.21 smoke enables flat mode and leaves its QSettings value behind.
+QSettings('DSCompare','Revision45').remove('zw3d_flat_output_r1122')
 w=Window()
 assert w.zw3d_flat_output.isChecked() is False,'native subassemblies must be enabled by default'
 assert w.mass_done.isHidden() and w.mass_actions.isHidden()
