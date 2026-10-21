@@ -674,6 +674,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: DSCompare-R1124-ONE-EXE-Windows-x64
-          path: DSCompare_R1124_JEDEN_EXE_WINDOWS_x64.zip
+          path: ${{ env.DSCOMPARE_ONEFILE_EXE }}
           if-no-files-found: error
           retention-days: 30
