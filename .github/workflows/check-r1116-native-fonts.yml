@@ -1,0 +1,43 @@
+name: R11.16 Native Windows Font Render Check
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/check-r1116-native-fonts.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify-render:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch compiled R11.16 from successful run
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $dir=Join-Path $env:RUNNER_TEMP 'dscompare_native'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          gh run download 39557443298 --repo damianink-png/test --name DSCompare-R1116-Windows-x64-EXE-DLL --dir $dir
+          if($LASTEXITCODE -ne 0){throw 'Missing compiled archive'}
+          $zip=Get-ChildItem $dir -Filter '*.zip' | Select-Object -First 1
+          if(-not $zip){throw 'Missing nested portable ZIP'}
+          Expand-Archive $zip.FullName -DestinationPath (Join-Path $dir 'bin') -Force
+      - name: Render via native qwindows platform instead of offscreen
+        shell: pwsh
+        run: |
+          $root=Join-Path $env:RUNNER_TEMP 'dscompare_native'
+          $exe=Join-Path $root 'bin/DSCompare.exe'
+          $dest=Join-Path $env:GITHUB_WORKSPACE 'R1116_NATIVE_RENDER'
+          $env:QT_QPA_PLATFORM='windows'
+          $p=Start-Process -FilePath $exe -ArgumentList @('--smoke-test-ui',$dest) -PassThru -Wait
+          if($p.ExitCode -ne 0){throw 'Windows native Qt renderer test failed'}
+          if(-not (Test-Path (Join-Path $dest 'compare_Ciemny.png'))){throw 'No screenshot'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DSCompare-R1116-QWINDOWS-NATIVE-FONTS
+          path: R1116_NATIVE_RENDER
+          if-no-files-found: warn
