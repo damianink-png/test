@@ -357,6 +357,23 @@ jobs:
           '@ | Set-Content R1116_overlay_restore.py -Encoding UTF8
           python R1116_overlay_restore.py
           if($LASTEXITCODE -ne 0){throw 'R1116 source restore failed'}
+      - name: R11.16 compatibility hotfix for older mass FileCard chooser
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import os
+          from pathlib import Path
+          p=Path(os.environ['DS_COMPARE_SOURCE'])/'dsac29/gui_modern.py'
+          s=p.read_text(encoding='utf8')
+          old="  tile.choose_button.setText('Wybierz plik');tile.choose_button.setMinimumWidth(120);layout.addWidget(tile.choose_button,alignment=Qt.AlignCenter)"
+          new="  if not hasattr(tile,'choose_button'):tile.choose_button=next((w for w in tile.findChildren(QPushButton) if 'Wybierz' in w.text()),None)\n  if tile.choose_button is None:raise RuntimeError('Brak przycisku wyboru pliku CAD')\n"+old
+          assert old in s
+          p.write_text(s.replace(old,new,1),encoding='utf8')
+          print('Mass FileCard chooser compatibility applied')
+          '@ | Set-Content R1116_mass_compat.py -Encoding UTF8
+          python R1116_mass_compat.py
+          if($LASTEXITCODE -ne 0){throw 'Modern mass chooser hotfix failed'}
       - name: Install Python dependencies
         shell: pwsh
         run: |
