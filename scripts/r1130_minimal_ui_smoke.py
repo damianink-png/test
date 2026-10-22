@@ -89,5 +89,42 @@ with TemporaryDirectory() as folder:
  assert not w.mass_actions.isVisible()
  assert not w.mass_new_button.isVisible()
  assert w.mass_add_files.text()=='Wybierz pliki'
+from PySide6.QtCore import QProcess
+from dsac29.gui_modern import AboutWindow
+w.navigate('settings');app.processEvents()
+assert w._settings_save_button.isEnabled()
+worker=QProcess(w)
+w.process=worker;w.task='compare'
+w._set_busy_ui(True)
+assert w._analysis_busy_banner.isVisible()
+assert all(button.isEnabled() for button in w.nav.values())
+assert w.theme_button.isEnabled() and w.about_button.isEnabled()
+assert not w._settings_save_button.isEnabled()
+assert not w.run_compare.isEnabled() and not w.run_mass.isEnabled()
+w.navigate('mass');app.processEvents()
+assert w.stack.currentWidget() is w.pages['mass']
+w.navigate('settings');app.processEvents()
+assert w.stack.currentWidget() is w.pages['settings']
+theme_before=w.theme.currentText()
+w.theme_button.click();app.processEvents()
+assert w.theme.currentText()!=theme_before
+saved_before=float(w.store.value('tolerance',.01))
+old_tolerance=w.tolerance.value()
+w.tolerance.setValue(.0321 if old_tolerance!=.0321 else .0221)
+assert abs(float(w.store.value('tolerance',.01))-saved_before)<1e-9,'Settings unexpectedly auto-saved during analysis'
+observed=[]
+old_exec=AboutWindow.exec
+try:
+ AboutWindow.exec=lambda self:observed.append('opened') or 0
+ w.about_button.click()
+ assert observed==['opened']
+finally:
+ AboutWindow.exec=old_exec
+w.process=None
+w._set_busy_ui(False)
+assert w._settings_save_button.isEnabled()
+assert w.run_compare.isEnabled() and w.run_mass.isEnabled()
+w._settings_save_button.click()
+assert abs(float(w.store.value('tolerance',.01))-w.tolerance.value())<1e-9
 w.close()
 print('R11.30 PASS: selected CAD cards, per-file x removal, no disk deletion, clean result-only compare/mass, new task resets')
