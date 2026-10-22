@@ -52,7 +52,7 @@ KOMPILACJA LOKALNA (Windows 64-bit):
 3. Otworz PowerShell w rozpakowanym katalogu.
 4. Uruchom:
      powershell -ExecutionPolicy Bypass -File .\\BUDUJ_WINDOWS.ps1
-5. Gotowy plik powinien znalezc sie pod: dist\\DSCompare.exe
+5. Uruchom dist\\DSCompare\\DSCompare.exe. Zawsze zachowaj caly folder DSCompare (w tym _internal).
 
 Uruchomienie zrodel (po zainstalowaniu pakietow):
      python DSCompareV3.py
