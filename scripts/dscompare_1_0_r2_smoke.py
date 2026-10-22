@@ -3,7 +3,7 @@ import inspect
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from PySide6.QtCore import QProcess,Qt
-from PySide6.QtWidgets import QApplication,QPushButton,QLabel,QScrollArea
+from PySide6.QtWidgets import QApplication,QPushButton,QLabel,QScrollArea,QFormLayout
 from dsac29.gui46 import Window
 import dsac29.gui46 as legacy
 
@@ -28,7 +28,7 @@ with TemporaryDirectory() as folder:
  assert w._mass_materials_panel.isVisible()
  form=w._mass_materials_panel.layout()
  for i,control in enumerate((w.materials,w.density)):
-  label=form.itemAt(i,form.LabelRole).widget()
+  label=form.itemAt(i,QFormLayout.LabelRole).widget()
   assert isinstance(label,QLabel)
   assert label.alignment() & Qt.AlignVCenter
   assert label.minimumHeight()>=control.minimumHeight()
