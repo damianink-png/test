@@ -1,4 +1,4 @@
-name: DS Compare R11.28 - verified registration, WinError 5, safe Windows exit
+name: DS Compare R11.29 - fix colored occurrences ABSR and repeated-part alignment
 on:
   workflow_dispatch:
   push:
@@ -52,6 +52,11 @@ on:
       - 'scripts/r1128_responsive_patch.py'
       - 'scripts/r1128_regression.py'
       - 'scripts/r1128_package_complete_sources.py'
+      - 'scripts/r1129_absr_patch.py'
+      - 'scripts/r1129_alignment_patch.py'
+      - 'scripts/r1129_legacy_tests_patch.py'
+      - 'scripts/r1129_package_complete_sources.py'
+      - 'tests/test_r1129_no_surplus_absr.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -770,20 +775,42 @@ jobs:
           $ErrorActionPreference='Stop'
           python scripts/r1127_source_inspect.py
           if($LASTEXITCODE -ne 0){throw 'Source introspection failed'}
-      - name: Package complete R11.28 source tree BEFORE PyInstaller
+      - name: Apply R11.29 STEP, ABSR, compound and repeated-alignment patches
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          python scripts/r1128_package_complete_sources.py
+          python scripts/r1129_absr_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.29 STEP ABSR patch failed'}
+          python scripts/r1129_alignment_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.29 repeated-part alignment patch failed'}
+          python scripts/r1129_legacy_tests_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.29 legacy regression update failed'}
+          Copy-Item -LiteralPath "$env:GITHUB_WORKSPACE/tests/test_r1129_no_surplus_absr.py" -Destination "$env:DS_COMPARE_SOURCE/tests/test_r1129_no_surplus_absr.py" -Force
+          python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/alignment.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/step_io.py') (Join-Path $env:DS_COMPARE_SOURCE 'tests/test_r1129_no_surplus_absr.py')
+          if($LASTEXITCODE -ne 0){throw 'R11.29 source syntax failure'}
+      - name: R11.29 B-Rep alignment and surplus STEP representation regressions
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location $env:DS_COMPARE_SOURCE
+          python -m pytest -q tests/test_r1129_no_surplus_absr.py tests/test_r1111_no_absr.py
+          if($LASTEXITCODE -ne 0){throw 'R11.29 CAD/ABSR regression failure'}
+      - name: Package complete R11.29 source tree BEFORE PyInstaller
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/r1129_package_complete_sources.py
           if($LASTEXITCODE -ne 0){throw 'Unable to archive pre-compile source tree'}
-          $src=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1128_PELNE_ZRODLA_PRZED_KOMPILACJA.zip'
+          $src=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1129_PELNE_ZRODLA_PRZED_KOMPILACJA.zip'
           if(-not (Test-Path $src)){throw 'Source ZIP missing'}
           Write-Host "Source archive ready: $((Get-Item $src).Length) bytes"
-      - name: Upload complete pre-compile R11.28 source ZIP
+      - name: Upload complete pre-compile R11.29 source ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-R1128-PELNE-ZRODLA-PRZED-KOMPILACJA
-          path: DSCompare_R1128_PELNE_ZRODLA_PRZED_KOMPILACJA.zip
+          name: DSCompare-R1129-PELNE-ZRODLA-PRZED-KOMPILACJA
+          path: DSCompare_R1129_PELNE_ZRODLA_PRZED_KOMPILACJA.zip
           if-no-files-found: error
           retention-days: 30
       - name: Compile portable SINGLE DSCompare.exe for Windows x64
@@ -809,7 +836,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $exe=$env:DSCOMPARE_ONEFILE_EXE
           if(-not (Test-Path $exe)){throw 'Single EXE missing'}
-          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1128_UI'
+          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1129_UI'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           $status=Join-Path $dest 'UI_OK.json'
           $errors=Join-Path $dest 'UI_ERROR.txt'
@@ -841,7 +868,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $exe=$env:DSCOMPARE_ONEFILE_EXE
-          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1128_JEDEN_EXE_WINDOWS_x64.zip'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1129_JEDEN_EXE_WINDOWS_x64.zip'
           Compress-Archive -LiteralPath $exe -DestinationPath $out -CompressionLevel Optimal
           if(-not (Test-Path $out)){throw 'ZIP missing'}
           Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -851,11 +878,11 @@ jobs:
             if($entries.Count -ne 1 -or $entries[0].FullName -ne 'DSCompare.exe'){throw 'ZIP must contain only DSCompare.exe'}
           }
           finally {$z.Dispose()}
-          Write-Host "R11.28 ONE EXE ZIP: $((Get-Item $out).Length) bytes"
+          Write-Host "R11.29 ONE EXE ZIP: $((Get-Item $out).Length) bytes"
       - name: Upload ONE EXE Windows ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-R1128-ONE-EXE-Windows-x64
+          name: DSCompare-R1129-ONE-EXE-Windows-x64
           path: ${{ env.DSCOMPARE_ONEFILE_EXE }}
           if-no-files-found: error
           retention-days: 30
