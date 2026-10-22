@@ -1,4 +1,4 @@
-name: DS Compare R11.28 - alignment, busy controls and Windows stability
+name: DS Compare R11.28 - verified registration, WinError 5, safe Windows exit
 on:
   workflow_dispatch:
   push:
@@ -46,6 +46,11 @@ on:
       - 'scripts/r1127_responsive_smoke.py'
       - 'scripts/r1127_settings_reflow_patch.py'
       - 'scripts/r1128_inspect_runtime.py'
+      - 'scripts/r1128_stage_patch.py'
+      - 'scripts/r1128_alignment_patch.py'
+      - 'scripts/r1128_ui_shutdown_patch.py'
+      - 'scripts/r1128_responsive_patch.py'
+      - 'scripts/r1128_regression.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -703,6 +708,20 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R11.27 settings reflow failed'}
           python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui45.py')
           if($LASTEXITCODE -ne 0){throw 'R11.27 Python syntax failed'}
+      - name: R11.28 - hardened alignment, progress telemetry, busy state and shutdown
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/r1128_stage_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.28 atomic progress patch failed'}
+          python scripts/r1128_alignment_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.28 alignment patch failed'}
+          python scripts/r1128_ui_shutdown_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.28 busy/close patch failed'}
+          python scripts/r1128_responsive_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.28 small monitor patch failed'}
+          python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/alignment.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/stage_fast.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui45.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui46.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/cli.py')
+          if($LASTEXITCODE -ne 0){throw 'R11.28 source syntax failure'}
       - name: Inspect runtime alignment and Windows error paths for R11.28
         shell: pwsh
         run: |
@@ -718,6 +737,15 @@ jobs:
           $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
           python scripts/r1127_responsive_smoke.py
           if($LASTEXITCODE -ne 0){throw 'R11.27 responsive GUI regression'}
+      - name: R11.28 - real CAD, WinError 5, settings lock and safe close regression
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
+          python scripts/r1128_regression.py
+          if($LASTEXITCODE -ne 0){throw 'R11.28 alignment/worker/Qt regression failed'}
       - name: Capture R11.27 comparison and mass real screenshots
         shell: pwsh
         env:
@@ -764,7 +792,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $exe=$env:DSCOMPARE_ONEFILE_EXE
           if(-not (Test-Path $exe)){throw 'Single EXE missing'}
-          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1127_UI'
+          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1128_UI'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           $status=Join-Path $dest 'UI_OK.json'
           $errors=Join-Path $dest 'UI_ERROR.txt'
@@ -796,7 +824,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $exe=$env:DSCOMPARE_ONEFILE_EXE
-          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1127_JEDEN_EXE_WINDOWS_x64.zip'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1128_JEDEN_EXE_WINDOWS_x64.zip'
           Compress-Archive -LiteralPath $exe -DestinationPath $out -CompressionLevel Optimal
           if(-not (Test-Path $out)){throw 'ZIP missing'}
           Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -806,11 +834,11 @@ jobs:
             if($entries.Count -ne 1 -or $entries[0].FullName -ne 'DSCompare.exe'){throw 'ZIP must contain only DSCompare.exe'}
           }
           finally {$z.Dispose()}
-          Write-Host "R11.27 ONE EXE ZIP: $((Get-Item $out).Length) bytes"
+          Write-Host "R11.28 ONE EXE ZIP: $((Get-Item $out).Length) bytes"
       - name: Upload ONE EXE Windows ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-R1127-ONE-EXE-Windows-x64
+          name: DSCompare-R1128-ONE-EXE-Windows-x64
           path: ${{ env.DSCOMPARE_ONEFILE_EXE }}
           if-no-files-found: error
           retention-days: 30
