@@ -44,7 +44,12 @@ method('_tile',""" def _tile(self,tile,number):
   layout=tile.layout()
   while layout.count():
    it=layout.takeAt(0)
-   if it.widget():it.widget().hide()
+   if it.layout():
+    nested=it.layout()
+    while nested.count():
+     sub=nested.takeAt(0)
+     if sub.widget():sub.widget().setParent(tile)
+   elif it.widget():it.widget().hide()
   layout.setContentsMargins(17,13,17,13);layout.setSpacing(5)
   row=QHBoxLayout();row.setSpacing(12)
   emblem=QLabel();emblem.setPixmap(vector_icon('file','#8DA6C9').pixmap(28,28))
@@ -303,6 +308,7 @@ method('_modern_mass',""" def _modern_mass(self):
 
  def _set_mass_result_state(self,done):
   self._mass_form_host.setVisible(not done)
+  self.mass_done.setVisible(done)
   self._mass_result_card.setVisible(done)
   self.mass_actions.setVisible(done)
   self.mass_new_button.setVisible(done)
