@@ -60,7 +60,7 @@ assert s.count(old)==1
 s=s.replace(old,"  # Alignment is automatic for all comparisons; no manual setting.\n  self.align.setChecked(False)\n  self.align.hide()\n  info=QLabel('Po imporcie program sam sprawdza położenie modeli. Jeśli potrzeba wyrównania, zapyta o zgodę.')\n  info.setObjectName('muted');info.setWordWrap(True);cp.addRow(info)",1)
 p.write_text(s,encoding="utf8")
 
-(root/"VERSION.txt").write_text("R11.31\\n",encoding="utf8")
+(root/"VERSION.txt").write_text('R11.31'+chr(10),encoding='utf8')
 m=root/"build_info.json"
 if m.exists():
  d=json.loads(m.read_text(encoding="utf8"))
