@@ -11,7 +11,7 @@ app=QApplication.instance() or QApplication([])
 w=Window();w.show();app.processEvents()
 assert all(isinstance(w.pages[k],QScrollArea) for k in ('compare','mass','settings'))
 assert w.minimumHeight()>=480
-source=inspect.getsource(legacy.Window.start)
+source=Path(legacy.__file__).read_text(encoding='utf8')
 assert "if kind=='compare':" in source
 assert "elif kind=='mass':" in source
 assert "self.compare_summary.setText('Analiza trwa…' if kind=='compare' else 'Obliczanie masy…')" not in source
