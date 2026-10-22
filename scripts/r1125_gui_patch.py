@@ -164,10 +164,8 @@ new_settings=""" def _modern_settings(self):
 s=s[:a]+new_settings+s[b:]
 
 # Old toggles remain as invisible compatibility widgets, but content opens automatically.
-replace("""  self._details_toggle.clicked.connect(self._toggle_details)
-  lay.addWidget(self._details_toggle,alignment=Qt.AlignLeft)""",
-"""  self._details_toggle.clicked.connect(self._toggle_details)
-  self._details_toggle.hide()""")
+replace("  lay.addWidget(self._details_toggle,alignment=Qt.AlignLeft)",
+        "  self._details_toggle.hide()")
 # The existing creation code may be in a one-line assignment, don't assume its layout.
 replace("  lay.insertWidget(lay.indexOf(self._mass_details),self._mass_toggle,0,Qt.AlignLeft)",
         "  self._mass_toggle.hide()")
