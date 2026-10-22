@@ -19,6 +19,19 @@ assert package['format']=='dscompare_r6_v2'
 assert package['source_sha256']=='94a349f7f1b12322614f1625d7f2781fab8b6685507ce8103e5176efc83d0a51'
 files=package['files']
 assert len(files)==24,len(files)
+# R6's accuracy benchmark includes exact reference copies of two R3 modules.
+# Preserve them before the live dsac29 modules are upgraded to R6.
+reference_checks={'assignment.py':'50149d5a8a04afaaa08f9ccebc836cc1c8e083a1bfc865effa65cc761dfcbff5',
+                  'compare.py':'1c4e237566825e4a4479ef7c66ad5b3e08c44f995708cb97de084650333bc6fc'}
+for name,wanted in reference_checks.items():
+    original=root/'dsac29'/name
+    raw=original.read_bytes()
+    if hashlib.sha256(raw).hexdigest()!=wanted:
+        raise RuntimeError('Incorrect R6 benchmark reference base: '+name)
+    destination=root/'benchmarks/reference_10'/name
+    destination.parent.mkdir(parents=True,exist_ok=True)
+    destination.write_bytes(raw)
+    print('R6 REFERENCE VERIFIED',str(destination),flush=True)
 for relative,spec in files.items():
     target=root/relative
     expected=spec.get('before_sha256')
