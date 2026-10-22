@@ -27,6 +27,15 @@ for relative,spec in files.items():
             raise RuntimeError('R6 new file conflict: '+relative)
         payload=spec['added'].encode('utf8')
     else:
+        if not target.is_file() and relative=='BUDUJ_WINDOWS.ps1':
+            # The R3 CI pipeline generated this helper only inside its ZIP,
+            # not in the in-memory precompile directory.
+            payload=(repo/'scripts/R6_BUDUJ_WINDOWS.ps1').read_bytes()
+            if hashlib.sha256(payload).hexdigest()!=spec['after_sha256']:
+                raise RuntimeError('R6 build helper differs from uploaded source ZIP')
+            target.write_bytes(payload)
+            print('R6 RECOVERED BUILD HELPER',relative,flush=True)
+            continue
         if not target.is_file():
             raise RuntimeError('R3 expected source absent: '+relative)
         original=target.read_bytes()
