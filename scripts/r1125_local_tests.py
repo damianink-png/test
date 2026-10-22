@@ -12,7 +12,7 @@ import re
 NAME="TESTY_DS_COMPARE_R1125.txt"
 STEPS=(("STANDARDOWY","STEP_STANDARD.step"),("BEZ_KORZENIA","STEP_GRUPY_BEZ_KORZENIA.step"),("PLASKI","STEP_PLASKI.step"))
 
-def run(folder, progress=None):
+def run(folder, progress=None, source_step=None):
     folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
     say=progress or (lambda message:None)
     lines=[
@@ -129,10 +129,33 @@ def run(folder, progress=None):
         return f"Zapis ponownego odczytu: pierwszy={cold}s, drugi={warm}s, bryly={len(a)} (to nie test cache GUI)"
     check("Ponowny odczyt syntetycznego STEP",reimport)
     check("Schemat danych diagnostycznych",lambda:verify_diagnostics(ctx))
+    if source_step:
+        def user_aggregate():
+            # Never include labels, names, exact geometry, paths or individual parts.
+            model=Path(source_step)
+            if not model.is_file() or model.suffix.lower() not in ('.step','.stp'):
+                raise ValueError("Nieprawidlowy lokalny model porownania")
+            from dsac29.step_diagnostics import inspect as inspect_step
+            stats=inspect_step(model)
+            product_count=stats['liczba_produktow_step']
+            usage=stats['liczba_polaczen_podzlozen']
+            solid=stats['wystapienia_manifold_solid_brep']
+            absr_name_count=len(stats['produkty_z_nazwa_absr'])
+            ctx['local_summary']=(
+                f"Zagregowane lokalne STEP: produkty={product_count}; powiazania={usage}; "
+                f"rekordy solid={solid}; nazwy ABSR w STEP={absr_name_count} "
+                "(to nie liczba ABSR tworzonych przez importer ZW3D)."
+            )
+            return "Zliczono tylko rekordy STEP (bez ujawniania nazw lub geometrii)"
+        check("Anonimowa analiza ostatniego wyniku STEP",user_aggregate)
     total=sum(v['ok'] for v in outcomes.values())
     for name,result in outcomes.items():
         lines.append(("PASS" if result['ok'] else "FAIL")+" | "+name+" | "+result['details']+
                      " | "+str(result['sec'])+" s")
+    if ctx.get('local_summary'):
+        lines.append("")
+        lines.append("[OSTATNIE POROWNANIE - WYLACZNIE ZAGREGOWANE LICZNIKI]")
+        lines.append(ctx['local_summary'])
     lines += ["",f"WYNIK: {total}/{len(outcomes)} testow PASS",
         "", "[TEST IMPORTU DO ZW3D 2019 - WPISZ W PROGRAMIE]",
         "Standardowy: ABSR=nie sprawdzono; podzlozenia=nie sprawdzono",
