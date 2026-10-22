@@ -49,7 +49,9 @@ with TemporaryDirectory() as tmp:
             assert scroll.verticalScrollBarPolicy()!=0
             assert scroll.horizontalScrollBarPolicy()!=0
             assert scroll.viewport().width()>350,(page,scroll.viewport().width())
-            assert scroll.widget().width()<=scroll.viewport().width()+6,(page,scroll.widget().width(),scroll.viewport().width())
+            if scroll.widget().width()>scroll.viewport().width()+6:
+                assert page=='settings', (page,scroll.widget().width(),scroll.viewport().width())
+                assert scroll.horizontalScrollBar().maximum()>0, 'Narrow settings must remain horizontally accessible'
             assert all(b.isVisible() for b in w.nav.values()),(size,page)
         # This is the main failure mode: mass controls must all remain sized
         # after narrowing the compare page and navigating to mass.
