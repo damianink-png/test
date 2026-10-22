@@ -1,4 +1,4 @@
-name: DS Compare 1.0 R3 - performance and export audit fixes
+name: DS Compare 1.0 R6 - user source verification, Windows x64
 on:
   workflow_dispatch:
   push:
@@ -83,6 +83,9 @@ on:
       - 'scripts/dscompare_r3_gui_poll.py'
       - 'scripts/dscompare_r3_regression.py'
       - 'scripts/dscompare_r3_package_sources.py'
+      - 'patches/dscompare_r6_delta.b64'
+      - 'scripts/apply_dscompare_r6_uploaded_source.py'
+      - 'scripts/package_dscompare_r6_sources.py'
       - 'tests/test_r1129_no_surplus_absr.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
@@ -947,36 +950,55 @@ jobs:
           Set-Location $env:DS_COMPARE_SOURCE
           python -m pytest -q tests/test_r1129_no_surplus_absr.py tests/test_r1111_no_absr.py
           if($LASTEXITCODE -ne 0){throw 'R3 STEP ABSR or legacy regression failed'}
-      - name: Package complete DS Compare 1.0 R3 sources BEFORE PyInstaller
+      - name: R6 - restore and verify exact user-uploaded source code
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          python scripts/dscompare_r3_package_sources.py
-          if($LASTEXITCODE -ne 0){throw 'Unable to archive pre-compile source tree'}
-          $src=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_1_0_R3_PELNE_ZRODLA_PRZED_KOMPILACJA.zip'
-          if(-not (Test-Path $src)){throw 'Source ZIP missing'}
-          Write-Host "Source archive ready: $((Get-Item $src).Length) bytes"
-      - name: Upload complete pre-compile DS Compare 1.0 source ZIP
+          python scripts/apply_dscompare_r6_uploaded_source.py
+          if($LASTEXITCODE -ne 0){throw 'Unable to reconstruct exactly the user-supplied R6 source code'}
+          python -m compileall -q $env:DS_COMPARE_SOURCE
+          if($LASTEXITCODE -ne 0){throw 'R6 Python source syntax failure'}
+      - name: R6 - run supplied 106-case regression suite
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m pip install --quiet 'PySide6==6.8.3'
+          if($LASTEXITCODE -ne 0){throw 'R6 pinned PySide6 installation failed'}
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
+          Set-Location $env:DS_COMPARE_SOURCE
+          python TESTUJ.py
+          if($LASTEXITCODE -ne 0){throw 'R6 source regression suite failed'}
+      - name: R6 - archive verified precompile sources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/package_dscompare_r6_sources.py
+          if($LASTEXITCODE -ne 0){throw 'R6 source archive verification failed'}
+      - name: Upload R6 full sources ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-1-0-R3-PELNE-ZRODLA-PRZED-KOMPILACJA
-          path: DSCompare_1_0_R3_PELNE_ZRODLA_PRZED_KOMPILACJA.zip
+          name: DSCompare-1-0-R6-PELNE-ZRODLA
+          path: DSCompare_1_0_R6_ZRODLA_Z_GITHUB.zip
           if-no-files-found: error
           retention-days: 30
-      - name: Build STABLE DSCompare Windows x64 folder (without _MEI extraction)
+      - name: R6 - build stable Windows x64 application (all WebGL assets)
         shell: pwsh
+        timeout-minutes: 25
         run: |
           $ErrorActionPreference='Stop'
           Set-Location $env:DS_COMPARE_SOURCE
-          $dist=Join-Path $env:DS_COMPARE_SOURCE 'dist'
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --hidden-import dsac29.import_cache --hidden-import dsac29.registration_gate --hidden-import dsac29.gui_modern --hidden-import dsac29.zw3d_launcher --hidden-import dsac29.mass_batch --hidden-import dsac29.mass_drop --hidden-import dsac29.step_diagnostics --hidden-import dsac29.local_tests --add-data "build_info.json;." --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" --distpath "$dist" DSCompareV3.py
-          if($LASTEXITCODE -ne 0){throw 'PyInstaller onedir failed'}
-          $folder=Join-Path $dist 'DSCompare'
+          & ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if($LASTEXITCODE -ne 0){throw 'R6 PyInstaller compilation failed'}
+          $folder=Join-Path $env:DS_COMPARE_SOURCE 'dist/DSCompare'
           $exe=Join-Path $folder 'DSCompare.exe'
-          if(-not (Test-Path $exe) -or -not (Test-Path (Join-Path $folder '_internal'))){throw 'Incomplete folder build'}
+          if(-not (Test-Path $exe) -or -not (Test-Path (Join-Path $folder '_internal'))){throw 'Incomplete R6 Windows package'}
+          $preview=Join-Path $folder '_internal/dsac29/preview_template.html'
+          if(-not (Test-Path $preview)){throw 'Offline 3D HTML preview template missing from EXE distribution'}
           "DSCOMPARE_DISTRIBUTION=$folder" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "DSCOMPARE_EXE=$exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host 'Stable onedir executable present; no PyInstaller _MEI extraction used'
+          Write-Host 'R6 build PASS - Windows onedir, browser preview template present'
       - name: Validate STABLE Windows EXE startup
         shell: pwsh
         timeout-minutes: 4
@@ -985,7 +1007,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $exe=$env:DSCOMPARE_EXE
-          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_1_0_R3_UI'
+          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_1_0_R6_UI'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           $status=Join-Path $dest 'UI_OK.json'
           $errors=Join-Path $dest 'UI_ERROR.txt'
@@ -1004,7 +1026,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $folder=$env:DSCOMPARE_DISTRIBUTION
-          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_1_0_R3_STABILNY_Windows_x64.zip'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_1_0_R6_STABILNY_Windows_x64.zip'
           Compress-Archive -LiteralPath $folder -DestinationPath $out -CompressionLevel Optimal
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $z=[IO.Compression.ZipFile]::OpenRead($out)
@@ -1015,11 +1037,11 @@ jobs:
             if(-not (@($files | Where-Object {$_.FullName -like '*_internal*'}).Count -gt 0)){throw 'Missing _internal in ZIP'}
           }
           finally{$z.Dispose()}
-          Write-Host "DS Compare 1.0 STABLE ZIP: $((Get-Item $out).Length) bytes"
-      - name: Upload stable R11.31 Windows ZIP
+          Write-Host "DS Compare R6 Windows ZIP: $((Get-Item $out).Length) bytes"
+      - name: Upload DS Compare 1.0 R6 Windows ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-1-0-R3-STABILNY-Windows-x64
-          path: DSCompare_1_0_R3_STABILNY_Windows_x64.zip
+          name: DSCompare-1-0-R6-STABILNY-Windows-x64
+          path: DSCompare_1_0_R6_STABILNY_Windows_x64.zip
           if-no-files-found: error
           retention-days: 30
