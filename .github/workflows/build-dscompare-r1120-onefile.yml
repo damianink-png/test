@@ -1,4 +1,4 @@
-name: DS Compare R11.30 - minimal UI, usable tabs during analyses, explicit settings Save
+name: DS Compare R11.31 - automatic alignment and stable Windows distribution
 on:
   workflow_dispatch:
   push:
@@ -60,6 +60,12 @@ on:
       - 'scripts/r1130_tabs_settings_patch.py'
       - 'scripts/r1130_minimal_ui_smoke.py'
       - 'scripts/r1130_package_complete_sources.py'
+      - 'scripts/r1131_auto_alignment_patch.py'
+      - 'scripts/r1131_worker_gate_patch.py'
+      - 'scripts/r1131_ui_gate_patch.py'
+      - 'scripts/r1131_bom_budget_patch.py'
+      - 'scripts/r1131_auto_smoke.py'
+      - 'scripts/r1131_package_complete_sources.py'
       - 'tests/test_r1129_no_surplus_absr.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
@@ -820,46 +826,68 @@ jobs:
           $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
           python scripts/r1130_minimal_ui_smoke.py
           if($LASTEXITCODE -ne 0){throw 'R11.30 UI regression failed'}
-      - name: Package complete R11.30 source tree BEFORE PyInstaller
+      - name: R11.31 - install automatic alignment and limited-cost BOM
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          python scripts/r1130_package_complete_sources.py
+          python scripts/r1131_auto_alignment_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.31 alignment validation patch failed'}
+          python scripts/r1131_worker_gate_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.31 worker alignment question patch failed'}
+          python scripts/r1131_ui_gate_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.31 GUI approval patch failed'}
+          python scripts/r1131_bom_budget_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.31 BOM budgeting patch failed'}
+          python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/registration_gate.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/cli.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/worker_v37.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui45.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/report.py')
+          if($LASTEXITCODE -ne 0){throw 'R11.31 Python source compilation failed'}
+      - name: R11.31 - auto-align and user decision regressions
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
+          python scripts/r1131_auto_smoke.py
+          if($LASTEXITCODE -ne 0){throw 'R11.31 alignment/BOM/Qt regression failed'}
+      - name: Package complete R11.31 source tree BEFORE PyInstaller
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/r1131_package_complete_sources.py
           if($LASTEXITCODE -ne 0){throw 'Unable to archive pre-compile source tree'}
-          $src=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1130_PELNE_ZRODLA_PRZED_KOMPILACJA.zip'
+          $src=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1131_PELNE_ZRODLA_PRZED_KOMPILACJA.zip'
           if(-not (Test-Path $src)){throw 'Source ZIP missing'}
           Write-Host "Source archive ready: $((Get-Item $src).Length) bytes"
-      - name: Upload complete pre-compile R11.30 source ZIP
+      - name: Upload complete pre-compile R11.31 source ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-R1130-PELNE-ZRODLA-PRZED-KOMPILACJA
-          path: DSCompare_R1130_PELNE_ZRODLA_PRZED_KOMPILACJA.zip
+          name: DSCompare-R1131-PELNE-ZRODLA-PRZED-KOMPILACJA
+          path: DSCompare_R1131_PELNE_ZRODLA_PRZED_KOMPILACJA.zip
           if-no-files-found: error
           retention-days: 30
-      - name: Compile portable SINGLE DSCompare.exe for Windows x64
+      - name: Build STABLE DSCompare Windows x64 folder (without _MEI extraction)
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           Set-Location $env:DS_COMPARE_SOURCE
           $dist=Join-Path $env:DS_COMPARE_SOURCE 'dist'
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --hidden-import dsac29.import_cache --hidden-import dsac29.gui_modern --hidden-import dsac29.zw3d_launcher --hidden-import dsac29.mass_batch --hidden-import dsac29.mass_drop --hidden-import dsac29.step_diagnostics --hidden-import dsac29.local_tests --add-data "build_info.json;." --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" --distpath "$dist" DSCompareV3.py
-          if($LASTEXITCODE -ne 0){throw 'PyInstaller --onefile failed'}
-          $exe=Join-Path $dist 'DSCompare.exe'
-          if(-not (Test-Path $exe)){throw 'Missing standalone DSCompare.exe'}
-          $files=@(Get-ChildItem $dist -File)
-          if($files.Count -ne 1 -or $files[0].Name -ne 'DSCompare.exe'){throw 'Dist must contain one executable only'}
-          "DSCOMPARE_ONEFILE_EXE=$exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "Portable standalone EXE: $((Get-Item $exe).Length) bytes"
-      - name: Validate frozen GUI startup marker without hanging on bootloader cleanup
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --hidden-import dsac29.import_cache --hidden-import dsac29.registration_gate --hidden-import dsac29.gui_modern --hidden-import dsac29.zw3d_launcher --hidden-import dsac29.mass_batch --hidden-import dsac29.mass_drop --hidden-import dsac29.step_diagnostics --hidden-import dsac29.local_tests --add-data "build_info.json;." --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" --distpath "$dist" DSCompareV3.py
+          if($LASTEXITCODE -ne 0){throw 'PyInstaller onedir failed'}
+          $folder=Join-Path $dist 'DSCompare'
+          $exe=Join-Path $folder 'DSCompare.exe'
+          if(-not (Test-Path $exe) -or -not (Test-Path (Join-Path $folder '_internal'))){throw 'Incomplete folder build'}
+          "DSCOMPARE_DISTRIBUTION=$folder" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "DSCOMPARE_EXE=$exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host 'Stable onedir executable present; no PyInstaller _MEI extraction used'
+      - name: Validate STABLE Windows EXE startup
         shell: pwsh
         timeout-minutes: 4
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           $ErrorActionPreference='Stop'
-          $exe=$env:DSCOMPARE_ONEFILE_EXE
-          if(-not (Test-Path $exe)){throw 'Single EXE missing'}
-          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1130_UI'
+          $exe=$env:DSCOMPARE_EXE
+          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1131_UI'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           $status=Join-Path $dest 'UI_OK.json'
           $errors=Join-Path $dest 'UI_ERROR.txt'
@@ -869,43 +897,31 @@ jobs:
             Start-Sleep -Seconds 2
             $p.Refresh()
           }
-          if(Test-Path $errors){
-            Get-Content $errors | Write-Host
-            throw 'Frozen UI smoke reported exception'
-          }
-          if(-not (Test-Path $status)){
-            if(-not $p.HasExited){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue}
-            throw 'Frozen UI did not produce UI_OK.json within 2 min'
-          }
-          Write-Host 'Frozen GUI startup, theme switching and three pages PASS'
-          # PyInstaller onefile on Windows may show a modal _MEI cleanup warning
-          # AFTER the actual UI test successfully exits. Do not leave CI blocked.
-          Start-Sleep -Seconds 3
-          $p.Refresh()
-          if(-not $p.HasExited){
-            Write-Host 'WARNING: bootloader is still running after successful UI marker (_MEI cleanup).'
-            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-          }
-      - name: Package one executable in single ZIP
+          if(Test-Path $errors){Get-Content $errors | Write-Host;throw 'Frozen GUI smoke exception'}
+          if(-not (Test-Path $status)){throw 'No UI_OK.json from frozen onedir EXE'}
+          Write-Host 'Stable Windows GUI startup PASS'
+          if(-not $p.HasExited){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue}
+      - name: Package complete Windows directory into ZIP
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $exe=$env:DSCOMPARE_ONEFILE_EXE
-          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1130_JEDEN_EXE_WINDOWS_x64.zip'
-          Compress-Archive -LiteralPath $exe -DestinationPath $out -CompressionLevel Optimal
-          if(-not (Test-Path $out)){throw 'ZIP missing'}
+          $folder=$env:DSCOMPARE_DISTRIBUTION
+          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1131_STABILNY_Windows_x64.zip'
+          Compress-Archive -LiteralPath $folder -DestinationPath $out -CompressionLevel Optimal
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $z=[IO.Compression.ZipFile]::OpenRead($out)
-          try {
-            $entries=@($z.Entries | Where-Object { $_.Name })
-            if($entries.Count -ne 1 -or $entries[0].FullName -ne 'DSCompare.exe'){throw 'ZIP must contain only DSCompare.exe'}
+          try{
+            $files=@($z.Entries | Where-Object {$_.Name})
+            if($files.Count -lt 40){throw 'Suspiciously incomplete onedir ZIP'}
+            if(-not (@($files | Where-Object {$_.Name -eq 'DSCompare.exe'}).Count -eq 1)){throw 'Missing DSCompare.exe in ZIP'}
+            if(-not (@($files | Where-Object {$_.FullName -like '*_internal*'}).Count -gt 0)){throw 'Missing _internal in ZIP'}
           }
-          finally {$z.Dispose()}
-          Write-Host "R11.30 ONE EXE ZIP: $((Get-Item $out).Length) bytes"
-      - name: Upload ONE EXE Windows ZIP
+          finally{$z.Dispose()}
+          Write-Host "R11.31 STABLE ZIP: $((Get-Item $out).Length) bytes"
+      - name: Upload stable R11.31 Windows ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-R1130-ONE-EXE-Windows-x64
-          path: ${{ env.DSCOMPARE_ONEFILE_EXE }}
+          name: DSCompare-R1131-STABILNY-Windows-x64
+          path: DSCompare_R1131_STABILNY_Windows_x64.zip
           if-no-files-found: error
           retention-days: 30
