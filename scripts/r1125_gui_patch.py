@@ -113,6 +113,12 @@ new_settings=""" def _modern_settings(self):
   process=QProcess(self)
   process.setProcessChannelMode(QProcess.MergedChannels)
   args=['--worker','diagnostic','--output',str(folder)]
+  # Last comparison is read only to count structural records. No file copied,
+  # sent or named in the TXT. Synthetic checks work without it.
+  prior=self.results.get('compare')
+  if prior is not None:
+   source=Path(prior)/'POROWNANIE_KOLORY.step'
+   if source.is_file():args+=['--diagnostic-step',str(source)]
   if not getattr(sys,'frozen',False):
    args.insert(0,str(Path(__file__).resolve().parents[1]/'DSCompareV3.py'))
   self.test_process=process
@@ -239,12 +245,15 @@ w=p.read_text("utf8")
 old="choices=['compare','mass','mesh','detail','import']"
 assert w.count(old)==1
 w=w.replace(old,"choices=['compare','mass','mesh','detail','import','diagnostic']",1)
+arg_anchor="    p.add_argument('--inputs-file',default='',help='JSON list of CAD model paths for batch mass')"
+assert w.count(arg_anchor)==1
+w=w.replace(arg_anchor,arg_anchor+"\n    p.add_argument('--diagnostic-step',default='',help='Local STEP path; aggregate counts only')",1)
 anchor="""        elif ns.worker=='compare':
 """
 assert w.count(anchor)==1
 w=w.replace(anchor,"""        elif ns.worker=='diagnostic':
             from .local_tests import run as run_local_diagnostics
-            diagnostics=run_local_diagnostics(folder,progress=emit)
+            diagnostics=run_local_diagnostics(folder,progress=emit,source_step=ns.diagnostic_step or None)
             payload={'ok':diagnostics['ok'],'folder':str(folder),
                      'passed':diagnostics['passed'],'total':diagnostics['total'],
                      'report':diagnostics['report']}
