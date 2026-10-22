@@ -470,10 +470,10 @@ change("""  self._mass_reset()
 """  self._mass_reset()
   self._set_compare_result_state(False)
  def invalidate_comparison""")
-change("""   self._success.hide();self._actions.hide()
-  if not hasattr(self,'compare_table'):return""",
-"""   self._set_compare_result_state(False)
-  if not hasattr(self,'compare_table'):return""")
+change("""  if hasattr(self,'_success'):
+   self._success.hide();self._actions.hide()""",
+"""  if hasattr(self,'_success'):
+   self._set_compare_result_state(False)""")
 
 # Clear the old status card whenever 'New comparison' is chosen.
 p.write_text(s,encoding='utf8')
