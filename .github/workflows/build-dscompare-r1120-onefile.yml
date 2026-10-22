@@ -1,4 +1,4 @@
-name: DS Compare R11.24 - STEP diagnosis, performance and stable reports
+name: DS Compare R11.25 - private synthetic tests and streamlined CAD controls
 on:
   workflow_dispatch:
   push:
@@ -35,6 +35,10 @@ on:
       - 'scripts/r1124_rootless_patch.py'
       - 'scripts/r1124_perf_reliability_patch.py'
       - 'scripts/r1124_moved_smoke.py'
+      - 'scripts/r1125_local_tests.py'
+      - 'scripts/r1125_gui_patch.py'
+      - 'scripts/r1125_gui_smoke.py'
+      - 'scripts/r1125_diagnostics_smoke.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -604,13 +608,57 @@ jobs:
           $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
           python scripts/r1119_structural_smoke.py
           if($LASTEXITCODE -ne 0){throw 'R11.19 STEP structural verification failed'}
+      - name: Install R11.25 local diagnostics and simplified settings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Copy-Item -LiteralPath "$env:GITHUB_WORKSPACE/scripts/r1125_local_tests.py" -Destination "$env:DS_COMPARE_SOURCE/dsac29/local_tests.py" -Force
+          python scripts/r1125_gui_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.25 UI diagnostic patch failed'}
+          python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/local_tests.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/worker_v37.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py')
+          if($LASTEXITCODE -ne 0){throw 'R11.25 Python compile failed'}
+      - name: R11.25 - tests of simplified UI and safe removal from mass queue
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
+          python scripts/r1125_gui_smoke.py
+          if($LASTEXITCODE -ne 0){throw 'R11.25 UI/queue regression failed'}
+      - name: R11.25 - verify private synthetic tests and local TXT
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
+          python scripts/r1125_diagnostics_smoke.py
+          if($LASTEXITCODE -ne 0){throw 'R11.25 diagnostic TXT smoke failed'}
+      - name: Capture R11.25 actual Settings and Mass Qt screenshots
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: windows
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
+          $env:SCREENSHOT_OUT=Join-Path $env:GITHUB_WORKSPACE 'real_screenshots_r1125'
+          python scripts/r1123_real_screenshots.py
+          if($LASTEXITCODE -ne 0){throw 'R11.25 screenshot failure'}
+      - name: Upload real R11.25 settings screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R1125-REAL-Qt-Screenshots
+          path: real_screenshots_r1125/*.png
+          if-no-files-found: error
+          retention-days: 30
       - name: Compile portable SINGLE DSCompare.exe for Windows x64
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           Set-Location $env:DS_COMPARE_SOURCE
           $dist=Join-Path $env:DS_COMPARE_SOURCE 'dist'
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --hidden-import dsac29.import_cache --hidden-import dsac29.gui_modern --hidden-import dsac29.zw3d_launcher --hidden-import dsac29.mass_batch --hidden-import dsac29.mass_drop --hidden-import dsac29.step_diagnostics --add-data "build_info.json;." --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" --distpath "$dist" DSCompareV3.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name DSCompare --icon assets/DSCompare.ico --collect-all OCP --hidden-import dsac29.parallel_import --hidden-import dsac29.icons_r119 --hidden-import dsac29.z3_support --hidden-import dsac29.import_cache --hidden-import dsac29.gui_modern --hidden-import dsac29.zw3d_launcher --hidden-import dsac29.mass_batch --hidden-import dsac29.mass_drop --hidden-import dsac29.step_diagnostics --hidden-import dsac29.local_tests --add-data "build_info.json;." --add-data "assets/DSCompare.ico;assets" --add-data "assets/DSCompare.png;assets" --distpath "$dist" DSCompareV3.py
           if($LASTEXITCODE -ne 0){throw 'PyInstaller --onefile failed'}
           $exe=Join-Path $dist 'DSCompare.exe'
           if(-not (Test-Path $exe)){throw 'Missing standalone DSCompare.exe'}
@@ -627,7 +675,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $exe=$env:DSCOMPARE_ONEFILE_EXE
           if(-not (Test-Path $exe)){throw 'Single EXE missing'}
-          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1123_UI'
+          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1125_UI'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           $status=Join-Path $dest 'UI_OK.json'
           $errors=Join-Path $dest 'UI_ERROR.txt'
@@ -659,7 +707,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $exe=$env:DSCOMPARE_ONEFILE_EXE
-          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1124_JEDEN_EXE_WINDOWS_x64.zip'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1125_JEDEN_EXE_WINDOWS_x64.zip'
           Compress-Archive -LiteralPath $exe -DestinationPath $out -CompressionLevel Optimal
           if(-not (Test-Path $out)){throw 'ZIP missing'}
           Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -669,11 +717,11 @@ jobs:
             if($entries.Count -ne 1 -or $entries[0].FullName -ne 'DSCompare.exe'){throw 'ZIP must contain only DSCompare.exe'}
           }
           finally {$z.Dispose()}
-          Write-Host "R11.24 ONE EXE ZIP: $((Get-Item $out).Length) bytes"
+          Write-Host "R11.25 ONE EXE ZIP: $((Get-Item $out).Length) bytes"
       - name: Upload ONE EXE Windows ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-R1124-ONE-EXE-Windows-x64
+          name: DSCompare-R1125-ONE-EXE-Windows-x64
           path: ${{ env.DSCOMPARE_ONEFILE_EXE }}
           if-no-files-found: error
           retention-days: 30
