@@ -1,4 +1,4 @@
-name: DS Compare R11.27 - responsive compare/mass and no comparison grid
+name: DS Compare R11.28 - alignment, busy controls and Windows stability
 on:
   workflow_dispatch:
   push:
@@ -45,6 +45,7 @@ on:
       - 'scripts/r1127_responsive_patch.py'
       - 'scripts/r1127_responsive_smoke.py'
       - 'scripts/r1127_settings_reflow_patch.py'
+      - 'scripts/r1128_inspect_runtime.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -734,6 +735,12 @@ jobs:
           $ErrorActionPreference='Stop'
           python scripts/r1127_source_inspect.py
           if($LASTEXITCODE -ne 0){throw 'Source introspection failed'}
+      - name: Inspect runtime alignment and Windows error paths for R11.28
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/r1128_inspect_runtime.py
+          if($LASTEXITCODE -ne 0){throw 'R11.28 source introspection error'}
       - name: Compile portable SINGLE DSCompare.exe for Windows x64
         shell: pwsh
         run: |
