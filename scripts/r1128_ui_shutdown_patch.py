@@ -100,7 +100,7 @@ def modern(s):
  s=s.replace(old,new,1)
  return s
 transform('dsac29/gui_modern.py',modern)
-(root/'VERSION.txt').write_text('R11.28\\n',encoding='utf8')
+(root/'VERSION.txt').write_text('R11.28'+chr(10),encoding='utf8')
 build=root/'build_info.json'
 if build.exists():
  d=json.loads(build.read_text('utf8'))
