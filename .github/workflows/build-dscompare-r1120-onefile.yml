@@ -44,6 +44,7 @@ on:
       - 'scripts/r1127_source_inspect.py'
       - 'scripts/r1127_responsive_patch.py'
       - 'scripts/r1127_responsive_smoke.py'
+      - 'scripts/r1127_settings_reflow_patch.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -697,6 +698,8 @@ jobs:
           $ErrorActionPreference='Stop'
           python scripts/r1127_responsive_patch.py
           if($LASTEXITCODE -ne 0){throw 'R11.27 responsive Qt patch failed'}
+          python scripts/r1127_settings_reflow_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.27 settings reflow failed'}
           python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui45.py')
           if($LASTEXITCODE -ne 0){throw 'R11.27 Python syntax failed'}
       - name: R11.27 - verify responsive tabs at narrow and wide sizes
