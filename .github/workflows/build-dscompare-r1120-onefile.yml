@@ -1,4 +1,4 @@
-name: DS Compare R11.29 - fix colored occurrences ABSR and repeated-part alignment
+name: DS Compare R11.30 - minimal UI, usable tabs during analyses, explicit settings Save
 on:
   workflow_dispatch:
   push:
@@ -56,6 +56,10 @@ on:
       - 'scripts/r1129_alignment_patch.py'
       - 'scripts/r1129_legacy_tests_patch.py'
       - 'scripts/r1129_package_complete_sources.py'
+      - 'scripts/r1130_minimal_ui_patch.py'
+      - 'scripts/r1130_tabs_settings_patch.py'
+      - 'scripts/r1130_minimal_ui_smoke.py'
+      - 'scripts/r1130_package_complete_sources.py'
       - 'tests/test_r1129_no_surplus_absr.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
@@ -797,20 +801,39 @@ jobs:
           Set-Location $env:DS_COMPARE_SOURCE
           python -m pytest -q tests/test_r1129_no_surplus_absr.py tests/test_r1111_no_absr.py
           if($LASTEXITCODE -ne 0){throw 'R11.29 CAD/ABSR regression failure'}
-      - name: Package complete R11.29 source tree BEFORE PyInstaller
+      - name: Apply R11.30 minimal selection/result UI and editable browsing during analyses
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          python scripts/r1129_package_complete_sources.py
+          python scripts/r1130_minimal_ui_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.30 file/result UI patch failed'}
+          python scripts/r1130_tabs_settings_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11.30 tabs/theme/settings Save patch failed'}
+          python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py')
+          if($LASTEXITCODE -ne 0){throw 'R11.30 Python syntax error'}
+      - name: R11.30 - verify selected-file cards, remove, result-only views and busy navigation
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=$env:DS_COMPARE_SOURCE
+          python scripts/r1130_minimal_ui_smoke.py
+          if($LASTEXITCODE -ne 0){throw 'R11.30 UI regression failed'}
+      - name: Package complete R11.30 source tree BEFORE PyInstaller
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/r1130_package_complete_sources.py
           if($LASTEXITCODE -ne 0){throw 'Unable to archive pre-compile source tree'}
-          $src=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1129_PELNE_ZRODLA_PRZED_KOMPILACJA.zip'
+          $src=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1130_PELNE_ZRODLA_PRZED_KOMPILACJA.zip'
           if(-not (Test-Path $src)){throw 'Source ZIP missing'}
           Write-Host "Source archive ready: $((Get-Item $src).Length) bytes"
-      - name: Upload complete pre-compile R11.29 source ZIP
+      - name: Upload complete pre-compile R11.30 source ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-R1129-PELNE-ZRODLA-PRZED-KOMPILACJA
-          path: DSCompare_R1129_PELNE_ZRODLA_PRZED_KOMPILACJA.zip
+          name: DSCompare-R1130-PELNE-ZRODLA-PRZED-KOMPILACJA
+          path: DSCompare_R1130_PELNE_ZRODLA_PRZED_KOMPILACJA.zip
           if-no-files-found: error
           retention-days: 30
       - name: Compile portable SINGLE DSCompare.exe for Windows x64
@@ -836,7 +859,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $exe=$env:DSCOMPARE_ONEFILE_EXE
           if(-not (Test-Path $exe)){throw 'Single EXE missing'}
-          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1129_UI'
+          $dest=Join-Path $env:RUNNER_TEMP 'DSCOMPARE_R1130_UI'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
           $status=Join-Path $dest 'UI_OK.json'
           $errors=Join-Path $dest 'UI_ERROR.txt'
@@ -868,7 +891,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $exe=$env:DSCOMPARE_ONEFILE_EXE
-          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1129_JEDEN_EXE_WINDOWS_x64.zip'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1130_JEDEN_EXE_WINDOWS_x64.zip'
           Compress-Archive -LiteralPath $exe -DestinationPath $out -CompressionLevel Optimal
           if(-not (Test-Path $out)){throw 'ZIP missing'}
           Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -878,11 +901,11 @@ jobs:
             if($entries.Count -ne 1 -or $entries[0].FullName -ne 'DSCompare.exe'){throw 'ZIP must contain only DSCompare.exe'}
           }
           finally {$z.Dispose()}
-          Write-Host "R11.29 ONE EXE ZIP: $((Get-Item $out).Length) bytes"
+          Write-Host "R11.30 ONE EXE ZIP: $((Get-Item $out).Length) bytes"
       - name: Upload ONE EXE Windows ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-R1129-ONE-EXE-Windows-x64
+          name: DSCompare-R1130-ONE-EXE-Windows-x64
           path: ${{ env.DSCOMPARE_ONEFILE_EXE }}
           if-no-files-found: error
           retention-days: 30
