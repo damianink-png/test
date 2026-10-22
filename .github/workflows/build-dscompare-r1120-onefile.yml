@@ -51,6 +51,7 @@ on:
       - 'scripts/r1128_ui_shutdown_patch.py'
       - 'scripts/r1128_responsive_patch.py'
       - 'scripts/r1128_regression.py'
+      - 'scripts/r1128_package_complete_sources.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -769,6 +770,22 @@ jobs:
           $ErrorActionPreference='Stop'
           python scripts/r1127_source_inspect.py
           if($LASTEXITCODE -ne 0){throw 'Source introspection failed'}
+      - name: Package complete R11.28 source tree BEFORE PyInstaller
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/r1128_package_complete_sources.py
+          if($LASTEXITCODE -ne 0){throw 'Unable to archive pre-compile source tree'}
+          $src=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_R1128_PELNE_ZRODLA_PRZED_KOMPILACJA.zip'
+          if(-not (Test-Path $src)){throw 'Source ZIP missing'}
+          Write-Host "Source archive ready: $((Get-Item $src).Length) bytes"
+      - name: Upload complete pre-compile R11.28 source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R1128-PELNE-ZRODLA-PRZED-KOMPILACJA
+          path: DSCompare_R1128_PELNE_ZRODLA_PRZED_KOMPILACJA.zip
+          if-no-files-found: error
+          retention-days: 30
       - name: Compile portable SINGLE DSCompare.exe for Windows x64
         shell: pwsh
         run: |
