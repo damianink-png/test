@@ -41,6 +41,7 @@ on:
       - 'scripts/r1125_diagnostics_smoke.py'
       - 'scripts/r1126_ui_cleanup_patch.py'
       - 'scripts/r1126_ui_smoke.py'
+      - 'scripts/r1127_source_inspect.py'
       - 'patches/r1114_exact_overlay.tar.xz.b64'
       - 'patches/r119_exact_overlay.tar.xz.b64'
       - 'patches/r117_r2_table_fit.xz.b64'
@@ -688,6 +689,12 @@ jobs:
           path: real_screenshots_r1126/*.png
           if-no-files-found: error
           retention-days: 30
+      - name: Inspect real R11.26 Qt geometry for R11.27
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/r1127_source_inspect.py
+          if($LASTEXITCODE -ne 0){throw 'Source introspection failed'}
       - name: Compile portable SINGLE DSCompare.exe for Windows x64
         shell: pwsh
         run: |
