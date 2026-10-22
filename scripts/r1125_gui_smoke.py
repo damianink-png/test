@@ -1,7 +1,7 @@
 """R11.25: new UX without old settings, list toggles or unsafe file deletion."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from PySide6.QtWidgets import QApplication,QFrame,QFormLayout
+from PySide6.QtWidgets import QApplication,QFrame,QFormLayout,QAbstractItemView
 from dsac29.gui46 import Window
 app=QApplication.instance() or QApplication([])
 window=Window()
@@ -27,7 +27,7 @@ assert window._mass_toggle.isHidden()
 
 window.navigate('mass')
 app.processEvents()
-assert window.mass_input_list.selectionMode()!=window.mass_input_list.SingleSelection
+assert window.mass_input_list.selectionMode()==QAbstractItemView.ExtendedSelection
 with TemporaryDirectory() as tmp:
     paths=[]
     for i in range(4):
