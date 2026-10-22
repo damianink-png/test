@@ -100,4 +100,12 @@ def modern(s):
  s=s.replace(old,new,1)
  return s
 transform('dsac29/gui_modern.py',modern)
+(root/'VERSION.txt').write_text('R11.28\\n',encoding='utf8')
+build=root/'build_info.json'
+if build.exists():
+ d=json.loads(build.read_text('utf8'))
+ d['version']='R11.28 · GitHub '+os.environ.get('GITHUB_SHA','')[:8]
+ d['ui']='Responsive compare/mass, frozen tabs and settings during worker, controlled shutdown'
+ d['alignment']='Verified B-to-A registration; ambiguous alignment fails closed'
+ build.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf8')
 print('R11.28 UI: disabled nav and controls, permanent busy banner, preserved checkbox state, no unsafe kill during close')
