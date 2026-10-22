@@ -16,5 +16,8 @@ s=s.replace(old,
   # Do not clip options: enable a horizontal fallback when they cannot wrap.
   wrapper.setHorizontalScrollBarPolicy(
    Qt.ScrollBarAsNeeded if key=='settings' else Qt.ScrollBarAlwaysOff)""",1)
+old="  stacked=width<840"
+assert s.count(old)==1
+s=s.replace(old,"  stacked=width<1180",1)
 p.write_text(s,'utf8')
 print('R11.28 adaptive min width 980px when available, and safe fallback for narrow settings viewport')
