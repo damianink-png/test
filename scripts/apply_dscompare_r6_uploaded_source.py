@@ -31,6 +31,10 @@ for relative,spec in files.items():
             # The R3 CI pipeline generated this helper only inside its ZIP,
             # not in the in-memory precompile directory.
             payload=(repo/'scripts/R6_BUDUJ_WINDOWS.ps1').read_bytes()
+            # actions/checkout on Windows may convert LF to CRLF.
+            # Normalize the Git working-tree file back to the exact R6
+            # archive bytes BEFORE checking its authoritative SHA-256.
+            payload=payload.replace(b'\r\n',b'\n')
             if hashlib.sha256(payload).hexdigest()!=spec['after_sha256']:
                 raise RuntimeError('R6 build helper differs from uploaded source ZIP')
             target.write_bytes(payload)
