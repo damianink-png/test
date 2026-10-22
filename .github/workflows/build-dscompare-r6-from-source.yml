@@ -1,0 +1,152 @@
+name: DS Compare 1.0 R6 - verified user source, Windows x64
+
+on:
+  push:
+    branches:
+      - build/dscompare-1-0-r6-from-upload
+    paths:
+      - '.github/workflows/build-dscompare-r6-from-source.yml'
+      - 'patches/dscompare_r6_delta.b64'
+      - 'scripts/apply_dscompare_r6_uploaded_source.py'
+      - 'scripts/R6_BUDUJ_WINDOWS.ps1'
+      - 'scripts/package_dscompare_r6_sources.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+
+      - name: Fetch exact R3 source snapshot used for R6 delta
+        uses: actions/download-artifact@v4
+        with:
+          repository: damianink-png/test
+          run-id: 39794587176
+          name: DSCompare-1-0-R3-PELNE-ZRODLA-PRZED-KOMPILACJA
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/dscompare-r3-source-archive
+
+      - name: Extract R3 base to controlled temporary folder
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $outer=Join-Path $env:RUNNER_TEMP 'dscompare-r3-source-archive/DSCompare_1_0_R3_PELNE_ZRODLA_PRZED_KOMPILACJA.zip'
+          if(-not (Test-Path $outer)){throw 'Trusted R3 source ZIP is unavailable'}
+          $dest=Join-Path $env:RUNNER_TEMP 'dscompare-r6-source'
+          Expand-Archive -LiteralPath $outer -DestinationPath $dest -Force
+          $src=Join-Path $dest 'DSCompare_1_0_R3_ZRODLA'
+          if(-not (Test-Path (Join-Path $src 'dsac29/step_io.py'))){throw 'R3 base source missing'}
+          "DS_COMPARE_SOURCE=$src" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "R3 base ready: $src"
+
+      - name: Apply and hash-verify exact uploaded R6 source changes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/apply_dscompare_r6_uploaded_source.py
+          if($LASTEXITCODE -ne 0){throw 'R6 source does not match user-uploaded archive SHA-256'}
+          python -m compileall -q $env:DS_COMPARE_SOURCE
+          if($LASTEXITCODE -ne 0){throw 'R6 Python syntax error'}
+
+      - name: Install pinned R6 dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location $env:DS_COMPARE_SOURCE
+          & ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if($LASTEXITCODE -ne 0){throw 'R6 dependencies install failed'}
+          python -m pip install 'pytest>=8,<10'
+          if($LASTEXITCODE -ne 0){throw 'R6 pytest install failed'}
+
+      - name: Run full R6 106-case regression gate
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location $env:DS_COMPARE_SOURCE
+          python TESTUJ.py
+          if($LASTEXITCODE -ne 0){throw 'R6 regression tests failed'}
+
+      - name: Package exact patched R6 sources before compilation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/package_dscompare_r6_sources.py
+          if($LASTEXITCODE -ne 0){throw 'R6 source archive failed'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-1-0-R6-Sources
+          path: DSCompare_1_0_R6_ZRODLA_Z_GITHUB.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Compile R6 Windows x64 with offline HTML 3D preview
+        shell: pwsh
+        timeout-minutes: 25
+        run: |
+          $ErrorActionPreference='Stop'
+          Set-Location $env:DS_COMPARE_SOURCE
+          & ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if($LASTEXITCODE -ne 0){throw 'R6 PyInstaller compilation failed'}
+          $exe=Join-Path $env:DS_COMPARE_SOURCE 'dist/DSCompare/DSCompare.exe'
+          $preview=Join-Path $env:DS_COMPARE_SOURCE 'dist/DSCompare/_internal/dsac29/preview_template.html'
+          if(-not (Test-Path $exe)){throw 'DSCompare.exe is missing'}
+          if(-not (Test-Path $preview)){throw '3D HTML preview template missing in frozen app'}
+          "DSCOMPARE_R6_EXE=$exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Verify compiled Windows GUI can start
+        shell: pwsh
+        timeout-minutes: 4
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:RUNNER_TEMP 'r6-gui-smoke'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $status=Join-Path $dest 'UI_OK.json'
+          $errors=Join-Path $dest 'UI_ERROR.txt'
+          $process=Start-Process -FilePath $env:DSCOMPARE_R6_EXE -ArgumentList @('--smoke-test-ui',$dest) -PassThru
+          $until=(Get-Date).AddSeconds(120)
+          while(-not (Test-Path $status) -and -not (Test-Path $errors) -and -not $process.HasExited -and (Get-Date) -lt $until){
+            Start-Sleep -Seconds 2
+            $process.Refresh()
+          }
+          if(Test-Path $errors){Get-Content $errors | Write-Host;throw 'R6 frozen UI raised error'}
+          if(-not (Test-Path $status)){throw 'No UI_OK from R6 frozen executable'}
+          if(-not $process.HasExited){Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue}
+          Write-Host 'R6 Windows EXE launched correctly'
+
+      - name: Archive stable DSCompare folder with all DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $folder=Join-Path $env:DS_COMPARE_SOURCE 'dist/DSCompare'
+          $zip=Join-Path $env:GITHUB_WORKSPACE 'DSCompare_1_0_R6_Windows_x64.zip'
+          Compress-Archive -LiteralPath $folder -DestinationPath $zip -CompressionLevel Optimal
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive=[IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+            $files=@($archive.Entries | Where-Object { $_.Name })
+            if($files.Count -lt 40){throw 'Incomplete R6 ZIP'}
+            if(@($files | Where-Object {$_.Name -eq 'DSCompare.exe'}).Count -ne 1){throw 'R6 EXE absent'}
+            if(@($files | Where-Object {$_.FullName -like '*_internal*'}).Count -eq 0){throw 'Missing _internal libraries'}
+          } finally {$archive.Dispose()}
+          Write-Host "R6 packaged: $((Get-Item $zip).Length) bytes"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-1-0-R6-Windows-x64
+          path: DSCompare_1_0_R6_Windows_x64.zip
+          if-no-files-found: error
+          retention-days: 30
