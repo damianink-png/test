@@ -108,4 +108,12 @@ if build.exists():
  d['ui']='Responsive compare/mass, frozen tabs and settings during worker, controlled shutdown'
  d['alignment']='Verified B-to-A registration; ambiguous alignment fails closed'
  build.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf8')
+# R11.27 deliberately added a scrollable comparison page; the frozen
+# entrypoint smoke must validate all THREE pages, not the old R11.23 two.
+entry=root/'DSCompareV3.py'
+entry_text=entry.read_text('utf8')
+old="assert len(w.centralWidget().findChildren(QScrollArea))==2, 'mass and settings should have responsive scroll containers'"
+new="assert len(w.centralWidget().findChildren(QScrollArea))==3, 'compare, mass and settings must have responsive scroll containers'"
+if entry_text.count(old)!=1:raise RuntimeError('Frozen EXE startup smoke anchor changed')
+entry.write_text(entry_text.replace(old,new,1),encoding='utf8')
 print('R11.28 UI: disabled nav and controls, permanent busy banner, preserved checkbox state, no unsafe kill during close')
