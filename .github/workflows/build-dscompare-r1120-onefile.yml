@@ -703,6 +703,12 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R11.27 settings reflow failed'}
           python -m py_compile (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui_modern.py') (Join-Path $env:DS_COMPARE_SOURCE 'dsac29/gui45.py')
           if($LASTEXITCODE -ne 0){throw 'R11.27 Python syntax failed'}
+      - name: Inspect runtime alignment and Windows error paths for R11.28
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/r1128_inspect_runtime.py
+          if($LASTEXITCODE -ne 0){throw 'R11.28 source introspection error'}
       - name: R11.27 - verify responsive tabs at narrow and wide sizes
         shell: pwsh
         env:
@@ -735,12 +741,6 @@ jobs:
           $ErrorActionPreference='Stop'
           python scripts/r1127_source_inspect.py
           if($LASTEXITCODE -ne 0){throw 'Source introspection failed'}
-      - name: Inspect runtime alignment and Windows error paths for R11.28
-        shell: pwsh
-        run: |
-          $ErrorActionPreference='Stop'
-          python scripts/r1128_inspect_runtime.py
-          if($LASTEXITCODE -ne 0){throw 'R11.28 source introspection error'}
       - name: Compile portable SINGLE DSCompare.exe for Windows x64
         shell: pwsh
         run: |
