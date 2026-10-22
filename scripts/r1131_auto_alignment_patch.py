@@ -75,7 +75,7 @@ def already_world_aligned(a,b,tolerance):
     by_sig=defaultdict(list)
     for part in a:
         by_sig[signature(part)].append(part)
-    required=1 if min(len(a),len(b))<=5 else max(2,ceil(.15*min(len(a),len(b))))
+    required=1 if min(len(a),len(b))<=2 else max(2,ceil(.20*min(len(a),len(b))))
     count=0;used=set();checks=0
     for part in b:
         for base in by_sig.get(signature(part),[]):
