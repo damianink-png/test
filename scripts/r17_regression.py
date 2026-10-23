@@ -37,7 +37,7 @@ def check():
         assert (output/'NAZWY_ZMIENIONA_GEOMETRIA.csv').is_file()
         assert 'CHANGED_COMMON' in (output/'POROWNANIE_KOLORY.step').read_text('latin1')
         assert 'CHANGED_COMMON' in (output/'PODGLAD_KOLOROW_3D.html').read_text('utf8')
-        assert 'Zmiana' in (output/'RAPORT.html').read_text('utf8')
+        assert 'Zmieniona geometria' in (output/'RAPORT.html').read_text('utf8')
     print('PASS: renamed geometry and actual material volumes with STEP, HTML, CSV')
     a=[box('OLD',20)];b=[box('UNRELATED',20,13)]
     rec,regions,_=pair(a,b)
