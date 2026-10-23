@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/build-dscompare-r19-real-cad.yml'
       - 'scripts/r19_fix_alignment.py'
+      - 'scripts/R18_CONSISTENCY_CODE_V2.patch.xz.base64'
       - 'scripts/r19_real_cad_all_cases.py'
       - 'scripts/r19_so_real_shift_test.py'
   workflow_dispatch:
@@ -40,7 +41,7 @@ jobs:
           $z=Get-ChildItem -Filter '*R17*SOURCE*.zip' | Select-Object -First 1
           if(-not $z){throw 'Missing R17 exact source'}
           Expand-Archive -LiteralPath $z.FullName -DestinationPath source -Force
-          $encoded=(Get-Content -Raw scripts/R18_CONSISTENCY_CODE.patch.xz.base64).Trim()
+          $encoded=(Get-Content -Raw scripts/R18_CONSISTENCY_CODE_V2.patch.xz.base64).Trim()
           [IO.File]::WriteAllBytes('r18.patch.xz',[Convert]::FromBase64String($encoded))
           python -c "import pathlib,lzma;pathlib.Path('r18.patch').write_bytes(lzma.decompress(pathlib.Path('r18.patch.xz').read_bytes()))"
           if($LASTEXITCODE -ne 0){throw 'R18 decode failed'}
