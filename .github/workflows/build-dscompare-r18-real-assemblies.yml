@@ -68,6 +68,8 @@ jobs:
           Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kovacsv/occt-import-js/main/test/testfiles/cax-if/as1_pe_203.stp' -OutFile public_models/as1_pe_203.stp
           Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/TheRobotStudio/SO-ARM100/main/STEP/SO100/Follower_Specific/SO_5DOF_ARM100_Assembly.step' -OutFile public_models/SO_5DOF_ARM100_Assembly.step
           foreach($f in (Get-ChildItem public_models)){if($f.Length -lt 30000){throw "Invalid real STEP source $($f.Name)"};Write-Host "CAD $($f.Name) $($f.Length) bytes"}
+          New-Item -ItemType Directory -Force real_results/SO_ARM100 | Out-Null
+          Copy-Item public_models/SO_5DOF_ARM100_Assembly.step real_results/SO_ARM100/ORIGINAL_SO_ARM100.step
       - name: NIST real assembly + translated copy + STEP + HTML
         working-directory: source
         shell: pwsh
