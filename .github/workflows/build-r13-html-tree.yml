@@ -1,0 +1,163 @@
+name: DS Compare R13 - deferred alignment with HTML tree
+on:
+  push:
+    branches: ['build/dscompare-r13-html-tree-20261023']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract complete R7 source
+        working-directory: .
+        run: Expand-Archive -Path DSCompare_R7_source.zip -DestinationPath source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Apply R8 UI improvements to extracted full R7 source
+        working-directory: .
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/r8_ui_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R8 source patch failed'}
+          python scripts/r9_alignment_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R9 alignment patch failed'}
+          python scripts/r10_alignment_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R10 alignment patch failed'}
+          python scripts/r10_gui_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R10 GUI patch failed'}
+          python scripts/r11_original_frame_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R11 frame preflight patch failed'}
+          python scripts/r12_mass_selection_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R12 selection patch failed'}
+          $encoded=(Get-Content -Raw scripts/R13_DEFERRED_ALIGNMENT_HTML_TREE_PATCH.xz.base64).Trim()
+          [IO.File]::WriteAllBytes('R13_SOURCE_DIFF.xz',[Convert]::FromBase64String($encoded))
+          python -c "import lzma,pathlib; pathlib.Path('R13_SOURCE_DIFF.patch').write_bytes(lzma.decompress(pathlib.Path('R13_SOURCE_DIFF.xz').read_bytes()))"
+          if($LASTEXITCODE -ne 0){throw 'Cannot decompress R13 patch'}
+          git apply --check --directory=source R13_SOURCE_DIFF.patch
+          if($LASTEXITCODE -ne 0){throw 'R13 patch rejected: R12 base mismatch'}
+          git apply --directory=source R13_SOURCE_DIFF.patch
+          if($LASTEXITCODE -ne 0){throw 'Cannot apply R13 source patch'}
+          python -m py_compile source/dsac29/cli.py source/dsac29/deferred_alignment.py source/dsac29/preview3d.py source/dsac29/gui45.py
+          if($LASTEXITCODE -ne 0){throw 'R13 syntax failed'}
+          python -m py_compile source/dsac29/gui_modern.py
+          if($LASTEXITCODE -ne 0){throw 'R12 Qt syntax failed'}
+          python -m py_compile source/dsac29/gui_modern.py source/dsac29/mass_drop.py source/dsac29/alignment.py source/dsac29/cli.py
+          if($LASTEXITCODE -ne 0){throw 'R10 syntax failed'}
+          python -m py_compile source/dsac29/alignment.py source/dsac29/cli.py
+          if($LASTEXITCODE -ne 0){throw 'R9 engine syntax failed'}
+          python -m py_compile source/dsac29/gui_modern.py
+          if($LASTEXITCODE -ne 0){throw 'R8 GUI syntax failed'}
+      - name: Install dependencies
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if($LASTEXITCODE -ne 0){throw 'Dependencies failed'}
+          python -m pip install 'pytest>=8,<9' playwright pillow
+          if($LASTEXITCODE -ne 0){throw 'pytest install failed'}
+      - name: R13 128 regression tests
+        run: |
+          python TESTUJ.py
+          if($LASTEXITCODE -ne 0){throw 'R13 core test failure'}
+      - name: R8 user-interface functional tests (both themes and failed run)
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=(Get-Location).Path
+          python ../scripts/r8_ui_smoke.py
+          if($LASTEXITCODE -ne 0){throw 'R8 Qt regression failed'}
+      - name: R13 canonical geometry and GUI regression tests
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m pytest -q tests/test_r13_html_tree.py
+          if($LASTEXITCODE -ne 0){throw 'R13 HTML tree regression failed'}
+      - name: R13 browser tree and picking regression
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=(Get-Location).Path
+          python ../scripts/r13_browser_regression.py
+          if($LASTEXITCODE -ne 0){throw 'R13 HTML browser UI regression failed'}
+      - name: Package FULL R13 patched sources before PyInstaller
+        working-directory: .
+        run: |
+          $ErrorActionPreference='Stop'
+          if(Test-Path DSCompare_1_0_R13_SOURCE.zip){Remove-Item DSCompare_1_0_R13_SOURCE.zip -Force}
+          Compress-Archive -Path source/* -DestinationPath DSCompare_1_0_R13_SOURCE.zip -CompressionLevel Optimal
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $z=[IO.Compression.ZipFile]::OpenRead((Resolve-Path DSCompare_1_0_R13_SOURCE.zip))
+          try{
+            $files=@($z.Entries | Where-Object {$_.Name})
+            if($files.Count -lt 30){throw 'Incomplete R8 source ZIP'}
+            if(@($files|Where-Object {$_.FullName -like '*dsac29/gui_modern.py'}).Count -ne 1){throw 'R9 patched modern GUI missing'}
+            if(@($files|Where-Object {$_.Name -eq 'TESTUJ.py'}).Count -ne 1){throw 'R7 tests missing'}
+          }finally{$z.Dispose()}
+          Write-Host "R9 patched sources: $((Get-Item DSCompare_1_0_R13_SOURCE.zip).Length) bytes"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare_1_0_R13_COMPLETE_SOURCE
+          path: DSCompare_1_0_R13_SOURCE.zip
+          if-no-files-found: error
+          retention-days: 30
+      - name: Build Windows application
+        run: ./BUDUJ_WINDOWS.ps1 -NoInstall
+      - name: Test packaged UI
+        run: |
+          $p=Start-Process -FilePath ./dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui', 'UI_CHECK' -Wait -PassThru
+          if($p.ExitCode -ne 0){throw 'UI failed'}
+          if(-not (Test-Path 'UI_CHECK/UI_OK.json')){throw 'No UI result'}
+      - name: Test packaged STEP and HTML worker
+        run: |
+          @'
+          import subprocess,json,pathlib
+          root=pathlib.Path.cwd()
+          command=[str(root/'dist/DSCompare/DSCompare.exe'),'--worker','compare','--a',str(root/'samples/RAMA_REV_03.step'),'--b',str(root/'samples/RAMA_REV_04.step'),'--output',str(root/'FROZEN_CHECK'),'--generate-step','--revision-style','--no-bom','--preview3d']
+          with open('frozen-worker.log','w') as log:
+              result=subprocess.run(command,stdout=log,stderr=log,timeout=180)
+          assert result.returncode==0,pathlib.Path('frozen-worker.log').read_text()
+          folder=root/'FROZEN_CHECK'
+          result=json.loads((folder/'_WYNIK_V37.json').read_text(encoding='utf-8'))
+          assert result['ok'],result
+          summary=json.loads((folder/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
+          assert summary['solids_A']==13 and summary['solids_B']==13,summary
+          assert (folder/'POROWNANIE_KOLORY.step').stat().st_size>1000
+          preview=(folder/'PODGLAD_KOLOROW_3D.html').read_text(encoding='utf-8')
+          assert '/*__SCENE__*/' not in preview and 'const scene=[' in preview
+          print('Frozen STEP + HTML PASS',summary['statuses'])
+          '@ | python -
+          if($LASTEXITCODE -ne 0){throw 'Packaged CAD worker failed'}
+      - name: Verify HTML rendering in Edge
+        run: |
+          python TEST_HTML_BROWSER.py
+          if($LASTEXITCODE -ne 0){throw 'WebGL preview failed'}
+      - name: Package
+        run: |
+          'DS Compare 1.0 R13 — rozpakuj CAŁY folder i uruchom DSCompare.exe. Zachowaj folder _internal obok EXE.' | Set-Content -Encoding utf8 dist/DSCompare/START_TUTAJ.txt
+          Compress-Archive -Path dist/DSCompare/* -DestinationPath DSCompare_1_0_R13_WINDOWS_x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare_1_0_R13_WINDOWS_x64
+          path: source/DSCompare_1_0_R13_WINDOWS_x64.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: R8-verification
+          path: |
+            source/UI_CHECK
+            source/FROZEN_CHECK
+            source/frozen-worker.log
+            source/R8_UI_MASS.png
+            source/R10_UI_MASS.png
+            source/R12_MASS_SELECTED_DARK.png
+            source/R12_MASS_SELECTED_LIGHT.png
+            source/R13_HTML_TREE_SCREEN.png
+          if-no-files-found: ignore
