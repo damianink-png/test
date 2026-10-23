@@ -1,80 +1,102 @@
-name: DS Compare R14 - stage-one displacement with HTML tree
+name: DS Compare R14 - stage-one alignment and HTML tree
 on:
   push:
     branches: ['build/dscompare-r14-sparse-shift-fix-20261023']
     paths:
-      - 'DSCompare_1_0_R14_STAGE1_SOURCE.zip'
+      - 'scripts/r14_stage1.part*'
       - '.github/workflows/build-dscompare-r14-stage1.yml'
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   build:
     runs-on: windows-2022
     timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
     env:
       PYTHONUTF8: '1'
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
+      - name: Retrieve exact successful R13 source
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39935020995
+          name: DSCompare_1_0_R13_COMPLETE_SOURCE
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: damianink-png/test
+          path: .
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           architecture: x64
-      - name: Extract exact R14 source
-        shell: pwsh
+      - name: Extract original R13 source and apply checked R14 delta
         run: |
           $ErrorActionPreference='Stop'
-          if(-not (Test-Path 'DSCompare_1_0_R14_STAGE1_SOURCE.zip')){throw 'Upload DSCompare_1_0_R14_STAGE1_SOURCE.zip at branch root first'}
-          Expand-Archive -LiteralPath 'DSCompare_1_0_R14_STAGE1_SOURCE.zip' -DestinationPath 'source'
-          foreach($f in @('dsac29/compare.py','dsac29/cli.py','dsac29/deferred_alignment.py','dsac29/similarity_gate.py','dsac29/preview3d.py','tests/test_r14_stage1_shift.py','BUDUJ_WINDOWS.ps1')){
-            if(-not (Test-Path (Join-Path 'source' $f))){throw "Missing $f"}
-          }
-      - name: Install CAD and GUI dependencies
+          Expand-Archive -LiteralPath 'DSCompare_1_0_R13_SOURCE.zip' -DestinationPath 'source'
+          python -c "from pathlib import Path; [(p.write_bytes(p.read_bytes().replace(bytes([13,10]),bytes([10])))) for p in Path('source').rglob('*.py')]"
+          if($LASTEXITCODE -ne 0){throw 'Source line ending normalization failed'}
+          $encoded=(Get-Content -Raw 'scripts/r14_stage1.part1').Trim()+(Get-Content -Raw 'scripts/r14_stage1.part2').Trim()+(Get-Content -Raw 'scripts/r14_stage1.part3').Trim()+(Get-Content -Raw 'scripts/r14_stage1.part4').Trim()
+          [IO.File]::WriteAllBytes('r14_stage1.xz',[Convert]::FromBase64String($encoded))
+          python -c "import lzma,pathlib;pathlib.Path('r14_stage1.patch').write_bytes(lzma.decompress(pathlib.Path('r14_stage1.xz').read_bytes()))"
+          if($LASTEXITCODE -ne 0){throw 'R14 patch decode failed'}
+          git apply --check --directory=source r14_stage1.patch
+          if($LASTEXITCODE -ne 0){throw 'R14 patch is incompatible with actual R13'}
+          git apply --directory=source r14_stage1.patch
+          if($LASTEXITCODE -ne 0){throw 'R14 patch apply failed'}
+          python -m compileall -q source/dsac29 source/tests/test_r14_stage1_shift.py
+          if($LASTEXITCODE -ne 0){throw 'R14 Python syntax failed'}
+      - name: Install CAD, Qt, and browser test dependencies
         working-directory: source
-        shell: pwsh
         run: |
           ./BUDUJ_WINDOWS.ps1 -InstallOnly
           if($LASTEXITCODE -ne 0){throw 'Dependency installation failed'}
           python -m pip install 'pytest>=8,<9' playwright pillow
-          if($LASTEXITCODE -ne 0){throw 'pytest installation failed'}
-      - name: Test R14 stage-one placement and sparse safeguards
+          if($LASTEXITCODE -ne 0){throw 'Test dependency installation failed'}
+      - name: R14 targeted geometry + placement regression
         working-directory: source
-        shell: pwsh
         run: |
           python -m pytest -q tests/test_r14_stage1_shift.py tests/test_r14_sparse_shift.py tests/test_r13_deferred_alignment.py
           if($LASTEXITCODE -ne 0){throw 'R14 placement regression failed'}
-      - name: All R14 core regression tests
+      - name: R14 full regression suite
         working-directory: source
-        shell: pwsh
         run: |
           python TESTUJ.py
-          if($LASTEXITCODE -ne 0){throw 'Core regression tests failed'}
-      - name: HTML tree browser regression
+          if($LASTEXITCODE -ne 0){throw 'R14 full regression failed'}
+      - name: Qt and HTML tree regression tests
         working-directory: source
-        shell: pwsh
         run: |
+          python -m pytest -q tests/test_r13_html_tree.py
+          if($LASTEXITCODE -ne 0){throw 'HTML tree regression failed'}
           python TEST_HTML_BROWSER.py
-          if($LASTEXITCODE -ne 0){throw 'HTML browser test failed'}
-      - name: Package Windows x64 EXE
+          if($LASTEXITCODE -ne 0){throw 'HTML browser regression failed'}
+      - name: Archive exact source used in build
+        run: |
+          Compress-Archive -Path source/* -DestinationPath DSCompare_1_0_R14_COMPLETE_SOURCE.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare_1_0_R14_COMPLETE_SOURCE
+          path: DSCompare_1_0_R14_COMPLETE_SOURCE.zip
+          if-no-files-found: error
+      - name: Build DSCompare.exe Windows x64
         working-directory: source
-        shell: pwsh
         run: |
           ./BUDUJ_WINDOWS.ps1 -NoInstall
-          if($LASTEXITCODE -ne 0){throw 'Build failed'}
+          if($LASTEXITCODE -ne 0){throw 'Windows build failed'}
           if(-not (Test-Path 'dist/DSCompare/DSCompare.exe')){throw 'Missing EXE'}
-      - name: Test packaged EXE
+      - name: Test packaged EXE UI
         working-directory: source
-        shell: pwsh
         run: |
           $p=Start-Process -FilePath './dist/DSCompare/DSCompare.exe' -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
           if($p.ExitCode -ne 0 -or -not (Test-Path 'UI_CHECK/UI_OK.json')){throw 'Packaged UI failed'}
-      - name: Archive Windows program
+      - name: Package working Windows application
         working-directory: source
-        shell: pwsh
         run: |
-          'DS Compare R14: extract the entire folder, start DSCompare.exe and retain _internal.' | Set-Content -Encoding utf8 dist/DSCompare/START_TUTAJ.txt
-          Compress-Archive -Path dist/DSCompare/* -DestinationPath DSCompare_1_0_R14_WINDOWS_x64.zip -CompressionLevel Optimal
+          'DS Compare R14 - extract the entire folder and start DSCompare.exe. Keep _internal beside EXE.' | Set-Content -Encoding utf8 dist/DSCompare/START_TUTAJ.txt
+          Compress-Archive -Path dist/DSCompare/* -DestinationPath DSCompare_1_0_R14_WINDOWS_x64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: DSCompare_1_0_R14_WINDOWS_x64
