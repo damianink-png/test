@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   build:
     runs-on: windows-2022
@@ -18,47 +19,35 @@ jobs:
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
-      - name: Extract complete R7 source
+      - name: Download precise R12 source baseline from successful build
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39928357539
+          name: DSCompare_1_0_R12_COMPLETE_SOURCE
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: damianink-png/test
+          path: .
+      - name: Extract R12 source baseline
         working-directory: .
-        run: Expand-Archive -Path DSCompare_R7_source.zip -DestinationPath source
+        run: Expand-Archive -Path DSCompare_1_0_R12_SOURCE.zip -DestinationPath source
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           architecture: x64
-      - name: Apply R8 UI improvements to extracted full R7 source
+      - name: Apply exact R13 patch to original R12 package
         working-directory: .
         run: |
           $ErrorActionPreference='Stop'
-          python scripts/r8_ui_patch.py
-          if($LASTEXITCODE -ne 0){throw 'R8 source patch failed'}
-          python scripts/r9_alignment_patch.py
-          if($LASTEXITCODE -ne 0){throw 'R9 alignment patch failed'}
-          python scripts/r10_alignment_patch.py
-          if($LASTEXITCODE -ne 0){throw 'R10 alignment patch failed'}
-          python scripts/r10_gui_patch.py
-          if($LASTEXITCODE -ne 0){throw 'R10 GUI patch failed'}
-          python scripts/r11_original_frame_patch.py
-          if($LASTEXITCODE -ne 0){throw 'R11 frame preflight patch failed'}
-          python scripts/r12_mass_selection_patch.py
-          if($LASTEXITCODE -ne 0){throw 'R12 selection patch failed'}
           $encoded=(Get-Content -Raw scripts/R13_DEFERRED_ALIGNMENT_HTML_TREE_PATCH.xz.base64).Trim()
           [IO.File]::WriteAllBytes('R13_SOURCE_DIFF.xz',[Convert]::FromBase64String($encoded))
-          python -c "import lzma,pathlib; pathlib.Path('R13_SOURCE_DIFF.patch').write_bytes(lzma.decompress(pathlib.Path('R13_SOURCE_DIFF.xz').read_bytes()))"
-          if($LASTEXITCODE -ne 0){throw 'Cannot decompress R13 patch'}
+          python -c "import lzma,pathlib;pathlib.Path('R13_SOURCE_DIFF.patch').write_bytes(lzma.decompress(pathlib.Path('R13_SOURCE_DIFF.xz').read_bytes()))"
+          if($LASTEXITCODE -ne 0){throw 'R13 patch decompression failed'}
           git apply --check --directory=source R13_SOURCE_DIFF.patch
-          if($LASTEXITCODE -ne 0){throw 'R13 patch rejected: R12 base mismatch'}
+          if($LASTEXITCODE -ne 0){throw 'R13 delta rejected by genuine R12 baseline'}
           git apply --directory=source R13_SOURCE_DIFF.patch
-          if($LASTEXITCODE -ne 0){throw 'Cannot apply R13 source patch'}
+          if($LASTEXITCODE -ne 0){throw 'Failed to apply R13 patch'}
           python -m py_compile source/dsac29/cli.py source/dsac29/deferred_alignment.py source/dsac29/preview3d.py source/dsac29/gui45.py
-          if($LASTEXITCODE -ne 0){throw 'R13 syntax failed'}
-          python -m py_compile source/dsac29/gui_modern.py
-          if($LASTEXITCODE -ne 0){throw 'R12 Qt syntax failed'}
-          python -m py_compile source/dsac29/gui_modern.py source/dsac29/mass_drop.py source/dsac29/alignment.py source/dsac29/cli.py
-          if($LASTEXITCODE -ne 0){throw 'R10 syntax failed'}
-          python -m py_compile source/dsac29/alignment.py source/dsac29/cli.py
-          if($LASTEXITCODE -ne 0){throw 'R9 engine syntax failed'}
-          python -m py_compile source/dsac29/gui_modern.py
-          if($LASTEXITCODE -ne 0){throw 'R8 GUI syntax failed'}
+          if($LASTEXITCODE -ne 0){throw 'R13 source failed to compile'}
       - name: Install dependencies
         run: |
           ./BUDUJ_WINDOWS.ps1 -InstallOnly
