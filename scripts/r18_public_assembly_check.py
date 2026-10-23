@@ -35,6 +35,22 @@ def test_actual_assembly(input_path, output_dir):
     assert moved.stat().st_size>1000
     check=load_step(str(moved),max_solids=20000,progress=None)
     assert len(check)==n,(n,len(check))
+    # Diagnostics for independently exported authentic CAD, not synthetic parts.
+    from collections import Counter
+    import numpy as np
+    from dsac29.geometry import signature,candidate
+    sig_a=Counter(signature(p) for p in source)
+    sig_b=Counter(signature(p) for p in check)
+    print("REAL CAD DEBUG common signatures:",sum((sig_a&sig_b).values()),"of",n,flush=True)
+    center_pairs=[]
+    for i,p in enumerate(source):
+        ranked=sorted(((float(np.linalg.norm(p.center-(q.center-np.asarray(translation)))),j)
+                       for j,q in enumerate(check)))
+        dist,j=ranked[0]
+        q=check[j]
+        center_pairs.append((i,j,dist,float(p.volume/q.volume) if q.volume else 0,
+            float(p.area/q.area) if q.area else 0,bool(candidate(p,q,.01))))
+    print("REAL CAD DEBUG nearest center pairs:",center_pairs,flush=True)
     # Must not silently accept a global displacement as per-part movements.
     decisions=[]
     def decide(proposal):
