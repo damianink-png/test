@@ -16,15 +16,10 @@ replace_once(
  QPushButton#delete-one[massSelected="true"]{background:transparent;color:#FFFFFF;border:0;}
  QPushButton#delete-one[massSelected="true"]:hover{background:#FFFFFF;color:#1268D8;border-radius:7px;}'''
 )
-replace_once(
- '''class MassRowWidget(QWidget):
- """Clickable background for custom QListWidget rows (buttons remain separate)."""
- def __init__(self,owner,item):
-  super().__init__()
-  self._owner=owner
-  self._item=item
- def mousePressEvent(self,event):''',
- '''class MassRowWidget(QWidget):
+import re
+match=re.search(r'^class MassRowWidget\(QWidget\):.*?(?=^class ModernWindow\(PreviousWindow\):)',s,flags=re.M|re.S)
+if not match:raise RuntimeError('R12 missing MassRowWidget class')
+s=s[:match.start()]+'''class MassRowWidget(QWidget):
  """Clickable mass-list row with explicit, theme-safe selected background."""
  def __init__(self,owner,item):
   super().__init__()
@@ -32,8 +27,7 @@ replace_once(
   self._item=item
   self.setAttribute(Qt.WA_StyledBackground,True)
  def paintEvent(self,event):
-  # Native QWidget item-widget QSS selection may fail to paint on Windows.
-  # Paint the entire row here; controls remain rendered above this layer.
+  # Explicit QWidget item-widget paint avoids lost QSS selection on Windows.
   dark=self._owner.theme.currentText()=='Ciemny'
   palette=DARK if dark else LIGHT
   selected=bool(self._item.isSelected())
@@ -51,8 +45,13 @@ replace_once(
   self.update();super().enterEvent(event)
  def leaveEvent(self,event):
   self.update();super().leaveEvent(event)
- def mousePressEvent(self,event):'''
-)
+ def mousePressEvent(self,event):
+  if event.button()==Qt.LeftButton:
+   self._owner._mass_toggle_row(self._item,event.modifiers())
+   event.accept()
+  else:super().mousePressEvent(event)
+
+'''+s[match.end():]
 replace_once("   label=QLabel(model.name);label.setObjectName('mass-row-label')",
              "   label=QLabel(model.name);label.setObjectName('mass-row-label')\n   label.setProperty('massSelected',False)")
 replace_once("   delete.setFixedSize(26,26)\n   delete.setToolTip",
