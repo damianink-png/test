@@ -1,0 +1,131 @@
+name: DS Compare R15 - material deltas, report and R14 shift
+on:
+  push:
+    branches: ['build/dscompare-r15-material-delta-renamed-report-20261023']
+    paths:
+      - 'scripts/R15_MATERIAL_REGIONS.patch.xz.base64'
+      - '.github/workflows/build-dscompare-r15-final.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download successful R14 base sources
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39943273807
+          name: DSCompare_1_0_R14_COMPLETE_SOURCE
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: damianink-png/test
+          path: .
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Apply R15 geometry-colors-report patch to verified R14
+        run: |
+          $ErrorActionPreference='Stop'
+          Expand-Archive -LiteralPath 'DSCompare_1_0_R14_COMPLETE_SOURCE.zip' -DestinationPath 'source'
+          $encoded=(Get-Content -Raw 'scripts/R15_MATERIAL_REGIONS.patch.xz.base64').Trim()
+          [IO.File]::WriteAllBytes('r15_delta.xz',[Convert]::FromBase64String($encoded))
+          python -c "import lzma,pathlib;pathlib.Path('r15_delta.patch').write_bytes(lzma.decompress(pathlib.Path('r15_delta.xz').read_bytes()))"
+          if($LASTEXITCODE -ne 0){throw 'R15 patch decompression failed'}
+          git apply --check --directory=source r15_delta.patch
+          if($LASTEXITCODE -ne 0){throw 'R15 patch incompatible with successful R14'}
+          git apply --directory=source r15_delta.patch
+          if($LASTEXITCODE -ne 0){throw 'R15 patch failed'}
+          python -m compileall -q source/dsac29 source/tests/test_r15_material_renamed.py
+          if($LASTEXITCODE -ne 0){throw 'R15 source syntax invalid'}
+      - name: Install CAD, Qt, and browser test dependencies
+        working-directory: source
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if($LASTEXITCODE -ne 0){throw 'Dependency installation failed'}
+          python -m pip install 'pytest>=8,<9' playwright pillow
+          if($LASTEXITCODE -ne 0){throw 'Test dependency installation failed'}
+      - name: R15 material regions, changed subassembly, rename and report
+        working-directory: source
+        run: |
+          python -m pytest -q tests/test_r15_material_renamed.py tests/test_r7_improvements.py tests/test_revision_r4.py tests/test_r8_fix.py::test_renamed_visible_in_csv_html_and_filter
+          if($LASTEXITCODE -ne 0){throw 'R15 OCC material tests failed'}
+      - name: R14 targeted geometry + placement regression
+        working-directory: source
+        run: |
+          python -m pytest -q tests/test_r14_stage1_shift.py tests/test_r14_sparse_shift.py tests/test_r13_deferred_alignment.py
+          if($LASTEXITCODE -ne 0){throw 'R14 placement regression failed'}
+      - name: R14 full regression suite
+        working-directory: source
+        run: |
+          python TESTUJ.py
+          if($LASTEXITCODE -ne 0){throw 'R14 full regression failed'}
+      - name: Qt and HTML tree regression tests
+        working-directory: source
+        run: |
+          python -m pytest -q tests/test_r13_html_tree.py
+          if($LASTEXITCODE -ne 0){throw 'HTML tree regression failed'}
+      - name: Archive exact source used in build
+        run: |
+          Compress-Archive -Path source/* -DestinationPath DSCompare_1_0_R15_COMPLETE_SOURCE.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare_1_0_R15_COMPLETE_SOURCE
+          path: DSCompare_1_0_R15_COMPLETE_SOURCE.zip
+          if-no-files-found: error
+      - name: Build DSCompare.exe Windows x64
+        working-directory: source
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if($LASTEXITCODE -ne 0){throw 'Windows build failed'}
+          if(-not (Test-Path 'dist/DSCompare/DSCompare.exe')){throw 'Missing EXE'}
+      - name: Test packaged EXE UI
+        working-directory: source
+        run: |
+          $p=Start-Process -FilePath './dist/DSCompare/DSCompare.exe' -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if($p.ExitCode -ne 0 -or -not (Test-Path 'UI_CHECK/UI_OK.json')){throw 'Packaged UI failed'}
+      - name: Verify packaged STEP output and embedded HTML tree
+        working-directory: source
+        run: |
+          @'
+          import subprocess,json,pathlib
+          root=pathlib.Path.cwd()
+          command=[str(root/'dist/DSCompare/DSCompare.exe'),'--worker','compare','--a',str(root/'samples/RAMA_REV_03.step'),'--b',str(root/'samples/RAMA_REV_04.step'),'--output',str(root/'FROZEN_CHECK'),'--generate-step','--revision-style','--no-bom','--preview3d']
+          with open('frozen-worker.log','w') as log:
+              result=subprocess.run(command,stdout=log,stderr=log,timeout=180)
+          assert result.returncode==0,pathlib.Path('frozen-worker.log').read_text(encoding='utf-8',errors='replace')
+          out=root/'FROZEN_CHECK'
+          result=json.loads((out/'_WYNIK_V37.json').read_text(encoding='utf8'))
+          assert result['ok'],result
+          summary=json.loads((out/'PODSUMOWANIE.json').read_text(encoding='utf8'))
+          assert summary['solids_A']==13 and summary['solids_B']==13,summary
+          assert (out/'POROWNANIE_KOLORY.step').stat().st_size>1000
+          html=(out/'PODGLAD_KOLOROW_3D.html').read_text(encoding='utf8')
+          assert '/*__SCENE__*/' not in html and 'const scene=[' in html
+          print('R15 packaged STEP + HTML PASS')
+          '@ | python -
+          if($LASTEXITCODE -ne 0){throw 'Packaged STEP/HTML worker failed'}
+      - name: Verify generated HTML in Edge
+        working-directory: source
+        run: |
+          python TEST_HTML_BROWSER.py
+          if($LASTEXITCODE -ne 0){throw 'HTML browser regression failed'}
+      - name: Package working Windows application
+        working-directory: source
+        run: |
+          'DS Compare R15 - extract the entire folder and start DSCompare.exe. Keep _internal beside EXE.' | Set-Content -Encoding utf8 dist/DSCompare/START_TUTAJ.txt
+          Compress-Archive -Path dist/DSCompare/* -DestinationPath DSCompare_1_0_R15_WINDOWS_x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare_1_0_R15_WINDOWS_x64
+          path: source/DSCompare_1_0_R15_WINDOWS_x64.zip
+          if-no-files-found: error
