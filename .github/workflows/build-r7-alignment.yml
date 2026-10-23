@@ -1,7 +1,7 @@
-name: DS Compare R7 - complete source Windows build
+name: DS Compare R8 - R7 base GUI polish and regression
 on:
   push:
-    branches: ['build/dscompare-r7-alignment-20261023']
+    branches: ['build/dscompare-r7-ui-polish-r8']
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,6 +25,30 @@ jobs:
         with:
           python-version: '3.11'
           architecture: x64
+      - name: Inspect R7 UI source methods and styles
+        run: |
+          @'
+          from pathlib import Path
+          import ast
+          for name in ('dsac29/gui_modern.py','dsac29/gui46.py','dsac29/gui45.py'):
+              p=Path(name)
+              print('=== INSPECT FILE ===',p,'exists=',p.exists(),flush=True)
+              if not p.exists():continue
+              raw=p.read_text(encoding='utf-8');lines=raw.splitlines()
+              wanted=['_modern_compare','_modern_mass','_render_mass_file_rows','_mass_remove_one','_mass_remove_selected','_mass_reset','new_comparison','invalidate_comparison','_set_compare_result_state','finish','finished','_on_finish','_refresh_outputs','_update_mass_file_visual','_set_busy_ui','_set_mass_result_state','apply_theme','skin','_mass_invalidate','_file_refresh']
+              tree=ast.parse(raw)
+              for node in ast.walk(tree):
+                  if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and any(a in node.name for a in wanted):
+                      part='\\n'.join(lines[node.lineno-1:min(node.end_lineno,node.lineno+95)])
+                      print('### METHOD',node.name,'lines',node.lineno,node.end_lineno,flush=True)
+                      print(part,flush=True)
+              for word in ['QPushButton#delete-one','QWidget#mass-file-row','QListWidget#mass-input-list',
+                           'QPushButton#text-button','QPushButton:hover','QWidget#mass-queue','LIGHT={']:
+                  k=raw.find(word)
+                  if k!=-1:
+                      print('### STYLE',word,'at',k,'excerpt',raw[max(0,k-180):k+450],flush=True)
+          '@ | python -
+          if($LASTEXITCODE -ne 0){throw 'R7 inspection failed'}
       - name: Install dependencies
         run: |
           ./BUDUJ_WINDOWS.ps1 -InstallOnly
