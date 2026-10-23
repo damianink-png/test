@@ -46,6 +46,7 @@ jobs:
       - name: R8 user-interface functional tests (both themes and failed run)
         run: |
           $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=(Get-Location).Path
           python ../scripts/r8_ui_smoke.py
           if($LASTEXITCODE -ne 0){throw 'R8 Qt regression failed'}
       - name: Package FULL R8 patched sources before PyInstaller
