@@ -83,7 +83,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: DSCompare_1_0_R17_COMPLETE_SOURCE
-          path: DSCompare_1_0_R16_COMPLETE_SOURCE.zip
+          path: DSCompare_1_0_R17_COMPLETE_SOURCE.zip
           if-no-files-found: error
       - name: Build R17 DSCompare.exe Windows x64
         working-directory: source
