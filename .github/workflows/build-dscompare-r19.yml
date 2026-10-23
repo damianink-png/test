@@ -124,6 +124,7 @@ jobs:
               page.wait_for_function("document.querySelectorAll('.tree-leaf').length>0")
               assert not page.locator('#err').is_visible()
               assert page.locator('.tree-leaf').count()>2
+              page.locator('#tree details').evaluate_all("(els) => els.forEach(el => { el.open = true; })")
               page.locator('.tree-leaf').first.click()
               assert page.locator('.tree-leaf.selected').count()==1
               page.locator('#focus').click()
@@ -135,7 +136,8 @@ jobs:
           page.wait_for_function("document.querySelectorAll('.tree-leaf').length>=20")
           assert not page.locator('#err').is_visible()
           assert page.locator('.tree-leaf').count()==22
-          page.locator('.tree-leaf').first.click()
+          page.locator('#tree details').evaluate_all("(els) => els.forEach(el => { el.open = true; })")
+              page.locator('.tree-leaf').first.click()
           assert page.locator('.tree-leaf.selected').count()==1
           page.screenshot(path='../real_results/DEMO_ALL/ALL_CATEGORIES_WEBGL_SCREEN.png')
           print('REAL CAD WEBGL EDGE PASS - NIST + 22 labeled parts all cases')
