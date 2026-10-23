@@ -36,7 +36,7 @@ jobs:
       - name: Apply R16 after-alignment geometry/name classification fix
         run: |
           $ErrorActionPreference='Stop'
-          Expand-Archive -LiteralPath 'DSCompare_1_0_R16_COMPLETE_SOURCE.zip' -DestinationPath 'source'
+          Expand-Archive -LiteralPath 'DSCompare_1_0_R15_COMPLETE_SOURCE.zip' -DestinationPath 'source'
           $encoded=(Get-Content -Raw 'scripts/R16_WORLD_MATCH.patch.xz.base64').Trim()
           [IO.File]::WriteAllBytes('r16_delta.xz',[Convert]::FromBase64String($encoded))
           python -c "import lzma,pathlib;pathlib.Path('r16_delta.patch').write_bytes(lzma.decompress(pathlib.Path('r16_delta.xz').read_bytes()))"
@@ -46,7 +46,7 @@ jobs:
           git apply --directory=source r16_delta.patch
           if($LASTEXITCODE -ne 0){throw 'R16 patch failed'}
           python -m compileall -q source/dsac29 source/tests/test_r15_material_renamed.py
-          if($LASTEXITCODE -ne 0){throw 'R15 source syntax invalid'}
+          if($LASTEXITCODE -ne 0){throw 'R16 source syntax invalid'}
       - name: Install CAD, Qt, and browser test dependencies
         working-directory: source
         run: |
