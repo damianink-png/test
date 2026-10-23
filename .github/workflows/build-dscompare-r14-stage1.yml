@@ -73,8 +73,6 @@ jobs:
         run: |
           python -m pytest -q tests/test_r13_html_tree.py
           if($LASTEXITCODE -ne 0){throw 'HTML tree regression failed'}
-          python TEST_HTML_BROWSER.py
-          if($LASTEXITCODE -ne 0){throw 'HTML browser regression failed'}
       - name: Archive exact source used in build
         run: |
           Compress-Archive -Path source/* -DestinationPath DSCompare_1_0_R14_COMPLETE_SOURCE.zip
@@ -94,6 +92,32 @@ jobs:
         run: |
           $p=Start-Process -FilePath './dist/DSCompare/DSCompare.exe' -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
           if($p.ExitCode -ne 0 -or -not (Test-Path 'UI_CHECK/UI_OK.json')){throw 'Packaged UI failed'}
+      - name: Verify packaged STEP output and embedded HTML tree
+        working-directory: source
+        run: |
+          @'
+          import subprocess,json,pathlib
+          root=pathlib.Path.cwd()
+          command=[str(root/'dist/DSCompare/DSCompare.exe'),'--worker','compare','--a',str(root/'samples/RAMA_REV_03.step'),'--b',str(root/'samples/RAMA_REV_04.step'),'--output',str(root/'FROZEN_CHECK'),'--generate-step','--revision-style','--no-bom','--preview3d']
+          with open('frozen-worker.log','w') as log:
+              result=subprocess.run(command,stdout=log,stderr=log,timeout=180)
+          assert result.returncode==0,pathlib.Path('frozen-worker.log').read_text(encoding='utf-8',errors='replace')
+          out=root/'FROZEN_CHECK'
+          result=json.loads((out/'_WYNIK_V37.json').read_text(encoding='utf8'))
+          assert result['ok'],result
+          summary=json.loads((out/'PODSUMOWANIE.json').read_text(encoding='utf8'))
+          assert summary['solids_A']==13 and summary['solids_B']==13,summary
+          assert (out/'POROWNANIE_KOLORY.step').stat().st_size>1000
+          html=(out/'PODGLAD_KOLOROW_3D.html').read_text(encoding='utf8')
+          assert '/*__SCENE__*/' not in html and 'const scene=[' in html
+          print('R14 packaged STEP + HTML PASS')
+          '@ | python -
+          if($LASTEXITCODE -ne 0){throw 'Packaged STEP/HTML worker failed'}
+      - name: Verify generated HTML in Edge
+        working-directory: source
+        run: |
+          python TEST_HTML_BROWSER.py
+          if($LASTEXITCODE -ne 0){throw 'HTML browser regression failed'}
       - name: Package working Windows application
         working-directory: source
         run: |
