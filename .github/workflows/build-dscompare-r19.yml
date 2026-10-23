@@ -132,14 +132,21 @@ jobs:
               assert not failures,failures
               browser.close()
           demo=pathlib.Path('../real_results/DEMO_ALL/R18_PODGLAD_3D_WSZYSTKIE_PRZYPADKI.html').resolve()
-          page.goto(demo.as_uri())
-          page.wait_for_function("document.querySelectorAll('.tree-leaf').length>=20")
-          assert not page.locator('#err').is_visible()
-          assert page.locator('.tree-leaf').count()==22
-          page.locator('#tree details').evaluate_all("(els) => els.forEach(el => { el.open = true; })")
+          with sync_playwright() as pw:
+              browser=pw.chromium.launch(channel='msedge',headless=True,args=['--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+              page=browser.new_page(viewport={'width':1280,'height':900})
+              failures=[]
+              page.on('pageerror',lambda e:failures.append(str(e)))
+              page.goto(demo.as_uri())
+              page.wait_for_function("document.querySelectorAll('.tree-leaf').length>=20")
+              assert not page.locator('#err').is_visible()
+              assert page.locator('.tree-leaf').count()==22
+              page.locator('#tree details').evaluate_all("(els) => els.forEach(el => { el.open = true; })")
               page.locator('.tree-leaf').first.click()
-          assert page.locator('.tree-leaf.selected').count()==1
-          page.screenshot(path='../real_results/DEMO_ALL/ALL_CATEGORIES_WEBGL_SCREEN.png')
+              assert page.locator('.tree-leaf.selected').count()==1
+              page.screenshot(path='../real_results/DEMO_ALL/ALL_CATEGORIES_WEBGL_SCREEN.png')
+              assert not failures,failures
+              browser.close()
           print('REAL CAD WEBGL EDGE PASS - NIST + 22 labeled parts all cases')
           '@ | python -
           if($LASTEXITCODE -ne 0){throw 'Real CAD HTML browser failure'}
