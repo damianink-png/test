@@ -1,0 +1,161 @@
+name: DS Compare R19 - real CAD all classes and SO shift
+on:
+  push:
+    branches: ['build/dscompare-r19-real-cad-all-classes-20261023']
+    paths:
+      - '.github/workflows/build-dscompare-r19-real-cad.yml'
+      - 'scripts/r19_fix_alignment.py'
+      - 'scripts/r19_real_cad_all_cases.py'
+      - 'scripts/r19_so_real_shift_test.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download successful R17 exact source
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39961694888
+          name: DSCompare_1_0_R17_COMPLETE_SOURCE
+          repository: damianink-png/test
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: .
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Apply R18 consistency patch and R19 shift fix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $z=Get-ChildItem -Filter '*R17*SOURCE*.zip' | Select-Object -First 1
+          if(-not $z){throw 'Missing R17 exact source'}
+          Expand-Archive -LiteralPath $z.FullName -DestinationPath source -Force
+          $encoded=(Get-Content -Raw scripts/R18_CONSISTENCY_CODE.patch.xz.base64).Trim()
+          [IO.File]::WriteAllBytes('r18.patch.xz',[Convert]::FromBase64String($encoded))
+          python -c "import pathlib,lzma;pathlib.Path('r18.patch').write_bytes(lzma.decompress(pathlib.Path('r18.patch.xz').read_bytes()))"
+          if($LASTEXITCODE -ne 0){throw 'R18 decode failed'}
+          git apply --check --directory=source r18.patch
+          if($LASTEXITCODE -ne 0){throw 'R18 delta no longer matches'}
+          git apply --directory=source r18.patch
+          if($LASTEXITCODE -ne 0){throw 'R18 apply failed'}
+          python scripts/r19_fix_alignment.py
+          if($LASTEXITCODE -ne 0){throw 'R19 alignment patch failed'}
+          python -m compileall -q source/dsac29
+          if($LASTEXITCODE -ne 0){throw 'Python source invalid'}
+      - name: Install CAD and browser dependencies
+        working-directory: source
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if($LASTEXITCODE -ne 0){throw 'Dependencies unavailable'}
+          python -m pip install 'pytest>=8,<9' playwright pillow
+          if($LASTEXITCODE -ne 0){throw 'pytest/Playwright unavailable'}
+      - name: R14-R18 alignment, geometry, HTML and report regressions
+        working-directory: source
+        shell: pwsh
+        run: |
+          python -m pytest -q tests/test_r14_stage1_shift.py tests/test_r14_sparse_shift.py tests/test_r16_231_world.py tests/test_r18_consistency.py tests/test_r13_html_tree.py
+          if($LASTEXITCODE -ne 0){throw 'Targeted regression failure'}
+          python TESTUJ.py
+          if($LASTEXITCODE -ne 0){throw 'Full regression failure'}
+      - name: Download two authentic public CAD assemblies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force public_models | Out-Null
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kovacsv/occt-import-js/main/test/testfiles/cax-if/as1_pe_203.stp' -OutFile public_models/as1_pe_203.stp
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/TheRobotStudio/SO-ARM100/main/STEP/SO100/Follower_Specific/SO_5DOF_ARM100_Assembly.step' -OutFile public_models/SO_5DOF_ARM100_Assembly.step
+          foreach($f in (Get-ChildItem public_models)){if($f.Length -lt 30000){throw "Missing real CAD $($f.Name)"}}
+      - name: NIST original and shifted STEP - 18 of 18 identical
+        working-directory: source
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          python ../scripts/r18_public_assembly_check.py ../public_models/as1_pe_203.stp ../real_results/NIST_SHIFT
+          if($LASTEXITCODE -ne 0){throw 'NIST global shift regression'}
+      - name: All change classes on an authentic NIST CAD assembly
+        working-directory: source
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          python ../scripts/r19_real_cad_all_cases.py ../public_models/as1_pe_203.stp ../real_results/ALL_CASES
+          if($LASTEXITCODE -ne 0){throw 'NIST all-categories test failed'}
+      - name: SO-ARM100 independently re-exported STEP - global shift detection
+        working-directory: source
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          python ../scripts/r19_so_real_shift_test.py ../public_models/SO_5DOF_ARM100_Assembly.step ../real_results/SO_SHIFT
+          if($LASTEXITCODE -ne 0){throw 'SO real CAD shift detection failed'}
+      - name: Open full-category HTML in Edge and test scene interactions
+        working-directory: source
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright
+          html=Path('../real_results/ALL_CASES/DSCompare_REALNY_CAD_WSZYSTKIE_PRZYPADKI.html').resolve()
+          with sync_playwright() as pw:
+              browser=pw.chromium.launch(channel='msedge',headless=True,args=['--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+              page=browser.new_page(viewport={'width':1440,'height':900})
+              errors=[]
+              page.on('pageerror',lambda e:errors.append(str(e)))
+              page.goto(html.as_uri())
+              page.wait_for_function('document.querySelectorAll(".tree-leaf").length>=12')
+              assert not page.locator('#err').is_visible()
+              assert page.locator('.tree-leaf').count()>=20
+              page.locator('.tree-leaf').first.click()
+              assert page.locator('.tree-leaf.selected').count()==1
+              page.locator('#focus').click()
+              page.screenshot(path='../real_results/ALL_CASES/EDGE_REAL_CAD_ALL_CASES.png')
+              assert not errors,errors
+              browser.close()
+          print('EDGE REAL CAD HTML PASS')
+          '@ | python -
+          if($LASTEXITCODE -ne 0){throw 'Real CAD HTML Edge failure'}
+      - name: Package exact R19 source and all real CAD sample outputs
+        shell: pwsh
+        run: |
+          Compress-Archive -Path source/* -DestinationPath DSCompare_1_0_R19_COMPLETE_SOURCE.zip
+          Compress-Archive -Path real_results/ALL_CASES/*,real_results/SO_SHIFT/SO_ROUNDTRIP_ALIGNMENT_TEST.json,real_results/NIST_SHIFT/WYNIK_TESTU_RZECZYWISTEGO_ZLOZENIA.json -DestinationPath DSCompare_R19_REAL_CAD_ALL_CLASSES.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare_1_0_R19_COMPLETE_SOURCE
+          path: DSCompare_1_0_R19_COMPLETE_SOURCE.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare_R19_REAL_CAD_ALL_CLASSES
+          path: DSCompare_R19_REAL_CAD_ALL_CLASSES.zip
+          if-no-files-found: error
+      - name: Build Windows x64 EXE and smoke test
+        working-directory: source
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if($LASTEXITCODE -ne 0){throw 'R19 build failed'}
+          $p=Start-Process -FilePath ./dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if($p.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)){throw 'R19 packaged UI failure'}
+          'DS Compare R19 - wypakuj caly ZIP i uruchom DSCompare.exe.' | Set-Content -Encoding utf8 dist/DSCompare/START_TUTAJ.txt
+          Compress-Archive -Path dist/DSCompare/* -DestinationPath DSCompare_1_0_R19_WINDOWS_x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare_1_0_R19_WINDOWS_x64
+          path: source/DSCompare_1_0_R19_WINDOWS_x64.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: R19_REAL_CAD_TEST_EVIDENCE
+          path: real_results/
+          if-no-files-found: ignore
