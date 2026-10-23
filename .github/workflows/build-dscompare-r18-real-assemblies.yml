@@ -1,0 +1,136 @@
+name: DS Compare R18 - real CAD and Windows
+on:
+  push:
+    branches: ['build/dscompare-r18-consistency-public-assemblies-20261023']
+    paths: ['scripts/R18_CONSISTENCY_CODE.patch.xz.base64', 'scripts/r18_public_assembly_check.py', '.github/workflows/build-dscompare-r18-real-assemblies.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 39961694888
+          name: DSCompare_1_0_R17_COMPLETE_SOURCE
+          repository: damianink-png/test
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: .
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Apply exact R18 patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $z=Get-ChildItem -Filter '*R17*SOURCE*.zip' | Select-Object -First 1
+          if(-not $z){throw 'Missing R17 exact source'}
+          Expand-Archive -LiteralPath $z.FullName -DestinationPath source -Force
+          $txt=(Get-Content -Raw scripts/R18_CONSISTENCY_CODE.patch.xz.base64).Trim()
+          [IO.File]::WriteAllBytes('patch.xz',[Convert]::FromBase64String($txt))
+          python -c "import pathlib,lzma;pathlib.Path('patch.diff').write_bytes(lzma.decompress(pathlib.Path('patch.xz').read_bytes()))"
+          if($LASTEXITCODE -ne 0){throw 'Patch failed to decode'}
+          git apply --check --directory=source patch.diff
+          if($LASTEXITCODE -ne 0){throw 'Patch failed to match original R17'}
+          git apply --directory=source patch.diff
+          if($LASTEXITCODE -ne 0){throw 'Patch apply failed'}
+          python -m compileall -q source/dsac29
+      - name: Install CAD and browser dependencies
+        working-directory: source
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if($LASTEXITCODE -ne 0){throw 'Dependency installation failed'}
+          python -m pip install 'pytest>=8,<9' playwright pillow
+          if($LASTEXITCODE -ne 0){throw 'Test dependencies failed'}
+      - name: Existing regression and shift tests
+        working-directory: source
+        shell: pwsh
+        run: |
+          python -m pytest -q -x tests/test_r15_material_renamed.py tests/test_r16_231_world.py tests/test_r13_html_tree.py tests/test_r14_stage1_shift.py
+          if($LASTEXITCODE -ne 0){throw 'Regression failure'}
+          python TESTUJ.py
+          if($LASTEXITCODE -ne 0){throw 'Full regression failure'}
+      - name: Download two original public STEP assemblies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force public_models | Out-Null
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/kovacsv/occt-import-js/main/test/testfiles/cax-if/as1_pe_203.stp' -OutFile public_models/as1_pe_203.stp
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/TheRobotStudio/SO-ARM100/main/STEP/SO100/Follower_Specific/SO_5DOF_ARM100_Assembly.step' -OutFile public_models/SO_5DOF_ARM100_Assembly.step
+          foreach($f in (Get-ChildItem public_models)){if($f.Length -lt 30000){throw "Invalid real STEP source $($f.Name)"};Write-Host "CAD $($f.Name) $($f.Length) bytes"}
+      - name: NIST real assembly + translated copy + STEP + HTML
+        working-directory: source
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          python ../scripts/r18_public_assembly_check.py ../public_models/as1_pe_203.stp ../real_results/NIST_AS1
+          if($LASTEXITCODE -ne 0){throw 'Real NIST STEP shifted comparison failed'}
+      - name: SO-ARM100 real assembly + translated copy + STEP + HTML
+        working-directory: source
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          python ../scripts/r18_public_assembly_check.py ../public_models/SO_5DOF_ARM100_Assembly.step ../real_results/SO_ARM100
+          if($LASTEXITCODE -ne 0){throw 'Real SO-ARM100 STEP shifted comparison failed'}
+      - name: Real HTML interactive Edge WebGL test
+        working-directory: source
+        shell: pwsh
+        run: |
+          @'
+          import pathlib
+          from playwright.sync_api import sync_playwright
+          html=pathlib.Path('../real_results/NIST_AS1/RZECZYWISTE_ZLOZENIE_PODGLAD_3D.html').resolve()
+          with sync_playwright() as pw:
+              browser=pw.chromium.launch(channel='msedge',headless=True,args=['--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+              page=browser.new_page(viewport={'width':1280,'height':900})
+              failures=[]
+              page.on('pageerror',lambda e:failures.append(str(e)))
+              page.goto(html.as_uri())
+              page.wait_for_function("document.querySelectorAll('.tree-leaf').length>0")
+              assert not page.locator('#err').is_visible()
+              assert page.locator('.tree-leaf').count()>2
+              page.locator('.tree-leaf').first.click()
+              assert page.locator('.tree-leaf.selected').count()==1
+              page.locator('#focus').click()
+              page.screenshot(path='../real_results/NIST_AS1/REAL_WEBGL_SCREEN.png')
+              assert not failures,failures
+              browser.close()
+          print('REAL CAD WEBGL EDGE PASS')
+          '@ | python -
+          if($LASTEXITCODE -ne 0){throw 'Real CAD HTML browser failure'}
+      - name: Package exact tested source
+        shell: pwsh
+        run: Compress-Archive -Path source/* -DestinationPath DSCompare_1_0_R18_COMPLETE_SOURCE.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare_1_0_R18_COMPLETE_SOURCE
+          path: DSCompare_1_0_R18_COMPLETE_SOURCE.zip
+      - name: Build Windows DSCompare.exe
+        working-directory: source
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if($LASTEXITCODE -ne 0){throw 'Build failure'}
+          $p=Start-Process -FilePath ./dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if($p.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)){throw 'EXE UI test failure'}
+          Compress-Archive -Path dist/DSCompare/* -DestinationPath DSCompare_1_0_R18_WINDOWS_x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare_1_0_R18_WINDOWS_x64
+          path: source/DSCompare_1_0_R18_WINDOWS_x64.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: R18_PUBLIC_REAL_CAD_HTML_TESTS
+          path: real_results/
+          if-no-files-found: ignore
