@@ -47,6 +47,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'R14 patch is incompatible with actual R13'}
           git apply --directory=source r14_stage1.patch
           if($LASTEXITCODE -ne 0){throw 'R14 patch apply failed'}
+          python scripts/r14_legacy_contract_patch.py
+          if($LASTEXITCODE -ne 0){throw 'R14 historical regression update failed'}
           python -m compileall -q source/dsac29 source/tests/test_r14_stage1_shift.py
           if($LASTEXITCODE -ne 0){throw 'R14 Python syntax failed'}
       - name: Install CAD, Qt, and browser test dependencies
