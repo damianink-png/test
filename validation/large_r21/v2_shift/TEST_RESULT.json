@@ -1,0 +1,34 @@
+{
+  "model": "v2",
+  "case": "shift",
+  "sources": [
+    {
+      "url": "https://raw.githubusercontent.com/VoronDesign/Voron-2/e64c83bcb84d41c0324e104a1c911879174d08aa/CAD/Voron_2.4r2_Assembly_STEP.zip",
+      "commit": "e64c83bcb84d41c0324e104a1c911879174d08aa",
+      "file": "Voron_2.4r2_Assembly.step",
+      "sha256": "06b372e40217caa1a7d1f516cb74887247f809e41e1e389f740f290e98441b55",
+      "bytes": 241522213
+    }
+  ],
+  "exe_sha256": "08068ec3a5da4d6cc2f500e2e348d368d526a82ca0bc72aeb0e932823251cec8",
+  "comparison_engine": "frozen Windows EXE",
+  "source_solids": 1715,
+  "command": [
+    "D:\\a\\test\\test\\app\\DSCompare.exe",
+    "--worker",
+    "compare",
+    "--a",
+    "D:\\a\\test\\test\\models\\v2\\Voron_2.4r2_Assembly.step",
+    "--b",
+    "D:\\a\\test\\test\\models\\moved.step",
+    "--output",
+    "D:\\a\\test\\test\\evidence\\comparison",
+    "--align-auto",
+    "--generate-step",
+    "--preview3d",
+    "--revision-style",
+    "--no-bom"
+  ],
+  "status": "FAIL",
+  "error": "Traceback (most recent call last):\n  File \"D:\\a\\test\\test\\ci\\large_exe.py\", line 51, in <module>\n    subprocess.run(['taskkill','/F','/T','/PID',str(proc.pid)],capture_output=True);raise TimeoutError('EXE comparison exceeded 2400 seconds')\n                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTimeoutError: EXE comparison exceeded 2400 seconds\n"
+}

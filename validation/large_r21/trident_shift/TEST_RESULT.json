@@ -1,0 +1,34 @@
+{
+  "model": "trident",
+  "case": "shift",
+  "sources": [
+    {
+      "url": "https://raw.githubusercontent.com/VoronDesign/Voron-Trident/1a49bdc2c524cd6f4491a01e8fd566d0bd6acd0a/CAD/trident_assembly.step.zip",
+      "commit": "1a49bdc2c524cd6f4491a01e8fd566d0bd6acd0a",
+      "file": "trident_assembly.step",
+      "sha256": "416eda4e9212b894ed6f78ad3a6af55757115ebfcc4c18db933743d97dd48ccf",
+      "bytes": 185183500
+    }
+  ],
+  "exe_sha256": "08068ec3a5da4d6cc2f500e2e348d368d526a82ca0bc72aeb0e932823251cec8",
+  "comparison_engine": "frozen Windows EXE",
+  "source_solids": 1595,
+  "command": [
+    "D:\\a\\test\\test\\app\\DSCompare.exe",
+    "--worker",
+    "compare",
+    "--a",
+    "D:\\a\\test\\test\\models\\trident\\trident_assembly.step",
+    "--b",
+    "D:\\a\\test\\test\\models\\moved.step",
+    "--output",
+    "D:\\a\\test\\test\\evidence\\comparison",
+    "--align-auto",
+    "--generate-step",
+    "--preview3d",
+    "--revision-style",
+    "--no-bom"
+  ],
+  "status": "FAIL",
+  "error": "Traceback (most recent call last):\n  File \"D:\\a\\test\\test\\ci\\large_exe.py\", line 51, in <module>\n    subprocess.run(['taskkill','/F','/T','/PID',str(proc.pid)],capture_output=True);raise TimeoutError('EXE comparison exceeded 2400 seconds')\n                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTimeoutError: EXE comparison exceeded 2400 seconds\n"
+}

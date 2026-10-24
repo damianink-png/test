@@ -1,0 +1,632 @@
+[
+  {
+    "model": "v2",
+    "case": "stationary",
+    "sources": [
+      {
+        "url": "https://raw.githubusercontent.com/VoronDesign/Voron-2/e64c83bcb84d41c0324e104a1c911879174d08aa/CAD/Voron_2.4r2_Assembly_STEP.zip",
+        "commit": "e64c83bcb84d41c0324e104a1c911879174d08aa",
+        "file": "Voron_2.4r2_Assembly.step",
+        "sha256": "06b372e40217caa1a7d1f516cb74887247f809e41e1e389f740f290e98441b55",
+        "bytes": 241522213
+      }
+    ],
+    "exe_sha256": "08068ec3a5da4d6cc2f500e2e348d368d526a82ca0bc72aeb0e932823251cec8",
+    "comparison_engine": "frozen Windows EXE",
+    "source_solids": 1715,
+    "command": [
+      "D:\\a\\test\\test\\app\\DSCompare.exe",
+      "--worker",
+      "compare",
+      "--a",
+      "D:\\a\\test\\test\\models\\v2\\Voron_2.4r2_Assembly.step",
+      "--b",
+      "D:\\a\\test\\test\\models\\v2\\Voron_2.4r2_Assembly.step",
+      "--output",
+      "D:\\a\\test\\test\\evidence\\comparison",
+      "--align-auto",
+      "--generate-step",
+      "--preview3d",
+      "--revision-style",
+      "--no-bom"
+    ],
+    "seconds": 308.98,
+    "exit_code": 0,
+    "decisions": [],
+    "summary": {
+      "statuses": {
+        "SAME": 1715
+      },
+      "same_geometry_count": 1715,
+      "renamed_geometry_count": 0,
+      "geometry_and_name_changed_count": 0,
+      "solids_A": 1715,
+      "solids_B": 1715,
+      "colors_hex": {
+        "SAME": "#1fb852",
+        "RENAMED": "#9199a6",
+        "MOVED": "#782bc7",
+        "CHANGED": "#6659d4",
+        "ADDED": "#1f6ef2",
+        "REMOVED": "#ff6114",
+        "UNCERTAIN": "#ffc726",
+        "MOVED_OLD": "#c9ade6",
+        "CHANGED_OLD": "#ff6114",
+        "CHANGED_NEW": "#1f6ef2",
+        "UNCERTAIN_OLD": "#ff6114",
+        "UNCERTAIN_NEW": "#1f6ef2",
+        "CHANGED_COMMON": "#2675f7",
+        "CHANGED_ADDED": "#f59e0b",
+        "CHANGED_REMOVED": "#be123c"
+      },
+      "density_kg_m3": 7850,
+      "mass_A_kg": 79.99222249783777,
+      "mass_B_kg": 79.99222249783777,
+      "step_verification": "szybka_strukturalna_bez_ponownego_importu",
+      "step_export_error": null,
+      "optional_diff_errors": [],
+      "main_step_error": null,
+      "main_step_ready": true,
+      "step_ready": true,
+      "import_diagnostics": {
+        "A": {
+          "solids": 1715,
+          "faces_outside_solids": 0,
+          "solid_limit": 20000
+        },
+        "B": {
+          "solids": 1715,
+          "faces_outside_solids": 0,
+          "solid_limit": 20000
+        }
+      },
+      "source_fingerprints": {
+        "A": "06b372e40217caa1a7d1f516cb74887247f809e41e1e389f740f290e98441b55",
+        "B": "06b372e40217caa1a7d1f516cb74887247f809e41e1e389f740f290e98441b55"
+      },
+      "manual_pairs": [],
+      "alignment": {
+        "requested": true,
+        "enabled": false
+      },
+      "source_A": "D:\\a\\test\\test\\models\\v2\\Voron_2.4r2_Assembly.step",
+      "source_B": "D:\\a\\test\\test\\models\\v2\\Voron_2.4r2_Assembly.step",
+      "tolerance_mm": 0.01,
+      "export_style": "revision_A_B",
+      "old_alpha": 0.4,
+      "full_bom": false,
+      "bom_grouping_complete": false,
+      "bom_mode": "dokladny",
+      "bom_csv": false,
+      "bom_seconds": 0,
+      "bom_warnings": [],
+      "diff_step": {
+        "written": false,
+        "solids": 0,
+        "changes": [],
+        "errors": []
+      },
+      "material_regions": [],
+      "material_errors": {},
+      "preview_3d": {
+        "elementy": 1715,
+        "wszystkie": 1715,
+        "trojkaty": 2228396,
+        "pominiete": 0,
+        "mesh_cache_hits": 88,
+        "ograniczony": false,
+        "limit_trojkatow": 300000,
+        "przekroczony_cel_siatki": true
+      },
+      "record_count": 1715,
+      "coverage_verified": {
+        "a": {
+          "count": 1715,
+          "unique": 1715
+        },
+        "b": {
+          "count": 1715,
+          "unique": 1715
+        }
+      }
+    },
+    "timing": {
+      "import_A_including_fingerprint_s": 138.12717010000006,
+      "import_B_s": 6.849999999758438e-05,
+      "import_mode": "sekwencyjny",
+      "parallel_import_wall_s": null,
+      "parallel_worker_import_s": null,
+      "alignment_preflight_and_optional_registration_s": 0.00012479999998049607,
+      "alignment_status": "not_requested",
+      "matching_and_classification_s": 0.05088239999997768,
+      "bom_grouping_s": 0,
+      "step_and_reports_stage_s": 167.55392629999994,
+      "total_s": 306.02416329999994,
+      "registry": {},
+      "slowest_bom_or_population_checks": []
+    },
+    "status": "PASS"
+  },
+  {
+    "model": "v2",
+    "case": "revision",
+    "sources": [
+      {
+        "url": "https://raw.githubusercontent.com/VoronDesign/Voron-2/e64c83bcb84d41c0324e104a1c911879174d08aa/CAD/Voron_2.4r2_Assembly_STEP.zip",
+        "commit": "e64c83bcb84d41c0324e104a1c911879174d08aa",
+        "file": "Voron_2.4r2_Assembly.step",
+        "sha256": "06b372e40217caa1a7d1f516cb74887247f809e41e1e389f740f290e98441b55",
+        "bytes": 241522213
+      },
+      {
+        "url": "https://raw.githubusercontent.com/VoronDesign/Voron-2/e47cc70edbdb0c36916885b54a5e1f30f52a717a/CAD/Voron_2.4r2_Assembly_STEP.zip",
+        "commit": "e47cc70edbdb0c36916885b54a5e1f30f52a717a",
+        "file": "Voron_2.4r2_Assembly.step",
+        "sha256": "edd2ea87a509eb39ea59de360e47f0fbbb0fdb0fe412ce478b6932525b5131ee",
+        "bytes": 243502318
+      }
+    ],
+    "exe_sha256": "08068ec3a5da4d6cc2f500e2e348d368d526a82ca0bc72aeb0e932823251cec8",
+    "comparison_engine": "frozen Windows EXE",
+    "source_solids": 1715,
+    "old_solids": 1707,
+    "command": [
+      "D:\\a\\test\\test\\app\\DSCompare.exe",
+      "--worker",
+      "compare",
+      "--a",
+      "D:\\a\\test\\test\\models\\v2_old\\Voron_2.4r2_Assembly.step",
+      "--b",
+      "D:\\a\\test\\test\\models\\v2\\Voron_2.4r2_Assembly.step",
+      "--output",
+      "D:\\a\\test\\test\\evidence\\comparison",
+      "--align-auto",
+      "--generate-step",
+      "--preview3d",
+      "--revision-style",
+      "--no-bom"
+    ],
+    "seconds": 509.27,
+    "exit_code": 0,
+    "decisions": [],
+    "summary": {
+      "statuses": {
+        "SAME": 1682,
+        "ADDED": 29,
+        "MOVED": 4,
+        "REMOVED": 21
+      },
+      "same_geometry_count": 1682,
+      "renamed_geometry_count": 0,
+      "geometry_and_name_changed_count": 0,
+      "solids_A": 1707,
+      "solids_B": 1715,
+      "colors_hex": {
+        "SAME": "#1fb852",
+        "RENAMED": "#9199a6",
+        "MOVED": "#782bc7",
+        "CHANGED": "#6659d4",
+        "ADDED": "#1f6ef2",
+        "REMOVED": "#ff6114",
+        "UNCERTAIN": "#ffc726",
+        "MOVED_OLD": "#c9ade6",
+        "CHANGED_OLD": "#ff6114",
+        "CHANGED_NEW": "#1f6ef2",
+        "UNCERTAIN_OLD": "#ff6114",
+        "UNCERTAIN_NEW": "#1f6ef2",
+        "CHANGED_COMMON": "#2675f7",
+        "CHANGED_ADDED": "#f59e0b",
+        "CHANGED_REMOVED": "#be123c"
+      },
+      "density_kg_m3": 7850,
+      "mass_A_kg": 79.98904024813086,
+      "mass_B_kg": 79.99222249783777,
+      "step_verification": "szybka_strukturalna_bez_ponownego_importu",
+      "step_export_error": null,
+      "optional_diff_errors": [],
+      "main_step_error": null,
+      "main_step_ready": true,
+      "step_ready": true,
+      "import_diagnostics": {
+        "A": {
+          "solids": 1707,
+          "faces_outside_solids": 0,
+          "solid_limit": 20000
+        },
+        "B": {
+          "solids": 1715,
+          "faces_outside_solids": 0,
+          "solid_limit": 20000
+        }
+      },
+      "source_fingerprints": {
+        "A": "edd2ea87a509eb39ea59de360e47f0fbbb0fdb0fe412ce478b6932525b5131ee",
+        "B": "06b372e40217caa1a7d1f516cb74887247f809e41e1e389f740f290e98441b55"
+      },
+      "manual_pairs": [],
+      "alignment": {
+        "requested": true,
+        "enabled": false,
+        "status": "original_coordinates",
+        "method": "stage1_first",
+        "reason": "Wst\u0119pna analiza nie potwierdzi\u0142a lepszego globalnego przesuni\u0119cia."
+      },
+      "source_A": "D:\\a\\test\\test\\models\\v2_old\\Voron_2.4r2_Assembly.step",
+      "source_B": "D:\\a\\test\\test\\models\\v2\\Voron_2.4r2_Assembly.step",
+      "tolerance_mm": 0.01,
+      "export_style": "revision_A_B",
+      "old_alpha": 0.4,
+      "full_bom": false,
+      "bom_grouping_complete": false,
+      "bom_mode": "dokladny",
+      "bom_csv": false,
+      "bom_seconds": 0,
+      "bom_warnings": [],
+      "diff_step": {
+        "written": false,
+        "solids": 0,
+        "changes": [],
+        "errors": []
+      },
+      "material_regions": [],
+      "material_errors": {},
+      "preview_3d": {
+        "elementy": 1740,
+        "wszystkie": 1740,
+        "trojkaty": 2262370,
+        "pominiete": 0,
+        "mesh_cache_hits": 110,
+        "ograniczony": false,
+        "limit_trojkatow": 300000,
+        "przekroczony_cel_siatki": true
+      },
+      "record_count": 1736,
+      "coverage_verified": {
+        "a": {
+          "count": 1707,
+          "unique": 1707
+        },
+        "b": {
+          "count": 1715,
+          "unique": 1715
+        }
+      }
+    },
+    "timing": {
+      "import_A_including_fingerprint_s": 137.63090139999997,
+      "import_B_s": 138.24957560000007,
+      "import_mode": "sekwencyjny",
+      "parallel_import_wall_s": null,
+      "parallel_worker_import_s": null,
+      "alignment_preflight_and_optional_registration_s": 0.0003370000000586515,
+      "alignment_status": "original_coordinates",
+      "matching_and_classification_s": 51.35660759999996,
+      "bom_grouping_s": 0,
+      "step_and_reports_stage_s": 177.30384920000006,
+      "total_s": 505.1316272999999,
+      "registry": {
+        "native_definition_hits": 284,
+        "serializations": 3115,
+        "proofs_shared": 1701,
+        "digest_cache_hits": 25
+      },
+      "slowest_bom_or_population_checks": []
+    },
+    "oracle_note": "Authentic revision pair: no independently established expected classification counts; completion and export consistency checked only.",
+    "status": "PASS"
+  },
+  {
+    "model": "trident",
+    "case": "revision",
+    "sources": [
+      {
+        "url": "https://raw.githubusercontent.com/VoronDesign/Voron-Trident/1a49bdc2c524cd6f4491a01e8fd566d0bd6acd0a/CAD/trident_assembly.step.zip",
+        "commit": "1a49bdc2c524cd6f4491a01e8fd566d0bd6acd0a",
+        "file": "trident_assembly.step",
+        "sha256": "416eda4e9212b894ed6f78ad3a6af55757115ebfcc4c18db933743d97dd48ccf",
+        "bytes": 185183500
+      },
+      {
+        "url": "https://raw.githubusercontent.com/VoronDesign/Voron-Trident/9d9223311f2b0fce72484023d6a755e13a733319/CAD/trident_assembly.step.zip",
+        "commit": "9d9223311f2b0fce72484023d6a755e13a733319",
+        "file": "Trident R2 Assembly.step",
+        "sha256": "f50fd54a5074a15168ee85ee59d6250ddd5db349b74bca8e128e2760b4b08b0c",
+        "bytes": 185181389
+      }
+    ],
+    "exe_sha256": "08068ec3a5da4d6cc2f500e2e348d368d526a82ca0bc72aeb0e932823251cec8",
+    "comparison_engine": "frozen Windows EXE",
+    "source_solids": 1595,
+    "old_solids": 1595,
+    "command": [
+      "D:\\a\\test\\test\\app\\DSCompare.exe",
+      "--worker",
+      "compare",
+      "--a",
+      "D:\\a\\test\\test\\models\\trident_old\\Trident R2 Assembly.step",
+      "--b",
+      "D:\\a\\test\\test\\models\\trident\\trident_assembly.step",
+      "--output",
+      "D:\\a\\test\\test\\evidence\\comparison",
+      "--align-auto",
+      "--generate-step",
+      "--preview3d",
+      "--revision-style",
+      "--no-bom"
+    ],
+    "seconds": 647.28,
+    "exit_code": 0,
+    "decisions": [],
+    "summary": {
+      "statuses": {
+        "SAME": 1594,
+        "ADDED": 1,
+        "REMOVED": 1
+      },
+      "same_geometry_count": 1594,
+      "renamed_geometry_count": 0,
+      "geometry_and_name_changed_count": 0,
+      "solids_A": 1595,
+      "solids_B": 1595,
+      "colors_hex": {
+        "SAME": "#1fb852",
+        "RENAMED": "#9199a6",
+        "MOVED": "#782bc7",
+        "CHANGED": "#6659d4",
+        "ADDED": "#1f6ef2",
+        "REMOVED": "#ff6114",
+        "UNCERTAIN": "#ffc726",
+        "MOVED_OLD": "#c9ade6",
+        "CHANGED_OLD": "#ff6114",
+        "CHANGED_NEW": "#1f6ef2",
+        "UNCERTAIN_OLD": "#ff6114",
+        "UNCERTAIN_NEW": "#1f6ef2",
+        "CHANGED_COMMON": "#2675f7",
+        "CHANGED_ADDED": "#f59e0b",
+        "CHANGED_REMOVED": "#be123c"
+      },
+      "density_kg_m3": 7850,
+      "mass_A_kg": 75.06869015580237,
+      "mass_B_kg": 75.06896952130086,
+      "step_verification": "szybka_strukturalna_bez_ponownego_importu",
+      "step_export_error": null,
+      "optional_diff_errors": [],
+      "main_step_error": null,
+      "main_step_ready": true,
+      "step_ready": true,
+      "import_diagnostics": {
+        "A": {
+          "solids": 1595,
+          "faces_outside_solids": 0,
+          "solid_limit": 20000
+        },
+        "B": {
+          "solids": 1595,
+          "faces_outside_solids": 0,
+          "solid_limit": 20000
+        }
+      },
+      "source_fingerprints": {
+        "A": "f50fd54a5074a15168ee85ee59d6250ddd5db349b74bca8e128e2760b4b08b0c",
+        "B": "416eda4e9212b894ed6f78ad3a6af55757115ebfcc4c18db933743d97dd48ccf"
+      },
+      "manual_pairs": [],
+      "alignment": {
+        "requested": true,
+        "enabled": false,
+        "status": "original_coordinates",
+        "method": "stage1_first",
+        "reason": "Wst\u0119pna analiza nie potwierdzi\u0142a lepszego globalnego przesuni\u0119cia."
+      },
+      "source_A": "D:\\a\\test\\test\\models\\trident_old\\Trident R2 Assembly.step",
+      "source_B": "D:\\a\\test\\test\\models\\trident\\trident_assembly.step",
+      "tolerance_mm": 0.01,
+      "export_style": "revision_A_B",
+      "old_alpha": 0.4,
+      "full_bom": false,
+      "bom_grouping_complete": false,
+      "bom_mode": "dokladny",
+      "bom_csv": false,
+      "bom_seconds": 0,
+      "bom_warnings": [],
+      "diff_step": {
+        "written": false,
+        "solids": 0,
+        "changes": [],
+        "errors": []
+      },
+      "material_regions": [],
+      "material_errors": {},
+      "preview_3d": {
+        "elementy": 1596,
+        "wszystkie": 1596,
+        "trojkaty": 2123324,
+        "pominiete": 0,
+        "mesh_cache_hits": 763,
+        "ograniczony": false,
+        "limit_trojkatow": 300000,
+        "przekroczony_cel_siatki": true
+      },
+      "record_count": 1596,
+      "coverage_verified": {
+        "a": {
+          "count": 1595,
+          "unique": 1595
+        },
+        "b": {
+          "count": 1595,
+          "unique": 1595
+        }
+      }
+    },
+    "timing": {
+      "import_A_including_fingerprint_s": 232.94033289999993,
+      "import_B_s": 234.12413089999995,
+      "import_mode": "sekwencyjny",
+      "parallel_import_wall_s": null,
+      "parallel_worker_import_s": null,
+      "alignment_preflight_and_optional_registration_s": 0.00031049999984134047,
+      "alignment_status": "original_coordinates",
+      "matching_and_classification_s": 17.280255600000146,
+      "bom_grouping_s": 0,
+      "step_and_reports_stage_s": 159.99597360000007,
+      "total_s": 644.6453857000001,
+      "registry": {
+        "native_definition_hits": 2020,
+        "serializations": 1168,
+        "proofs_shared": 1594
+      },
+      "slowest_bom_or_population_checks": []
+    },
+    "oracle_note": "Authentic revision pair: no independently established expected classification counts; completion and export consistency checked only.",
+    "status": "PASS"
+  },
+  {
+    "model": "trident",
+    "case": "stationary",
+    "sources": [
+      {
+        "url": "https://raw.githubusercontent.com/VoronDesign/Voron-Trident/1a49bdc2c524cd6f4491a01e8fd566d0bd6acd0a/CAD/trident_assembly.step.zip",
+        "commit": "1a49bdc2c524cd6f4491a01e8fd566d0bd6acd0a",
+        "file": "trident_assembly.step",
+        "sha256": "416eda4e9212b894ed6f78ad3a6af55757115ebfcc4c18db933743d97dd48ccf",
+        "bytes": 185183500
+      }
+    ],
+    "exe_sha256": "08068ec3a5da4d6cc2f500e2e348d368d526a82ca0bc72aeb0e932823251cec8",
+    "comparison_engine": "frozen Windows EXE",
+    "source_solids": 1595,
+    "command": [
+      "D:\\a\\test\\test\\app\\DSCompare.exe",
+      "--worker",
+      "compare",
+      "--a",
+      "D:\\a\\test\\test\\models\\trident\\trident_assembly.step",
+      "--b",
+      "D:\\a\\test\\test\\models\\trident\\trident_assembly.step",
+      "--output",
+      "D:\\a\\test\\test\\evidence\\comparison",
+      "--align-auto",
+      "--generate-step",
+      "--preview3d",
+      "--revision-style",
+      "--no-bom"
+    ],
+    "seconds": 468.59,
+    "exit_code": 0,
+    "decisions": [],
+    "summary": {
+      "statuses": {
+        "SAME": 1595
+      },
+      "same_geometry_count": 1595,
+      "renamed_geometry_count": 0,
+      "geometry_and_name_changed_count": 0,
+      "solids_A": 1595,
+      "solids_B": 1595,
+      "colors_hex": {
+        "SAME": "#1fb852",
+        "RENAMED": "#9199a6",
+        "MOVED": "#782bc7",
+        "CHANGED": "#6659d4",
+        "ADDED": "#1f6ef2",
+        "REMOVED": "#ff6114",
+        "UNCERTAIN": "#ffc726",
+        "MOVED_OLD": "#c9ade6",
+        "CHANGED_OLD": "#ff6114",
+        "CHANGED_NEW": "#1f6ef2",
+        "UNCERTAIN_OLD": "#ff6114",
+        "UNCERTAIN_NEW": "#1f6ef2",
+        "CHANGED_COMMON": "#2675f7",
+        "CHANGED_ADDED": "#f59e0b",
+        "CHANGED_REMOVED": "#be123c"
+      },
+      "density_kg_m3": 7850,
+      "mass_A_kg": 75.06896952130086,
+      "mass_B_kg": 75.06896952130086,
+      "step_verification": "szybka_strukturalna_bez_ponownego_importu",
+      "step_export_error": null,
+      "optional_diff_errors": [],
+      "main_step_error": null,
+      "main_step_ready": true,
+      "step_ready": true,
+      "import_diagnostics": {
+        "A": {
+          "solids": 1595,
+          "faces_outside_solids": 0,
+          "solid_limit": 20000
+        },
+        "B": {
+          "solids": 1595,
+          "faces_outside_solids": 0,
+          "solid_limit": 20000
+        }
+      },
+      "source_fingerprints": {
+        "A": "416eda4e9212b894ed6f78ad3a6af55757115ebfcc4c18db933743d97dd48ccf",
+        "B": "416eda4e9212b894ed6f78ad3a6af55757115ebfcc4c18db933743d97dd48ccf"
+      },
+      "manual_pairs": [],
+      "alignment": {
+        "requested": true,
+        "enabled": false
+      },
+      "source_A": "D:\\a\\test\\test\\models\\trident\\trident_assembly.step",
+      "source_B": "D:\\a\\test\\test\\models\\trident\\trident_assembly.step",
+      "tolerance_mm": 0.01,
+      "export_style": "revision_A_B",
+      "old_alpha": 0.4,
+      "full_bom": false,
+      "bom_grouping_complete": false,
+      "bom_mode": "dokladny",
+      "bom_csv": false,
+      "bom_seconds": 0,
+      "bom_warnings": [],
+      "diff_step": {
+        "written": false,
+        "solids": 0,
+        "changes": [],
+        "errors": []
+      },
+      "material_regions": [],
+      "material_errors": {},
+      "preview_3d": {
+        "elementy": 1595,
+        "wszystkie": 1595,
+        "trojkaty": 2120918,
+        "pominiete": 0,
+        "mesh_cache_hits": 763,
+        "ograniczony": false,
+        "limit_trojkatow": 300000,
+        "przekroczony_cel_siatki": true
+      },
+      "record_count": 1595,
+      "coverage_verified": {
+        "a": {
+          "count": 1595,
+          "unique": 1595
+        },
+        "b": {
+          "count": 1595,
+          "unique": 1595
+        }
+      }
+    },
+    "timing": {
+      "import_A_including_fingerprint_s": 280.22834680000005,
+      "import_B_s": 8.830000001580629e-05,
+      "import_mode": "sekwencyjny",
+      "parallel_import_wall_s": null,
+      "parallel_worker_import_s": null,
+      "alignment_preflight_and_optional_registration_s": 0.00016770000001997687,
+      "alignment_status": "not_requested",
+      "matching_and_classification_s": 0.05240520000006654,
+      "bom_grouping_s": 0,
+      "step_and_reports_stage_s": 185.79121769999983,
+      "total_s": 466.2452939000002,
+      "registry": {},
+      "slowest_bom_or_population_checks": []
+    },
+    "status": "PASS"
+  }
+]

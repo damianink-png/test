@@ -1,0 +1,458 @@
+{"tekst": "Import standardowy: duże STEP: import sekwencyjny chroni pamięć"}
+{"tekst": "Wczytywanie starszej wersji modelu…"}
+{"tekst": "trident_assembly.step: odczyt i dekodowanie STEP…"}
+{"tekst": "trident_assembly.step: budowanie charakterystyk brył…"}
+{"tekst": "trident_assembly.step: wczytano 10 brył"}
+{"tekst": "trident_assembly.step: wczytano 20 brył"}
+{"tekst": "trident_assembly.step: wczytano 30 brył"}
+{"tekst": "trident_assembly.step: wczytano 40 brył"}
+{"tekst": "trident_assembly.step: wczytano 50 brył"}
+{"tekst": "trident_assembly.step: wczytano 60 brył"}
+{"tekst": "trident_assembly.step: wczytano 70 brył"}
+{"tekst": "trident_assembly.step: wczytano 80 brył"}
+{"tekst": "trident_assembly.step: wczytano 90 brył"}
+{"tekst": "trident_assembly.step: wczytano 100 brył"}
+{"tekst": "trident_assembly.step: wczytano 110 brył"}
+{"tekst": "trident_assembly.step: wczytano 120 brył"}
+{"tekst": "trident_assembly.step: wczytano 130 brył"}
+{"tekst": "trident_assembly.step: wczytano 140 brył"}
+{"tekst": "trident_assembly.step: wczytano 150 brył"}
+{"tekst": "trident_assembly.step: wczytano 160 brył"}
+{"tekst": "trident_assembly.step: wczytano 170 brył"}
+{"tekst": "trident_assembly.step: wczytano 180 brył"}
+{"tekst": "trident_assembly.step: wczytano 190 brył"}
+{"tekst": "trident_assembly.step: wczytano 200 brył"}
+{"tekst": "trident_assembly.step: wczytano 210 brył"}
+{"tekst": "trident_assembly.step: wczytano 220 brył"}
+{"tekst": "trident_assembly.step: wczytano 230 brył"}
+{"tekst": "trident_assembly.step: wczytano 240 brył"}
+{"tekst": "trident_assembly.step: wczytano 250 brył"}
+{"tekst": "trident_assembly.step: wczytano 260 brył"}
+{"tekst": "trident_assembly.step: wczytano 270 brył"}
+{"tekst": "trident_assembly.step: wczytano 280 brył"}
+{"tekst": "trident_assembly.step: wczytano 290 brył"}
+{"tekst": "trident_assembly.step: wczytano 300 brył"}
+{"tekst": "trident_assembly.step: wczytano 310 brył"}
+{"tekst": "trident_assembly.step: wczytano 320 brył"}
+{"tekst": "trident_assembly.step: wczytano 330 brył"}
+{"tekst": "trident_assembly.step: wczytano 340 brył"}
+{"tekst": "trident_assembly.step: wczytano 350 brył"}
+{"tekst": "trident_assembly.step: wczytano 360 brył"}
+{"tekst": "trident_assembly.step: wczytano 370 brył"}
+{"tekst": "trident_assembly.step: wczytano 380 brył"}
+{"tekst": "trident_assembly.step: wczytano 390 brył"}
+{"tekst": "trident_assembly.step: wczytano 400 brył"}
+{"tekst": "trident_assembly.step: wczytano 410 brył"}
+{"tekst": "trident_assembly.step: wczytano 420 brył"}
+{"tekst": "trident_assembly.step: wczytano 430 brył"}
+{"tekst": "trident_assembly.step: wczytano 440 brył"}
+{"tekst": "trident_assembly.step: wczytano 450 brył"}
+{"tekst": "trident_assembly.step: wczytano 460 brył"}
+{"tekst": "trident_assembly.step: wczytano 470 brył"}
+{"tekst": "trident_assembly.step: wczytano 480 brył"}
+{"tekst": "trident_assembly.step: wczytano 490 brył"}
+{"tekst": "trident_assembly.step: wczytano 500 brył"}
+{"tekst": "trident_assembly.step: wczytano 510 brył"}
+{"tekst": "trident_assembly.step: wczytano 520 brył"}
+{"tekst": "trident_assembly.step: wczytano 530 brył"}
+{"tekst": "trident_assembly.step: wczytano 540 brył"}
+{"tekst": "trident_assembly.step: wczytano 550 brył"}
+{"tekst": "trident_assembly.step: wczytano 560 brył"}
+{"tekst": "trident_assembly.step: wczytano 570 brył"}
+{"tekst": "trident_assembly.step: wczytano 580 brył"}
+{"tekst": "trident_assembly.step: wczytano 590 brył"}
+{"tekst": "trident_assembly.step: wczytano 600 brył"}
+{"tekst": "trident_assembly.step: wczytano 610 brył"}
+{"tekst": "trident_assembly.step: wczytano 620 brył"}
+{"tekst": "trident_assembly.step: wczytano 630 brył"}
+{"tekst": "trident_assembly.step: wczytano 640 brył"}
+{"tekst": "trident_assembly.step: wczytano 650 brył"}
+{"tekst": "trident_assembly.step: wczytano 660 brył"}
+{"tekst": "trident_assembly.step: wczytano 670 brył"}
+{"tekst": "trident_assembly.step: wczytano 680 brył"}
+{"tekst": "trident_assembly.step: wczytano 690 brył"}
+{"tekst": "trident_assembly.step: wczytano 700 brył"}
+{"tekst": "trident_assembly.step: wczytano 710 brył"}
+{"tekst": "trident_assembly.step: wczytano 720 brył"}
+{"tekst": "trident_assembly.step: wczytano 730 brył"}
+{"tekst": "trident_assembly.step: wczytano 740 brył"}
+{"tekst": "trident_assembly.step: wczytano 750 brył"}
+{"tekst": "trident_assembly.step: wczytano 760 brył"}
+{"tekst": "trident_assembly.step: wczytano 770 brył"}
+{"tekst": "trident_assembly.step: wczytano 780 brył"}
+{"tekst": "trident_assembly.step: wczytano 790 brył"}
+{"tekst": "trident_assembly.step: wczytano 800 brył"}
+{"tekst": "trident_assembly.step: wczytano 810 brył"}
+{"tekst": "trident_assembly.step: wczytano 820 brył"}
+{"tekst": "trident_assembly.step: wczytano 830 brył"}
+{"tekst": "trident_assembly.step: wczytano 840 brył"}
+{"tekst": "trident_assembly.step: wczytano 850 brył"}
+{"tekst": "trident_assembly.step: wczytano 860 brył"}
+{"tekst": "trident_assembly.step: wczytano 870 brył"}
+{"tekst": "trident_assembly.step: wczytano 880 brył"}
+{"tekst": "trident_assembly.step: wczytano 890 brył"}
+{"tekst": "trident_assembly.step: wczytano 900 brył"}
+{"tekst": "trident_assembly.step: wczytano 910 brył"}
+{"tekst": "trident_assembly.step: wczytano 920 brył"}
+{"tekst": "trident_assembly.step: wczytano 930 brył"}
+{"tekst": "trident_assembly.step: wczytano 940 brył"}
+{"tekst": "trident_assembly.step: wczytano 950 brył"}
+{"tekst": "trident_assembly.step: wczytano 960 brył"}
+{"tekst": "trident_assembly.step: wczytano 970 brył"}
+{"tekst": "trident_assembly.step: wczytano 980 brył"}
+{"tekst": "trident_assembly.step: wczytano 990 brył"}
+{"tekst": "trident_assembly.step: wczytano 1000 brył"}
+{"tekst": "trident_assembly.step: wczytano 1010 brył"}
+{"tekst": "trident_assembly.step: wczytano 1020 brył"}
+{"tekst": "trident_assembly.step: wczytano 1030 brył"}
+{"tekst": "trident_assembly.step: wczytano 1040 brył"}
+{"tekst": "trident_assembly.step: wczytano 1050 brył"}
+{"tekst": "trident_assembly.step: wczytano 1060 brył"}
+{"tekst": "trident_assembly.step: wczytano 1070 brył"}
+{"tekst": "trident_assembly.step: wczytano 1080 brył"}
+{"tekst": "trident_assembly.step: wczytano 1090 brył"}
+{"tekst": "trident_assembly.step: wczytano 1100 brył"}
+{"tekst": "trident_assembly.step: wczytano 1110 brył"}
+{"tekst": "trident_assembly.step: wczytano 1120 brył"}
+{"tekst": "trident_assembly.step: wczytano 1130 brył"}
+{"tekst": "trident_assembly.step: wczytano 1140 brył"}
+{"tekst": "trident_assembly.step: wczytano 1150 brył"}
+{"tekst": "trident_assembly.step: wczytano 1160 brył"}
+{"tekst": "trident_assembly.step: wczytano 1170 brył"}
+{"tekst": "trident_assembly.step: wczytano 1180 brył"}
+{"tekst": "trident_assembly.step: wczytano 1190 brył"}
+{"tekst": "trident_assembly.step: wczytano 1200 brył"}
+{"tekst": "trident_assembly.step: wczytano 1210 brył"}
+{"tekst": "trident_assembly.step: wczytano 1220 brył"}
+{"tekst": "trident_assembly.step: wczytano 1230 brył"}
+{"tekst": "trident_assembly.step: wczytano 1240 brył"}
+{"tekst": "trident_assembly.step: wczytano 1250 brył"}
+{"tekst": "trident_assembly.step: wczytano 1260 brył"}
+{"tekst": "trident_assembly.step: wczytano 1270 brył"}
+{"tekst": "trident_assembly.step: wczytano 1280 brył"}
+{"tekst": "trident_assembly.step: wczytano 1290 brył"}
+{"tekst": "trident_assembly.step: wczytano 1300 brył"}
+{"tekst": "trident_assembly.step: wczytano 1310 brył"}
+{"tekst": "trident_assembly.step: wczytano 1320 brył"}
+{"tekst": "trident_assembly.step: wczytano 1330 brył"}
+{"tekst": "trident_assembly.step: wczytano 1340 brył"}
+{"tekst": "trident_assembly.step: wczytano 1350 brył"}
+{"tekst": "trident_assembly.step: wczytano 1360 brył"}
+{"tekst": "trident_assembly.step: wczytano 1370 brył"}
+{"tekst": "trident_assembly.step: wczytano 1380 brył"}
+{"tekst": "trident_assembly.step: wczytano 1390 brył"}
+{"tekst": "trident_assembly.step: wczytano 1400 brył"}
+{"tekst": "trident_assembly.step: wczytano 1410 brył"}
+{"tekst": "trident_assembly.step: wczytano 1420 brył"}
+{"tekst": "trident_assembly.step: wczytano 1430 brył"}
+{"tekst": "trident_assembly.step: wczytano 1440 brył"}
+{"tekst": "trident_assembly.step: wczytano 1450 brył"}
+{"tekst": "trident_assembly.step: wczytano 1460 brył"}
+{"tekst": "trident_assembly.step: wczytano 1470 brył"}
+{"tekst": "trident_assembly.step: wczytano 1480 brył"}
+{"tekst": "trident_assembly.step: wczytano 1490 brył"}
+{"tekst": "trident_assembly.step: wczytano 1500 brył"}
+{"tekst": "trident_assembly.step: wczytano 1510 brył"}
+{"tekst": "trident_assembly.step: wczytano 1520 brył"}
+{"tekst": "trident_assembly.step: wczytano 1530 brył"}
+{"tekst": "trident_assembly.step: wczytano 1540 brył"}
+{"tekst": "trident_assembly.step: wczytano 1550 brył"}
+{"tekst": "trident_assembly.step: wczytano 1560 brył"}
+{"tekst": "trident_assembly.step: wczytano 1570 brył"}
+{"tekst": "trident_assembly.step: wczytano 1580 brył"}
+{"tekst": "trident_assembly.step: wczytano 1590 brył"}
+{"tekst": "trident_assembly.step: gotowe 1595 brył; powierzchni poza bryłami: 0"}
+{"tekst": "Wczytywanie A: 232.7 s; brył: 1595"}
+{"tekst": "Wczytywanie nowszej wersji modelu…"}
+{"tekst": "moved.step: odczyt i dekodowanie STEP…"}
+{"tekst": "moved.step: budowanie charakterystyk brył…"}
+{"tekst": "moved.step: wczytano 10 brył"}
+{"tekst": "moved.step: wczytano 20 brył"}
+{"tekst": "moved.step: wczytano 30 brył"}
+{"tekst": "moved.step: wczytano 40 brył"}
+{"tekst": "moved.step: wczytano 50 brył"}
+{"tekst": "moved.step: wczytano 60 brył"}
+{"tekst": "moved.step: wczytano 70 brył"}
+{"tekst": "moved.step: wczytano 80 brył"}
+{"tekst": "moved.step: wczytano 90 brył"}
+{"tekst": "moved.step: wczytano 100 brył"}
+{"tekst": "moved.step: wczytano 110 brył"}
+{"tekst": "moved.step: wczytano 120 brył"}
+{"tekst": "moved.step: wczytano 130 brył"}
+{"tekst": "moved.step: wczytano 140 brył"}
+{"tekst": "moved.step: wczytano 150 brył"}
+{"tekst": "moved.step: wczytano 160 brył"}
+{"tekst": "moved.step: wczytano 170 brył"}
+{"tekst": "moved.step: wczytano 180 brył"}
+{"tekst": "moved.step: wczytano 190 brył"}
+{"tekst": "moved.step: wczytano 200 brył"}
+{"tekst": "moved.step: wczytano 210 brył"}
+{"tekst": "moved.step: wczytano 220 brył"}
+{"tekst": "moved.step: wczytano 230 brył"}
+{"tekst": "moved.step: wczytano 240 brył"}
+{"tekst": "moved.step: wczytano 250 brył"}
+{"tekst": "moved.step: wczytano 260 brył"}
+{"tekst": "moved.step: wczytano 270 brył"}
+{"tekst": "moved.step: wczytano 280 brył"}
+{"tekst": "moved.step: wczytano 290 brył"}
+{"tekst": "moved.step: wczytano 300 brył"}
+{"tekst": "moved.step: wczytano 310 brył"}
+{"tekst": "moved.step: wczytano 320 brył"}
+{"tekst": "moved.step: wczytano 330 brył"}
+{"tekst": "moved.step: wczytano 340 brył"}
+{"tekst": "moved.step: wczytano 350 brył"}
+{"tekst": "moved.step: wczytano 360 brył"}
+{"tekst": "moved.step: wczytano 370 brył"}
+{"tekst": "moved.step: wczytano 380 brył"}
+{"tekst": "moved.step: wczytano 390 brył"}
+{"tekst": "moved.step: wczytano 400 brył"}
+{"tekst": "moved.step: wczytano 410 brył"}
+{"tekst": "moved.step: wczytano 420 brył"}
+{"tekst": "moved.step: wczytano 430 brył"}
+{"tekst": "moved.step: wczytano 440 brył"}
+{"tekst": "moved.step: wczytano 450 brył"}
+{"tekst": "moved.step: wczytano 460 brył"}
+{"tekst": "moved.step: wczytano 470 brył"}
+{"tekst": "moved.step: wczytano 480 brył"}
+{"tekst": "moved.step: wczytano 490 brył"}
+{"tekst": "moved.step: wczytano 500 brył"}
+{"tekst": "moved.step: wczytano 510 brył"}
+{"tekst": "moved.step: wczytano 520 brył"}
+{"tekst": "moved.step: wczytano 530 brył"}
+{"tekst": "moved.step: wczytano 540 brył"}
+{"tekst": "moved.step: wczytano 550 brył"}
+{"tekst": "moved.step: wczytano 560 brył"}
+{"tekst": "moved.step: wczytano 570 brył"}
+{"tekst": "moved.step: wczytano 580 brył"}
+{"tekst": "moved.step: wczytano 590 brył"}
+{"tekst": "moved.step: wczytano 600 brył"}
+{"tekst": "moved.step: wczytano 610 brył"}
+{"tekst": "moved.step: wczytano 620 brył"}
+{"tekst": "moved.step: wczytano 630 brył"}
+{"tekst": "moved.step: wczytano 640 brył"}
+{"tekst": "moved.step: wczytano 650 brył"}
+{"tekst": "moved.step: wczytano 660 brył"}
+{"tekst": "moved.step: wczytano 670 brył"}
+{"tekst": "moved.step: wczytano 680 brył"}
+{"tekst": "moved.step: wczytano 690 brył"}
+{"tekst": "moved.step: wczytano 700 brył"}
+{"tekst": "moved.step: wczytano 710 brył"}
+{"tekst": "moved.step: wczytano 720 brył"}
+{"tekst": "moved.step: wczytano 730 brył"}
+{"tekst": "moved.step: wczytano 740 brył"}
+{"tekst": "moved.step: wczytano 750 brył"}
+{"tekst": "moved.step: wczytano 760 brył"}
+{"tekst": "moved.step: wczytano 770 brył"}
+{"tekst": "moved.step: wczytano 780 brył"}
+{"tekst": "moved.step: wczytano 790 brył"}
+{"tekst": "moved.step: wczytano 800 brył"}
+{"tekst": "moved.step: wczytano 810 brył"}
+{"tekst": "moved.step: wczytano 820 brył"}
+{"tekst": "moved.step: wczytano 830 brył"}
+{"tekst": "moved.step: wczytano 840 brył"}
+{"tekst": "moved.step: wczytano 850 brył"}
+{"tekst": "moved.step: wczytano 860 brył"}
+{"tekst": "moved.step: wczytano 870 brył"}
+{"tekst": "moved.step: wczytano 880 brył"}
+{"tekst": "moved.step: wczytano 890 brył"}
+{"tekst": "moved.step: wczytano 900 brył"}
+{"tekst": "moved.step: wczytano 910 brył"}
+{"tekst": "moved.step: wczytano 920 brył"}
+{"tekst": "moved.step: wczytano 930 brył"}
+{"tekst": "moved.step: wczytano 940 brył"}
+{"tekst": "moved.step: wczytano 950 brył"}
+{"tekst": "moved.step: wczytano 960 brył"}
+{"tekst": "moved.step: wczytano 970 brył"}
+{"tekst": "moved.step: wczytano 980 brył"}
+{"tekst": "moved.step: wczytano 990 brył"}
+{"tekst": "moved.step: wczytano 1000 brył"}
+{"tekst": "moved.step: wczytano 1010 brył"}
+{"tekst": "moved.step: wczytano 1020 brył"}
+{"tekst": "moved.step: wczytano 1030 brył"}
+{"tekst": "moved.step: wczytano 1040 brył"}
+{"tekst": "moved.step: wczytano 1050 brył"}
+{"tekst": "moved.step: wczytano 1060 brył"}
+{"tekst": "moved.step: wczytano 1070 brył"}
+{"tekst": "moved.step: wczytano 1080 brył"}
+{"tekst": "moved.step: wczytano 1090 brył"}
+{"tekst": "moved.step: wczytano 1100 brył"}
+{"tekst": "moved.step: wczytano 1110 brył"}
+{"tekst": "moved.step: wczytano 1120 brył"}
+{"tekst": "moved.step: wczytano 1130 brył"}
+{"tekst": "moved.step: wczytano 1140 brył"}
+{"tekst": "moved.step: wczytano 1150 brył"}
+{"tekst": "moved.step: wczytano 1160 brył"}
+{"tekst": "moved.step: wczytano 1170 brył"}
+{"tekst": "moved.step: wczytano 1180 brył"}
+{"tekst": "moved.step: wczytano 1190 brył"}
+{"tekst": "moved.step: wczytano 1200 brył"}
+{"tekst": "moved.step: wczytano 1210 brył"}
+{"tekst": "moved.step: wczytano 1220 brył"}
+{"tekst": "moved.step: wczytano 1230 brył"}
+{"tekst": "moved.step: wczytano 1240 brył"}
+{"tekst": "moved.step: wczytano 1250 brył"}
+{"tekst": "moved.step: wczytano 1260 brył"}
+{"tekst": "moved.step: wczytano 1270 brył"}
+{"tekst": "moved.step: wczytano 1280 brył"}
+{"tekst": "moved.step: wczytano 1290 brył"}
+{"tekst": "moved.step: wczytano 1300 brył"}
+{"tekst": "moved.step: wczytano 1310 brył"}
+{"tekst": "moved.step: wczytano 1320 brył"}
+{"tekst": "moved.step: wczytano 1330 brył"}
+{"tekst": "moved.step: wczytano 1340 brył"}
+{"tekst": "moved.step: wczytano 1350 brył"}
+{"tekst": "moved.step: wczytano 1360 brył"}
+{"tekst": "moved.step: wczytano 1370 brył"}
+{"tekst": "moved.step: wczytano 1380 brył"}
+{"tekst": "moved.step: wczytano 1390 brył"}
+{"tekst": "moved.step: wczytano 1400 brył"}
+{"tekst": "moved.step: wczytano 1410 brył"}
+{"tekst": "moved.step: wczytano 1420 brył"}
+{"tekst": "moved.step: wczytano 1430 brył"}
+{"tekst": "moved.step: wczytano 1440 brył"}
+{"tekst": "moved.step: wczytano 1450 brył"}
+{"tekst": "moved.step: wczytano 1460 brył"}
+{"tekst": "moved.step: wczytano 1470 brył"}
+{"tekst": "moved.step: wczytano 1480 brył"}
+{"tekst": "moved.step: wczytano 1490 brył"}
+{"tekst": "moved.step: wczytano 1500 brył"}
+{"tekst": "moved.step: wczytano 1510 brył"}
+{"tekst": "moved.step: wczytano 1520 brył"}
+{"tekst": "moved.step: wczytano 1530 brył"}
+{"tekst": "moved.step: wczytano 1540 brył"}
+{"tekst": "moved.step: wczytano 1550 brył"}
+{"tekst": "moved.step: wczytano 1560 brył"}
+{"tekst": "moved.step: wczytano 1570 brył"}
+{"tekst": "moved.step: wczytano 1580 brył"}
+{"tekst": "moved.step: wczytano 1590 brył"}
+{"tekst": "moved.step: gotowe 1595 brył; powierzchni poza bryłami: 0"}
+{"tekst": "Wczytywanie B: 169.2 s; brył: 1595"}
+{"tekst": "Etap 1/3: sprawdzanie identycznych brył w tym samym miejscu"}
+{"tekst": "Etap zgodności: 25/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 50/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 75/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 100/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 125/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 150/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 175/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 200/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 225/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 250/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 275/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 300/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 325/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 350/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 375/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 400/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 425/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 450/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 475/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 500/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 525/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 550/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 575/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 600/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 625/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 650/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 675/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 700/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 725/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 750/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 775/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 800/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 825/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 850/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 875/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 900/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 925/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 950/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 975/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1000/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1025/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1050/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1075/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1100/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1125/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1150/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1175/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1200/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1225/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1250/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1275/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1300/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1325/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1350/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1375/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1400/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1425/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1450/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1475/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1500/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1525/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1550/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1575/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 25/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 50/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 75/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 100/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 125/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 150/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 175/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 200/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 225/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 250/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 275/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 300/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 325/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 350/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 375/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 400/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 425/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 450/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 475/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 500/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 525/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 550/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 575/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 600/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 625/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 650/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 675/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 700/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 725/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 750/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 775/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 800/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 825/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 850/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 875/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 900/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 925/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 950/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 975/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1000/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1025/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1050/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1075/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1100/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1125/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1150/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1175/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1200/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1225/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1250/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1275/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1300/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1325/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1350/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1375/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1400/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1425/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1450/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1475/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1500/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1525/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1550/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap zgodności: 1575/1595; B-Rep: 0; pamięć: 0; 0.0s"}
+{"tekst": "Etap 1: 0/1595 zgodnych w miejscu; sprawdzam globalne przesunięcie."}
+{"tekst": "Wynik porównania wskazuje wspólne przesunięcie. Weryfikacja położenia B-Rep…"}
