@@ -1,0 +1,82 @@
+name: R21 compiled EXE - large public CAD assemblies
+on:
+  push:
+    branches: ['build/r21-large-exe-20261024']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: Expand-Archive R21-source.zip src
+      - name: Dependencies
+        working-directory: src
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          python -m pip install pytest
+      - name: Regression tests
+        working-directory: src
+        run: python TESTUJ.py
+      - name: Compile frozen EXE
+        working-directory: src
+        run: ./BUDUJ_WINDOWS.ps1 -NoInstall
+      - name: UI smoke test
+        working-directory: src
+        run: |
+          $p=Start-Process ./dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if($p.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)){throw 'EXE UI failed'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R21-Windows-x64
+          path: src/dist/DSCompare/**
+          if-no-files-found: error
+  test:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        model: [v2, trident, switchwire]
+        case: [stationary, shift]
+        include:
+          - model: v2
+            case: revision
+          - model: trident
+            case: revision
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: DSCompare-R21-Windows-x64
+          path: app
+      - run: |
+          Expand-Archive R21-source.zip src
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Test compiled comparison worker
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          python ci/large_exe.py app/DSCompare.exe ${{ matrix.model }} ${{ matrix.case }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidence-${{ matrix.model }}-${{ matrix.case }}
+          path: evidence/**
+          if-no-files-found: warn
