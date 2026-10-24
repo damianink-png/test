@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: Expand-Archive R21-source.zip src
+      - run: python -m zipfile -e R21-source.zip src
       - name: Dependencies
         working-directory: src
         run: |
@@ -68,7 +68,7 @@ jobs:
           name: DSCompare-R21-Windows-x64
           path: app
       - run: |
-          Expand-Archive R21-source.zip src
+          python -m zipfile -e R21-source.zip src
           python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
       - name: Test compiled comparison worker
         run: |
