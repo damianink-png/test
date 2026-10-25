@@ -1,0 +1,25 @@
+name: R22.3 RC3 inspect native session
+on:
+  push:
+    branches: [build/dscompare-r223-rc3-native-ipc-fix-20261025]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect exact RC2 native IPC code
+        run: |
+          mkdir -p extracted
+          python -m zipfile -e DSCompare_1_0_R22_3_RC2_ZRODLA.zip extracted
+          echo '==== NATIVE_SESSION.PY ===='
+          cat extracted/dsac29/native_session.py
+          echo '==== NATIVE_GUARD SESSION CODE ===='
+          grep -n -C 10 'NativeSession\|native_session' extracted/dsac29/native_guard.py || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R22.3-RC2-extracted-sources
+          path: extracted/**
+          retention-days: 7
