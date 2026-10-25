@@ -1,0 +1,91 @@
+name: DS Compare R22.3 RC2 Windows crash-guard and large CAD
+on:
+  push:
+    branches:
+      - build/dscompare-r223-rc2-20261025
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Expand R22.3 RC2 sources
+        shell: pwsh
+        run: python -m zipfile -e DSCompare_1_0_R22_3_RC2_ZRODLA.zip src
+      - name: Install dependencies and full regression
+        shell: pwsh
+        working-directory: src
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          python -m pip install pytest
+          python TESTUJ.py
+          if($LASTEXITCODE -ne 0){ throw 'Baseline regression failed' }
+      - name: Compile Windows EXE
+        shell: pwsh
+        working-directory: src
+        run: ./BUDUJ_WINDOWS.ps1 -NoInstall
+      - name: UI smoke test
+        shell: pwsh
+        working-directory: src
+        run: |
+          $p=Start-Process ./dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if($p.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)){throw 'EXE UI smoke failed'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R22.3-RC2-Windows-x64
+          path: src/dist/DSCompare/**
+          if-no-files-found: error
+          retention-days: 14
+  large-model-tests:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        model: [v2, trident]
+        case: [shift, revision_shift]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: DSCompare-R22.3-RC2-Windows-x64
+          path: app
+      - name: Source overlay and geometry dependencies
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_1_0_R22_3_RC2_ZRODLA.zip src
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Real CAD comparison (2400 second limit unchanged)
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          python src/ci/large_exe.py app/DSCompare.exe ${{ matrix.model }} ${{ matrix.case }}
+      - name: Upload diagnostics whether PASS or FAIL
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-r223-rc2-${{ matrix.model }}-${{ matrix.case }}
+          path: evidence/**
+          if-no-files-found: warn
+          retention-days: 14
