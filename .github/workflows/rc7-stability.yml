@@ -1,0 +1,90 @@
+name: DS Compare RC7 stability - six compiled CAD scenarios
+on:
+  push:
+    branches: [fix/dscompare-rc7-stability]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m zipfile -e DSCompare_RC7_SOURCES.zip src
+      - name: Install, regressions and compile
+        working-directory: src
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          python -m pip install pytest
+          python TESTUJ.py
+          if ($LASTEXITCODE -ne 0) { throw 'Regression failed' }
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          $p=Start-Process ./dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)) { throw 'UI failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-RC7-Windows-x64
+          path: src/dist/DSCompare/**
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-RC7-sources
+          path: DSCompare_RC7_SOURCES.zip
+  cad:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        model: [v2, trident]
+        case: [shift, revision_shift, revision]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: DSCompare-RC7-Windows-x64
+          path: app
+      - name: Test preparation dependencies
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_RC7_SOURCES.zip src
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Compare using frozen EXE
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          if ('${{ matrix.case }}' -eq 'revision') {
+            python src/ci/real_revision_without_shift.py app/DSCompare.exe ${{ matrix.model }}
+          } else {
+            python src/ci/large_exe.py app/DSCompare.exe ${{ matrix.model }} ${{ matrix.case }}
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'CAD test failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RC7-${{ matrix.model }}-${{ matrix.case }}
+          path: evidence/**
+          if-no-files-found: warn
+          retention-days: 14
