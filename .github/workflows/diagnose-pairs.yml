@@ -1,0 +1,28 @@
+name: R22 diagnose remaining STEP pairs
+on:
+  push:
+    branches: ['diagnose/r22-pairs-20261025']
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          python -m zipfile -e R22-source.zip src
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' numpy
+      - run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          python ci/diagnose_pairs.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pair-diagnostics
+          path: evidence/**
