@@ -26,7 +26,9 @@ jobs:
           Copy-Item scripts/apply-r223-guarded-world.py src/apply_r223.py
           Copy-Item scripts/test_r223_guarded_world.py src/tests/test_r223_guarded_world.py
           python src/apply_r223.py
+          if($LASTEXITCODE -ne 0){throw 'R22.3 source overlay failed'}
           python -m compileall -q src/dsac29
+          if($LASTEXITCODE -ne 0){throw 'R22.3 syntax check failed'}
       - name: Install dependencies and full regression
         shell: pwsh
         working-directory: src
@@ -84,6 +86,7 @@ jobs:
           python -m zipfile -e DSCompare_1_0_R22_2_SAFE_RC1_ZRODLA.zip src
           Copy-Item scripts/apply-r223-guarded-world.py src/apply_r223.py
           python src/apply_r223.py
+          if($LASTEXITCODE -ne 0){throw 'R22.3 source overlay failed'}
           python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
       - name: Real CAD comparison (2400 second limit unchanged)
         shell: pwsh
