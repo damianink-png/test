@@ -107,8 +107,8 @@ patch("dsac29/registration_gate.py", [
 ])
 
 patch("dsac29/compare.py", [
-    ("from .native_guard import NativeGeometryFailure\n",
-     "from .native_guard import NativeGeometryFailure,guarded_world_reexport\n"),
+    ("from .native_guard import NativeGeometryFailure\n\n\nclass Cancelled",
+     "from .native_guard import NativeGeometryFailure,guarded_world_reexport\n\n\nclass Cancelled"),
     ("same=trace.brep_call('reexport_world',i,j,reexport_equivalent_world,s,b[j],tolerance)",
      "same=trace.brep_call('reexport_world',i,j,(guarded_world_reexport if len(a)>=600 and step_reexport_tolerance else reexport_equivalent_world),s,b[j],tolerance)"),
     ("same=trace.brep_call('reexport_world_fallback',i,j,reexport_equivalent_world,s,b[j],tolerance)",
