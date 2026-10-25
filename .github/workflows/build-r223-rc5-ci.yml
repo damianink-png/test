@@ -24,8 +24,10 @@ jobs:
           python -m zipfile -e DSCompare_1_0_R22_3_RC2_ZRODLA.zip src
           python scripts/apply-r223-rc3-ipc.py src
           if ($LASTEXITCODE -ne 0) { throw 'RC3 patch failed' }
-          python scripts/apply-r223-rc5-registration.py src
+          python scripts/apply-r223-rc4-registration.py src
           if ($LASTEXITCODE -ne 0) { throw 'Failed to apply RC4 registration patch' }
+          Copy-Item tests/test_r223_rc4_registration_fail_closed.py src/tests/test_r223_rc4_registration_fail_closed.py -ErrorAction Stop
+          if (-not (Test-Path src/tests/test_r223_rc4_registration_fail_closed.py)) { throw 'RC4 test file missing from extracted source tree' }
       - name: Dependencies, IPC stress, full regression
         working-directory: src
         shell: pwsh
@@ -85,7 +87,7 @@ jobs:
           python -m zipfile -e DSCompare_1_0_R22_3_RC2_ZRODLA.zip src
           python scripts/apply-r223-rc3-ipc.py src
           if ($LASTEXITCODE -ne 0) { throw 'RC3 patch failed' }
-          python scripts/apply-r223-rc5-registration.py src
+          python scripts/apply-r223-rc4-registration.py src
           python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
       - name: Compare real assemblies using compiled EXE
         shell: pwsh
