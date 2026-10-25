@@ -3,7 +3,7 @@ Fail closed if upstream code layout changes; never silently omit a fix.
 """
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parent
 def patch(filename, replacements, append=""):
     path = ROOT / filename
     old = path.read_text(encoding="utf-8")
