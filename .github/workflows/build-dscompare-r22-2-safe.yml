@@ -1,0 +1,105 @@
+name: DS Compare R22.2 SAFE RC1 - Windows and real large CAD tests
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'DSCompare_1_0_R22_2_SAFE_RC1_ZRODLA.zip'
+      - '.github/workflows/build-dscompare-r22-2-safe.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unpack source archive
+        shell: pwsh
+        run: python -m zipfile -e DSCompare_1_0_R22_2_SAFE_RC1_ZRODLA.zip src
+      - name: Install and test
+        shell: pwsh
+        working-directory: src
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          python -m pip install pytest
+          python TESTUJ.py
+      - name: Compile Windows EXE
+        shell: pwsh
+        working-directory: src
+        run: ./BUDUJ_WINDOWS.ps1 -NoInstall
+      - name: UI smoke test
+        shell: pwsh
+        working-directory: src
+        run: |
+          $process=Start-Process ./dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if($process.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)){throw 'UI smoke failed'}
+      - name: Windows archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R22.2-SAFE-RC1-Windows-x64
+          path: src/dist/DSCompare/**
+          if-no-files-found: error
+          retention-days: 14
+  large-model-tests:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        model: [v2, trident]
+        case: [shift, revision_shift]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: DSCompare-R22.2-SAFE-RC1-Windows-x64
+          path: app
+      - name: Sources and geometry dependencies
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_1_0_R22_2_SAFE_RC1_ZRODLA.zip src
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Configure WER crash dump collection
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Continue'
+          $dumpFolder=Join-Path $env:GITHUB_WORKSPACE 'evidence\wer_dumps'
+          New-Item -ItemType Directory -Force -Path $dumpFolder | Out-Null
+          $key='HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\DSCompare.exe'
+          try {
+            New-Item -Path $key -Force -ErrorAction Stop | Out-Null
+            New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value $dumpFolder -Force -ErrorAction Stop | Out-Null
+            New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force -ErrorAction Stop | Out-Null
+            New-ItemProperty -Path $key -Name DumpCount -PropertyType DWord -Value 8 -Force -ErrorAction Stop | Out-Null
+          } catch { Write-Warning "WER unavailable: $_" }
+      - name: Real CAD assembly comparison (2400 s comparison cap)
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          python src/ci/large_exe.py app/DSCompare.exe ${{ matrix.model }} ${{ matrix.case }}
+      - name: Store logs on both failure and success
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-r22-2-${{ matrix.model }}-${{ matrix.case }}
+          path: evidence/**
+          if-no-files-found: warn
+          retention-days: 14
