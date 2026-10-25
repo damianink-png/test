@@ -1,0 +1,56 @@
+name: DS Compare RC6 - authentic revision without global shift
+on:
+  push:
+    branches:
+      - tests/dscompare-rc6-unshifted-revisions-20261025
+    paths:
+      - ci/real_revision_without_shift.py
+      - .github/workflows/rc6-unshifted-revision.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  revision-only:
+    runs-on: windows-2022
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [v2, trident]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 40226231317
+          repository: damianink-png/test
+          github-token: ${{ github.token }}
+          name: DSCompare-R22.3-RC6-Windows-x64
+          path: app
+      - name: Extract matching STEP loader and install CAD library
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_1_0_R22_3_RC2_ZRODLA.zip src
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Test authentic revisions at original coordinates with compiled Windows EXE
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          python ci/real_revision_without_shift.py app/DSCompare.exe ${{ matrix.model }}
+      - name: Upload diagnostics even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-revision-no-shift-${{ matrix.model }}-evidence
+          path: evidence/**
+          if-no-files-found: warn
+          retention-days: 14
