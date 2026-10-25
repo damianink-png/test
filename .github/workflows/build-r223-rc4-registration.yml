@@ -22,10 +22,10 @@ jobs:
         shell: pwsh
         run: |
           python -m zipfile -e DSCompare_1_0_R22_3_RC2_ZRODLA.zip src
-          python scripts/apply-r223-rc4-ipc.py src
+          python scripts/apply-r223-rc3-ipc.py src
           if ($LASTEXITCODE -ne 0) { throw 'RC3 patch failed' }
           python scripts/apply-r223-rc4-registration.py src
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply RC3 native IPC patch' }
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply RC4 registration patch' }
       - name: Dependencies, IPC stress, full regression
         working-directory: src
         shell: pwsh
@@ -83,7 +83,7 @@ jobs:
         shell: pwsh
         run: |
           python -m zipfile -e DSCompare_1_0_R22_3_RC2_ZRODLA.zip src
-          python scripts/apply-r223-rc4-ipc.py src
+          python scripts/apply-r223-rc3-ipc.py src
           if ($LASTEXITCODE -ne 0) { throw 'RC3 patch failed' }
           python scripts/apply-r223-rc4-registration.py src
           python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
