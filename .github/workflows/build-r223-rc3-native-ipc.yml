@@ -1,0 +1,98 @@
+name: DS Compare R22.3 RC3 fixed IPC - Windows real CAD
+on:
+  push:
+    branches: [build/dscompare-r223-rc3-native-ipc-fix-20261025]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract exact RC2 and apply RC3 IPC patch
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_1_0_R22_3_RC2_ZRODLA.zip src
+          python scripts/apply-r223-rc3-ipc.py src
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply RC3 native IPC patch' }
+      - name: Dependencies, IPC stress, full regression
+        working-directory: src
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          python -m pip install pytest
+          python -m pytest -q tests/test_r223_rc3_ipc.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native IPC stress test failed' }
+          python TESTUJ.py
+          if ($LASTEXITCODE -ne 0) { throw 'Full regression failed' }
+      - name: Build patched Windows executable
+        working-directory: src
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Compiled EXE build failed' }
+      - name: Smoke-test frozen EXE
+        working-directory: src
+        shell: pwsh
+        run: |
+          $p=Start-Process ./dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)) { throw 'UI smoke failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-R22.3-RC3-Windows-x64
+          path: src/dist/DSCompare/**
+          if-no-files-found: error
+          retention-days: 14
+  large-model-tests:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        model: [v2, trident]
+        case: [shift, revision_shift]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: DSCompare-R22.3-RC3-Windows-x64
+          path: app
+      - name: Load regression sources matching frozen binary
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_1_0_R22_3_RC2_ZRODLA.zip src
+          python scripts/apply-r223-rc3-ipc.py src
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Compare real assemblies using compiled EXE
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          python src/ci/large_exe.py app/DSCompare.exe ${{ matrix.model }} ${{ matrix.case }}
+      - name: Archive diagnostics and per-stage timings on success or error
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-r223-rc3-${{ matrix.model }}-${{ matrix.case }}
+          path: evidence/**
+          if-no-files-found: warn
+          retention-days: 14
