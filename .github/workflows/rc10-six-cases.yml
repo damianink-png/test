@@ -1,0 +1,73 @@
+name: RC10 - V2 Trident six-case regression
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/rc10-six-cases.yml'
+permissions:
+  contents: read
+jobs:
+  rc10-regression:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [v2, trident]
+        scenario: [revision, shift, revision_shift]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unpack RC10 source and CI package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force rc10 | Out-Null
+          Expand-Archive -LiteralPath DSCompare_RC10_GitHub_CI.zip -DestinationPath rc10 -Force
+          Write-Host 'Available test scripts:'
+          Get-ChildItem -Recurse -File -Include '*large*exe*.py','*real*revision*.py','*test*.py' | Select-Object -ExpandProperty FullName
+      - name: Build RC10
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $build = Get-ChildItem rc10 -Recurse -File -Filter BUDUJ_WINDOWS.ps1 | Select-Object -First 1
+          if (-not $build) { throw 'RC10 build entrypoint missing in archive' }
+          Push-Location $build.DirectoryName
+          try { & $build.FullName; if ($LASTEXITCODE -ne 0) { throw "RC10 build failed: $LASTEXITCODE" } } finally { Pop-Location }
+      - name: Run real assembly regression
+        shell: pwsh
+        env:
+          PYTHONFAULTHANDLER: '1'
+          PYTHONUTF8: '1'
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem rc10 -Recurse -File -Filter DSCompare.exe | Where-Object { $_.FullName -match 'dist|release' } | Select-Object -First 1
+          if (-not $exe) { throw 'No compiled DSCompare.exe found' }
+          $scenario = '${{ matrix.scenario }}'
+          $model = '${{ matrix.model }}'
+          $scriptName = if ($scenario -eq 'revision') { 'real_revision_without_shift.py' } else { 'large_exe.py' }
+          $script = Get-ChildItem -Recurse -File -Filter $scriptName | Select-Object -First 1
+          if (-not $script) { throw "Real CAD test script $scriptName is missing; refusing to report synthetic PASS" }
+          $env:PYTHONPATH = (Get-Location).Path
+          if ($scenario -eq 'revision') {
+            python $script.FullName $exe.FullName $model
+          } else {
+            python $script.FullName $exe.FullName $model $scenario
+          }
+          if ($LASTEXITCODE -ne 0) { throw "RC10 $model $scenario FAILED: $LASTEXITCODE" }
+      - name: Upload diagnostic and export evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC10-${{ matrix.model }}-${{ matrix.scenario }}-evidence
+          path: |
+            **/CRASH_STACK.txt
+            **/*.log
+            **/evidence/**
+            **/output/**
+            **/results/**
+          if-no-files-found: warn
+          retention-days: 14
