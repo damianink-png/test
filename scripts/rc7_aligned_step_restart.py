@@ -82,6 +82,7 @@ def _match_imported(original, imported, tolerance):
             detail = {'imported_name': part.name, 'imported_center': list(map(float,part.center)),
                       'imported_volume': float(part.volume), 'imported_area': float(part.area),
                       'same_name_unused': len(by_name), 'same_name_used': len(candidates)-len(by_name),
+                      'compatible_any_name_count': len(fallback),
                       'nearest_same_name': [metrics(i) for i in closest_by_name],
                       'nearest_any_name': [metrics(i) for i in closest_any]}
             raise RuntimeError('Wyrównany STEP: brak jednoznacznie odpowiadającego elementu '
@@ -158,7 +159,9 @@ def save_aligned_step_and_reload(parts, output, tolerance, max_solids=20000, pro
     # Do not use cache: reimport is an intentional independent round-trip.
     imported = load_step_persistent(str(target), max_solids=max_solids, progress=progress)
     restored = _match_imported(parts, imported, tolerance)
+    renamed_occurrences = sum(a.name != b.name for a,b in zip(restored, imported))
     diagnostics = {'path': str(target), 'solids_expected': len(parts),
+                   'step_names_recovered_from_unique_metadata': renamed_occurrences,
                    'solids_reimported': len(imported), 'write_s': round(write_s,3),
                    'total_s': round(perf_counter()-t0,3),
                    'validation': 'occurrence_count_name_center_volume_area_only_not_geometry_proof'}
