@@ -1,0 +1,73 @@
+name: RC9 material stability - small compiled CAD tests
+on:
+  push:
+    branches: [fix/dscompare-rc9-material-stability]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare patched sources
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_RC7_SOURCES.zip src
+          python scripts/rc7_parametric_proof_patch.py src
+          python stability/scripts/apply_stability.py src
+          Copy-Item stability/tests/test_stability.py src/tests/test_stability.py
+          python -m zipfile -c DSCompare_RC9_STABILITY_SOURCES.zip src
+      - name: Install and regression tests
+        working-directory: src
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          python -m pip install pytest
+          python -m pytest -q tests/test_stability.py --junitxml=stability-tests.xml
+          if ($LASTEXITCODE -ne 0) { throw 'Stability tests failed' }
+          python TESTUJ.py
+          if ($LASTEXITCODE -ne 0) { throw 'Regression failed' }
+      - name: Build Windows and smoke test
+        working-directory: src
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          $p=Start-Process ./dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)) { throw 'UI failed' }
+      - name: Small assemblies on compiled EXE - cache off cold warm repeat and shift
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          python stability/ci/small_exe.py src/dist/DSCompare/DSCompare.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Compiled CAD failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RC9-stability-diagnostics
+          path: |
+            small_evidence/**
+            src/stability-tests.xml
+            src/UI_CHECK/**
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DSCompare-RC9-stability-sources
+          path: DSCompare_RC9_STABILITY_SOURCES.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DSCompare-RC9-stability-Windows-x64-TEST
+          path: src/dist/DSCompare/**
+          if-no-files-found: warn
