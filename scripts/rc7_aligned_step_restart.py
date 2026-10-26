@@ -12,12 +12,16 @@ from pathlib import Path
 from time import perf_counter
 import json
 import os
+import math
 
 
 def _match_imported(original, imported, tolerance):
     """Bijection for metadata only; NEVER a proof of equivalent geometry."""
     if len(original) != len(imported):
         raise RuntimeError(f'Wyrównany STEP: liczba brył {len(imported)} != {len(original)}')
+    for item in list(original) + list(imported):
+        if not all(math.isfinite(float(v)) for v in (*item.center, item.volume, item.area)):
+            raise RuntimeError('Invalid STEP numeric metadata')
     groups = defaultdict(list)
     for idx, p in enumerate(original):
         groups[p.name].append(idx)
