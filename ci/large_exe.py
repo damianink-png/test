@@ -7,7 +7,7 @@ MODELS={
  'trident':('Voron-Trident','1a49bdc2c524cd6f4491a01e8fd566d0bd6acd0a','CAD/trident_assembly.step.zip'),
  'trident_old':('Voron-Trident','9d9223311f2b0fce72484023d6a755e13a733319','CAD/trident_assembly.step.zip'),
  'switchwire':('Voron-Switchwire','92cc013ca2af94e6c09950dbe05c0973ee49aa00','CAD/Switchwire_Assembly_v1_STEP.zip')}
-p=argparse.ArgumentParser();p.add_argument('exe');p.add_argument('model');p.add_argument('case',choices=['stationary','shift','revision']);args=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('exe');p.add_argument('model');p.add_argument('case',choices=['stationary','shift','revision','revision_shift']);args=p.parse_args()
 root=Path('evidence').resolve();root.mkdir(exist_ok=True)
 result={'model':args.model,'case':args.case,'sources':[],'exe_sha256':hashlib.sha256(Path(args.exe).read_bytes()).hexdigest(),'comparison_engine':'frozen Windows EXE'}
 def save(): (root/'TEST_RESULT.json').write_text(json.dumps(result,indent=2),encoding='utf8')
@@ -24,14 +24,22 @@ try:
  from dsac29.step_io import load_step,ColoredDocument
  parts=load_step(str(a),max_solids=20000);n=len(parts);result['source_solids']=n;save();print('SOURCE SOLIDS',n,flush=True)
  assert n>600, f'Assembly has only {n} solids; does not meet >600 requirement'
- if args.case=='shift':
+ if args.case in ('revision','revision_shift'):
+  # A is the older revision; B is the newest revision, optionally translated.
+  b=a
+  a=download(args.model+'_old')
+  old=load_step(str(a),max_solids=20000)
+  result['old_solids']=len(old)
+  assert len(old)>600
+  del old
+ if args.case in ('shift','revision_shift'):
   from OCP.gp import gp_Trsf,gp_Vec
   from OCP.TopLoc import TopLoc_Location
   tr=gp_Trsf();tr.SetTranslation(gp_Vec(1275.,-395.,210.));writer=ColoredDocument(group_by_status=False,reuse_definitions=True)
   for part in parts:writer.add(part.shape.Moved(TopLoc_Location(tr)),part.name,(.33,.57,.86),1.)
   b=Path('models/moved.step').resolve();writer.write(str(b))
- elif args.case=='revision':
-  b=a;a=download(args.model+'_old');old=load_step(str(a),max_solids=20000);result['old_solids']=len(old);assert len(old)>600;del old
+  result['known_shift_B_mm']=[1275.,-395.,210.]
+  save()
  del parts
  import gc;gc.collect()
  out=root/'comparison';out.mkdir(exist_ok=True)
@@ -44,7 +52,7 @@ try:
     q=json.loads(request.read_text(encoding='utf8'))
     if q['token'] not in [x['token'] for x in decisions]:
      # Approval is only granted for a geometrically proven common translation.
-     decision='align' if args.case=='shift' and not q.get('unresolved') and not q.get('unrelated') else 'original'
+     decision='align' if args.case in ('shift','revision_shift') and not q.get('unresolved') and not q.get('unrelated') else 'original'
      decisions.append(dict(q,decision=decision));(out/'_WYROWNANIE_ODPOWIEDZ.json').write_text(json.dumps({'token':q['token'],'decision':decision}),encoding='utf8')
    except (ValueError,OSError):pass
   if time.monotonic()-start>2400:
@@ -59,14 +67,21 @@ try:
  assert s['main_step_ready'] and not s.get('main_step_error')
  assert s['preview_3d']['pominiete']==0,s['preview_3d']
  html=(out/'PODGLAD_KOLOROW_3D.html').read_text(encoding='utf8');assert 'function pathSegments' in html and 'const scene=[' in html
- if args.case!='revision':
+ if args.case in ('stationary','shift'):
   assert s['statuses'].get('SAME',0)+s['statuses'].get('RENAMED',0)==n,s['statuses']
   assert not any(s['statuses'].get(k,0) for k in ['ADDED','REMOVED','MOVED','CHANGED'])
   if args.case=='stationary':assert not decisions and not s['alignment'].get('applied'),s['alignment']
   else:
    assert s['alignment'].get('applied'),s['alignment']
    assert all(abs(x+y)<.05 for x,y in zip(s['alignment']['translation_B_to_A_mm'],[1275,-395,210]))
- else:result['oracle_note']='Authentic revision pair: no independently established expected classification counts; completion and export consistency checked only.'
+ else:
+  assert sum(s['statuses'].get(k,0) for k in ['ADDED','REMOVED','CHANGED','MOVED'])>0, s['statuses']
+  if args.case=='revision_shift':
+   assert s['alignment'].get('applied'),s['alignment']
+   assert all(abs(x+y)<.05 for x,y in zip(s['alignment']['translation_B_to_A_mm'],[1275,-395,210])),s['alignment']
+  else:
+   assert not s['alignment'].get('applied'),s['alignment']
+  result['oracle_note']='Authentic revision pair: no independent oracle for exact changed-part counts; classification and export consistency are not fully validated by this harness.'
  result['status']='PASS';save();print(json.dumps(result,ensure_ascii=False),flush=True)
 except BaseException:
  result['status']='FAIL';result['error']=traceback.format_exc();save();raise
