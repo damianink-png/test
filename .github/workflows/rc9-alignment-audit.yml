@@ -50,10 +50,21 @@ jobs:
                   if any(n.endswith(e) for e in ('.step','.stp','.html','.csv','.json')):
                       print('ARTIFACT',i.filename,'bytes',i.file_size)
                       if n.endswith(('.step','.stp')) and i.file_size>100000:
+                          counts={k:0 for k in ('COLOUR_RGB','STYLED_ITEM','PRESENTATION_STYLE_ASSIGNMENT','DRAUGHTING_PRE_DEFINED_COLOUR')}
                           with z.open(i) as f:
-                              text=f.read(1024*1024*8).decode('latin-1',errors='ignore')
-                          print('STEP_HEADER',text[:160].replace('\n',' '))
-                          print('STEP_STYLE_SAMPLE', {k:text.count(k) for k in ('COLOUR_RGB','STYLED_ITEM','PRESENTATION_STYLE_ASSIGNMENT')},'first_8MB_only')
+                              head=f.read(1024)
+                              print('STEP_HEADER',head[:160].decode('latin-1',errors='ignore').replace('\\n',' '))
+                              carry=b''
+                              while True:
+                                  block=f.read(1024*1024*4)
+                                  if not block:break
+                                  buf=carry+block
+                                  for k in counts:counts[k]+=buf[:-128].count(k.encode())
+                                  carry=buf[-128:]
+                              for k in counts:counts[k]+=carry.count(k.encode())
+                          print('STEP_STYLES_WHOLE_FILE',counts)
+                      if n.endswith('.json') and any(k in n for k in ('czasy_analizy','diagnostyka_kolorow')):
+                          with z.open(i) as f: print('EVIDENCE_JSON',i.filename,f.read(3000).decode('utf-8',errors='replace'))
                       if n.endswith('.html'):
                           with z.open(i) as f: head=f.read(100000).decode('utf-8',errors='ignore')
                           print('HTML_TAGS', {k:k in head.lower() for k in ('<html','<canvas','three','tree')})
