@@ -1,0 +1,40 @@
+name: RC9 inspect alignment integration
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/rc9-inspect-alignment.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download pinned RC9 sources
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12650346634/zip > source_artifact.zip
+          unzip -q source_artifact.zip -d source_artifact
+          unzip -q source_artifact/DSCompare_RC9_STABILITY_SOURCES.zip -d rc9
+      - name: Inspect alignment and compare interfaces
+        shell: bash
+        run: |
+          python - <<'PY'
+          import ast,pathlib
+          root=pathlib.Path('rc9/src/dsac29')
+          for name in ('cli.py','deferred_alignment.py','registration_gate.py','alignment.py','compare.py'):
+              path=root/name
+              if not path.exists(): continue
+              src=path.read_text(encoding='utf-8',errors='replace')
+              lines=src.splitlines()
+              print('===',name,'lines',len(lines),'===')
+              try: tree=ast.parse(src)
+              except Exception as e: print(e);continue
+              for node in ast.walk(tree):
+                  if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and any(w in node.name.lower() for w in ('align','propos','process','compar','translat','register')):
+                      print('---',node.name,node.lineno,node.end_lineno,'---')
+                      print('\n'.join(f'{i+1}: {lines[i]}' for i in range(node.lineno-1,min(node.end_lineno,node.lineno+95))))
+          PY
