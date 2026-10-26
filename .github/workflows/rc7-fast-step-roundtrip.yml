@@ -1,0 +1,39 @@
+name: DS Compare RC7 - fast STEP roundtrip diagnostics
+on:
+  push:
+    branches: [audit/dscompare-rc7-aligned-step-restart-20261026]
+    paths:
+      - scripts/rc7_aligned_step_restart.py
+      - scripts/rc7_aligned_step_restart_patch.py
+      - tests/test_rc7_aligned_step_restart.py
+      - .github/workflows/rc7-fast-step-roundtrip.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  small-cad:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare RC7 code and aligned STEP implementation
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_RC7_SOURCES.zip src
+          if ($LASTEXITCODE -ne 0) { throw 'Extraction failed' }
+          Copy-Item scripts/rc7_aligned_step_restart.py src/dsac29/aligned_step_restart.py
+          Copy-Item tests/test_rc7_aligned_step_restart.py src/tests/test_rc7_aligned_step_restart.py
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3' pytest
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+      - name: Fast real OCC STEP write and reimport tests
+        shell: pwsh
+        working-directory: src
+        run: |
+          python -m pytest -q tests/test_rc7_aligned_step_restart.py --durations=10
+          if ($LASTEXITCODE -ne 0) { throw 'STEP roundtrip tests failed' }
