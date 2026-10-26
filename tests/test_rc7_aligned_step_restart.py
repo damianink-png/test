@@ -133,3 +133,36 @@ def test_roundtrip_shifted_small_assembly(tmp_path, offset):
         assert np.linalg.norm(np.array(original.center)-np.array(imported.center))<.001
         assert abs(original.volume-imported.volume)<.001
         assert abs(original.area-imported.area)<.001
+
+
+
+def test_roundtrip_refuses_ambiguous_same_name_coincident_occurrences():
+    # Equal names and coincident identical solids must not silently assign
+    # distinct source paths by arbitrary imported enumeration order.
+    shape=BRepPrimAPI_MakeBox(10.,10.,10.).Shape()
+    first=describe(shape,'M3 Heat Set:1','ROOT/first','source.step')
+    second=replace(first,path='ROOT/second')
+    with pytest.raises(RuntimeError,match='brak jednoznacznie'):
+        _match_imported([first,second],[first,second],0.01)
+
+
+@pytest.mark.parametrize('count',[12,50,120])
+def test_roundtrip_repeated_names_with_global_shift(tmp_path,count):
+    # Combined shared-definition/duplicate-name/global-shift case.
+    shared=BRepPrimAPI_MakeBox(9.,11.,7.).Shape()
+    parts=[]
+    offset=np.array([-1275.,395.,-210.])
+    for i in range(count):
+        part=describe(shared,'M3 Heat Set:1',
+                      f'ROOT/insert_{i}','source.step')
+        parts.append(_relocate(part,np.eye(3),
+                               offset+np.array([float(i*30),float(i%5*18),0.])))
+    restored,path,stats=save_aligned_step_and_reload(parts,tmp_path,0.01)
+    assert path.is_file() and path.stat().st_size>500
+    assert stats['solids_expected']==stats['solids_reimported']==count
+    assert {p.path for p in restored}=={p.path for p in parts}
+    for old in parts:
+        new=next(p for p in restored if p.path==old.path)
+        assert np.linalg.norm(np.array(old.center)-np.array(new.center))<.001
+        assert abs(old.volume-new.volume)<.001
+        assert abs(old.area-new.area)<.001
