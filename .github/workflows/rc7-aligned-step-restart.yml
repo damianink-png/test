@@ -1,7 +1,7 @@
-name: DS Compare RC7 - aligned STEP reimport and six real CAD tests
+name: DS Compare RC8 - aligned STEP reimport and six real CAD tests
 on:
   push:
-    branches: [audit/dscompare-rc7-aligned-step-restart-20261026]
+    branches: [fix/dscompare-rc8-step-restart]
     paths:
       - scripts/rc7_aligned_step_restart.py
       - scripts/rc7_aligned_step_restart_patch.py
@@ -37,6 +37,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Aligned STEP patch failed' }
           Copy-Item tests/test_rc7_parametric_proof.py src/tests/test_rc7_parametric_proof.py
           Copy-Item tests/test_rc7_aligned_step_restart.py src/tests/test_rc7_aligned_step_restart.py
+          Set-Content src/VERSION.txt 'DS Compare 1.0 R22.3 RC8 STEP restart'
+          python -c "import json,pathlib; p=pathlib.Path('src/build_info.json'); d=json.loads(p.read_text()); d.update(revision='R22.3 RC8 STEP restart', validation_status='Development build; inspect six CAD results'); p.write_text(json.dumps(d,indent=2))"
       - name: Dependencies, roundtrip tests, full regression, Windows EXE, UI smoke
         working-directory: src
         shell: pwsh
@@ -54,10 +56,19 @@ jobs:
           if ($p.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)) { throw 'UI smoke failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-RC7-ALIGNED-STEP-Windows-x64
+          name: DSCompare-RC8-ALIGNED-STEP-Windows-x64
           path: src/dist/DSCompare/**
           if-no-files-found: error
           retention-days: 14
+      - name: Package complete build sources
+        shell: pwsh
+        run: |
+          python -c "import pathlib,zipfile; root=pathlib.Path('src'); z=zipfile.ZipFile('DSCompare_RC8_SOURCES.zip','w',zipfile.ZIP_DEFLATED); [z.write(p,p.relative_to(root)) for p in root.rglob('*') if p.is_file() and not any(x in ('dist','build','__pycache__','.pytest_cache','UI_CHECK') for x in p.relative_to(root).parts)]; z.close()"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-RC8-STEP-restart-sources
+          path: DSCompare_RC8_SOURCES.zip
+          if-no-files-found: error
   cad:
     needs: build
     runs-on: windows-2022
@@ -83,7 +94,7 @@ jobs:
           python-version: '3.11'
       - uses: actions/download-artifact@v4
         with:
-          name: DSCompare-RC7-ALIGNED-STEP-Windows-x64
+          name: DSCompare-RC8-ALIGNED-STEP-Windows-x64
           path: app
       - name: Prepare original real CAD harness
         shell: pwsh
@@ -103,7 +114,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: RC7-ALIGNED-STEP-${{ matrix.model }}-${{ matrix.case }}
+          name: RC8-ALIGNED-STEP-${{ matrix.model }}-${{ matrix.case }}
           path: evidence/**
           if-no-files-found: warn
           retention-days: 14

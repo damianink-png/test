@@ -14,10 +14,25 @@ import json
 import os
 
 
-def _match_imported(original, imported, tolerance):
+def _match_imported(original, imported, tolerance, *, occurrence_ids=False):
     """Bijection for metadata only; NEVER a proof of equivalent geometry."""
     if len(original) != len(imported):
         raise RuntimeError(f'Wyrównany STEP: liczba brył {len(imported)} != {len(original)}')
+    if occurrence_ids:
+        # Stable occurrence identifiers restore metadata, never certify geometry.
+        expected = {f'DSC_OCC_{i:08d}': p for i,p in enumerate(original)}
+        restored = []
+        seen = set()
+        for part in imported:
+            if part.name not in expected or part.name in seen:
+                raise RuntimeError('Wyrównany STEP: nieznane lub powtórzone ID wystąpienia '+part.name)
+            seen.add(part.name)
+            old = expected[part.name]
+            restored.append(replace(part, name=old.name, path=old.path,
+                                    source=old.source, name_origin=old.name_origin))
+        if seen != set(expected):
+            raise RuntimeError('Wyrównany STEP: utracone ID wystąpień')
+        return restored
     groups = defaultdict(list)
     for idx, p in enumerate(original):
         groups[p.name].append(idx)
@@ -63,6 +78,7 @@ def save_aligned_step_and_reload(parts, output, tolerance, max_solids=20000, pro
     if not parts:
         raise ValueError('Brak części B do eksportu po wyrównaniu')
     from OCP.BRep import BRep_Builder
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
     from OCP.IFSelect import IFSelect_RetDone
     from OCP.Interface import Interface_Static
     from OCP.STEPCAFControl import STEPCAFControl_Writer
@@ -74,7 +90,7 @@ def save_aligned_step_and_reload(parts, output, tolerance, max_solids=20000, pro
     from OCP.TopLoc import TopLoc_Location
     from OCP.XCAFDoc import XCAFDoc_DocumentTool
     from .step_io import _single_solid_without_wrapper
-    from .import_cache import load_step_persistent
+    from .step_io import load_step
 
     t0 = perf_counter()
     folder = Path(output).resolve() / '_WYROWNANY_STEP'
@@ -88,17 +104,20 @@ def save_aligned_step_and_reload(parts, output, tolerance, max_solids=20000, pro
     BRep_Builder().MakeCompound(compound)
     root = tool.AddShape(compound, True)
     TDataStd_Name.Set_s(root, TCollection_ExtendedString('DS_COMPARE_B_WYROWNANY'))
-    for part in parts:
+    for occurrence_index, part in enumerate(parts):
+        occurrence_name=f'DSC_OCC_{occurrence_index:08d}'
         loc = part.shape.Location()
         local = _single_solid_without_wrapper(part.shape.Located(TopLoc_Location()))
-        label = tool.AddShape(local, False)
+        local = BRepBuilderAPI_Copy(local, False, False).Shape()
+        label = tool.NewShape()
+        tool.SetShape(label, local)
         if label.IsNull():
             raise RuntimeError('Wyrównany STEP: nie można dodać bryły '+part.name)
-        TDataStd_Name.Set_s(label, TCollection_ExtendedString(part.name))
+        TDataStd_Name.Set_s(label, TCollection_ExtendedString(occurrence_name))
         instance = tool.AddComponent(root, label, loc)
         if instance.IsNull():
             raise RuntimeError('Wyrównany STEP: nie można dodać wystąpienia '+part.name)
-        TDataStd_Name.Set_s(instance, TCollection_ExtendedString(part.name))
+        TDataStd_Name.Set_s(instance, TCollection_ExtendedString(occurrence_name))
     tool.UpdateAssemblies()
     STEPControl_Controller.Init_s()
     if not Interface_Static.SetCVal_s('write.step.schema', 'AP214IS'):
@@ -115,12 +134,12 @@ def save_aligned_step_and_reload(parts, output, tolerance, max_solids=20000, pro
     if progress:
         progress(f'Wyrównanie: zapisano {len(parts)} wystąpień w {target.name}; ponowny import…')
     # Do not use cache: reimport is an intentional independent round-trip.
-    imported = load_step_persistent(str(target), max_solids=max_solids, progress=progress)
-    restored = _match_imported(parts, imported, tolerance)
+    imported = load_step(str(target), max_solids=max_solids, progress=progress)
+    restored = _match_imported(parts, imported, tolerance, occurrence_ids=True)
     diagnostics = {'path': str(target), 'solids_expected': len(parts),
                    'solids_reimported': len(imported), 'write_s': round(write_s,3),
                    'total_s': round(perf_counter()-t0,3),
-                   'validation': 'occurrence_count_name_center_volume_area_only_not_geometry_proof'}
+                   'validation': 'unique_occurrence_id_bijection_only_not_geometry_proof'}
     (folder / 'WERYFIKACJA_IMPORTU.json').write_text(
         json.dumps(diagnostics, ensure_ascii=False, indent=2), encoding='utf-8')
     return restored, target, diagnostics

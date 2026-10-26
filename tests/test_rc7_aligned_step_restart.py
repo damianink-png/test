@@ -44,3 +44,30 @@ def test_roundtrip_refuses_wrong_geometry_metadata():
     changed[0]=replace(changed[0],volume=changed[0].volume+100)
     with pytest.raises(RuntimeError,match='brak jednoznacznie'):
         _match_imported(parts,changed,.01)
+
+
+def test_occurrence_ids_restore_reordered_metadata_despite_integral_drift():
+    parts=_assembly()
+    imported=[replace(p,name=f'DSC_OCC_{i:08d}',volume=p.volume*1.003,
+                      center=p.center+np.array([.036,0.,0.])) for i,p in enumerate(parts)]
+    restored=_match_imported(parts,list(reversed(imported)),.01,occurrence_ids=True)
+    assert [p.path for p in restored]==[p.path for p in reversed(parts)]
+    # Reimported geometry/properties are retained, never replaced by old proof.
+    assert restored[0].volume==imported[-1].volume
+
+
+@pytest.mark.parametrize('bad_name',['DSC_OCC_00000000','DSC_OCC_99999999','plate'])
+def test_occurrence_ids_reject_duplicate_missing_or_unknown(bad_name):
+    parts=_assembly()
+    imported=[replace(p,name=f'DSC_OCC_{i:08d}') for i,p in enumerate(parts)]
+    imported[-1]=replace(imported[-1],name=bad_name)
+    with pytest.raises(RuntimeError,match='ID'):
+        _match_imported(parts,imported,.01,occurrence_ids=True)
+
+
+def test_shared_coincident_shapes_keep_distinct_occurrences(tmp_path):
+    first=_assembly()[0]
+    parts=[replace(first,name='duplicate',path=f'ROOT/branch_{i}/duplicate') for i in range(3)]
+    restored,_,stats=save_aligned_step_and_reload(parts,tmp_path,.01)
+    assert stats['solids_reimported']==3
+    assert sorted(p.path for p in restored)==sorted(p.path for p in parts)
