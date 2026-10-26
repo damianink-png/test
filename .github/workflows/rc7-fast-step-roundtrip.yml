@@ -35,8 +35,13 @@ jobs:
           python scripts/rc7_aligned_step_restart_patch.py src
           if ($LASTEXITCODE -ne 0) { throw 'Aligned STEP integration patch failed' }
           Copy-Item tests/test_rc7_aligned_step_restart.py src/tests/test_rc7_aligned_step_restart.py
-          ./src/BUDUJ_WINDOWS.ps1 -InstallOnly
-          if ($LASTEXITCODE -ne 0) { throw 'RC7 dependencies failed' }
+          Push-Location src
+          try {
+            ./BUDUJ_WINDOWS.ps1 -InstallOnly
+            if ($LASTEXITCODE -ne 0) { throw 'RC7 dependencies failed' }
+          } finally {
+            Pop-Location
+          }
           python -m pip install pytest
           if ($LASTEXITCODE -ne 0) { throw 'pytest install failed' }
       - name: Fast real OCC STEP write and reimport tests
