@@ -39,6 +39,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'RC9 patch failed' }
           python -m py_compile rc9/src/dsac29/revision_overlap.py
           if ($LASTEXITCODE -ne 0) { throw 'RC9 patch syntax invalid' }
+          python patches/rc9/patch_stability_test.py rc9/src/tests/test_stability.py
+          if ($LASTEXITCODE -ne 0) { throw 'RC9 conservative stability regression update failed' }
       - name: Install and run small regressions
         shell: pwsh
         working-directory: rc9/src
