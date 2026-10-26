@@ -40,6 +40,9 @@ def propose_translation(a: Sequence[Anchor], b: Sequence[Anchor],
             if len(ga[k]) <= max_signature_multiplicity
             and len(gb[k]) <= max_signature_multiplicity]
     keys.sort(key=lambda k: (len(ga[k])*len(gb[k]), str(k)))
+    # One repeated family (e.g. bolts) cannot establish a global transform.
+    if len(keys) < 2:
+        return None
     hypotheses = []
     for k in keys:
         for x in ga[k]:
