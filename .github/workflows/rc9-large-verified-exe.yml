@@ -1,0 +1,62 @@
+name: RC9 - six large CAD scenarios on verified EXE
+on:
+  push:
+    branches: [fix/dscompare-rc9-large-validation]
+    paths: [.github/workflows/rc9-large-verified-exe.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  cad:
+    runs-on: windows-2022
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        model: [v2, trident]
+        case: [shift, revision_shift, revision]
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download exact EXE that passed small scenarios
+        uses: actions/download-artifact@v4
+        with:
+          name: DSCompare-RC9-stability-Windows-x64-TEST
+          run-id: 40322466424
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: app
+      - name: Prepare test helpers
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_RC7_SOURCES.zip src
+          python scripts/rc7_parametric_proof_patch.py src
+          python stability/scripts/apply_stability.py src
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+          if ($LASTEXITCODE -ne 0) { throw 'Preparation failed' }
+      - name: Compare real revisions with compiled application
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          if ('${{ matrix.case }}' -eq 'revision') {
+            python src/ci/real_revision_without_shift.py app/DSCompare.exe ${{ matrix.model }}
+          } else {
+            python src/ci/large_exe.py app/DSCompare.exe ${{ matrix.model }} ${{ matrix.case }}
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Large CAD scenario failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RC9-large-${{ matrix.model }}-${{ matrix.case }}
+          path: evidence/**
+          retention-days: 14
+          if-no-files-found: warn
