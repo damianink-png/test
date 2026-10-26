@@ -6,7 +6,7 @@ on:
       - scripts/rc7_alignment_only_common_guard.py
       - scripts/rc7_parametric_proof_patch.py
       - tests/test_rc7_parametric_proof.py
-      - .github/workflows/rc7-audit-parametric-proof.yml
+      - .github/workflows/rc7-audit-align-only-common.yml
   workflow_dispatch:
 permissions:
   contents: read
