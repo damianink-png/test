@@ -51,8 +51,24 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'pytest install failed' }
           python -m pytest -q tests/test_stability.py --junitxml=stability-tests.xml
           if ($LASTEXITCODE -ne 0) { throw 'RC9 stability tests failed' }
-          python TESTUJ.py
+          # TESTUJ.py ships with a 240 s aggregate timeout, too short for the
+          # full native B-Rep suite on a shared Windows runner. Keep every test.
+          $testRunner = Get-Content TESTUJ.py -Raw
+          if (-not $testRunner.Contains('timeout=240')) { throw 'Unexpected TESTUJ.py: cannot safely adjust aggregate timeout' }
+          $testRunner = $testRunner.Replace('timeout=240', 'timeout=1800').Replace("'-q'", "'-vv'")
+          Set-Content TESTUJ.py -Value $testRunner -Encoding utf8
+          python -u TESTUJ.py
           if ($LASTEXITCODE -ne 0) { throw 'Small regressions failed' }
+      - name: Preserve small regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-COMMON-small-regression-diagnostics
+          path: |
+            rc9/src/stability-tests.xml
+            rc9/src/full-regressions.xml
+          if-no-files-found: warn
+          retention-days: 14
       - name: Build patched RC9
         shell: pwsh
         working-directory: rc9/src
