@@ -1,0 +1,36 @@
+name: DS Compare RC7 - revision overlap source diagnosis
+on:
+  push:
+    branches:
+      - audit/dscompare-rc7-revision-overlap-diagnosis-20261026
+    paths:
+      - .github/workflows/rc7-overlap-source-diagnosis.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract original Work RC7 Python sources for exact review
+        shell: bash
+        run: |
+          mkdir -p extracted
+          python -m zipfile -e DSCompare_RC7_SOURCES.zip extracted
+          mkdir -p review
+          cp extracted/dsac29/revision_overlap.py review/
+          cp extracted/dsac29/compare.py review/
+          cp extracted/dsac29/parametric_identity.py review/
+          cp extracted/dsac29/step_reexport_tolerance.py review/
+          cp extracted/dsac29/deferred_alignment.py review/
+          cp extracted/dsac29/native_geometry.py review/ 2>/dev/null || true
+          cp extracted/ci/large_exe.py review/
+          find review -type f -printf '%f %s bytes\\n'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc7-original-revision-overlap-sources
+          path: review/**
+          retention-days: 14
+          if-no-files-found: error
