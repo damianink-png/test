@@ -44,3 +44,22 @@ def test_roundtrip_refuses_wrong_geometry_metadata():
     changed[0]=replace(changed[0],volume=changed[0].volume+100)
     with pytest.raises(RuntimeError,match='brak jednoznacznie'):
         _match_imported(parts,changed,.01)
+
+
+def test_roundtrip_repeated_shared_shape_with_distinct_occurrences(tmp_path):
+    # Real CAD assemblies frequently reuse one shape definition many times.
+    # Instance labels must survive STEPCAF deduplication without mispairing.
+    shared=BRepPrimAPI_MakeBox(9.,9.,9.).Shape()
+    parts=[]
+    for i in range(12):
+        original=describe(shared, f'M3 Heat Set:{i+1}',
+                          f'ROOT/shared_insert_{i}', 'source.step')
+        parts.append(_relocate(original,np.eye(3),
+                               np.array([1000.+i*45.,-395.,210.])))
+    result,path,stats=save_aligned_step_and_reload(parts,tmp_path,0.01)
+    assert stats['solids_expected']==stats['solids_reimported']==12
+    assert sorted(x.name for x in result)==sorted(x.name for x in parts)
+    assert sorted(x.path for x in result)==sorted(x.path for x in parts)
+    for old in parts:
+        new=next(x for x in result if x.path==old.path)
+        assert np.linalg.norm(np.array(old.center)-np.array(new.center))<.001
