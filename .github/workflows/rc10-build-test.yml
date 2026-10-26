@@ -1,0 +1,83 @@
+name: DS Compare RC10 - build and CAD regression
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/rc10-build-tests]
+    paths:
+      - 'dsac29/**'
+      - 'DSCompareV3.py'
+      - 'BUDUJ_WINDOWS.ps1'
+      - '.github/workflows/rc10-build-test.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Build RC10
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-RC10-Windows-x64
+          path: dist/DSCompare/**
+          if-no-files-found: error
+  cad:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [v2, trident]
+        scenario: [shift, revision_shift, revision]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+      DSCOMPARE_IMPORT_CACHE: 'off'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - uses: actions/download-artifact@v4
+        with:
+          name: DSCompare-RC10-Windows-x64
+          path: app
+      - name: Install CAD test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+      - name: Real CAD assembly regression
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          if ('${{ matrix.scenario }}' -eq 'revision') {
+            python ci/real_revision_without_shift.py app/DSCompare.exe ${{ matrix.model }}
+          } else {
+            python ci/large_exe.py app/DSCompare.exe ${{ matrix.model }} ${{ matrix.scenario }}
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'CAD regression failed' }
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC10-${{ matrix.model }}-${{ matrix.scenario }}
+          path: |
+            evidence/**
+            models/*.log
+          if-no-files-found: warn
+          retention-days: 14
