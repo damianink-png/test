@@ -111,3 +111,25 @@ def test_roundtrip_refuses_ambiguous_renamed_occurrence():
     renamed=replace(a,name='STEPCAF changed label')
     with pytest.raises(RuntimeError,match='brak jednoznacznie'):
         _match_imported([a,b],[renamed,b],0.01)
+
+
+
+@pytest.mark.parametrize('offset', [
+    (1., 0., 0.),
+    (0., -100., 0.),
+    (1000., 395., -210.),
+    (-1275., 395., -210.),
+])
+def test_roundtrip_shifted_small_assembly(tmp_path, offset):
+    # Verify physical STEP round-trip after four distinct global translations.
+    base=_assembly()
+    moved=[_relocate(p,np.eye(3),np.array(offset,dtype=float)) for p in base]
+    restored,path,stats=save_aligned_step_and_reload(
+        moved,tmp_path,0.01)
+    assert path.is_file() and path.stat().st_size>500
+    assert stats['solids_expected']==stats['solids_reimported']==len(base)
+    for original in moved:
+        imported=next(x for x in restored if x.path==original.path)
+        assert np.linalg.norm(np.array(original.center)-np.array(imported.center))<.001
+        assert abs(original.volume-imported.volume)<.001
+        assert abs(original.area-imported.area)<.001
