@@ -63,3 +63,29 @@ def test_roundtrip_repeated_shared_shape_with_distinct_occurrences(tmp_path):
     for old in parts:
         new=next(x for x in result if x.path==old.path)
         assert np.linalg.norm(np.array(old.center)-np.array(new.center))<.001
+
+
+
+def test_roundtrip_repeated_identical_names_different_positions(tmp_path):
+    # STEP assemblies may repeat both the geometry definition and occurrence name.
+    shared=BRepPrimAPI_MakeBox(8., 12., 6.).Shape()
+    parts=[]
+    for i in range(24):
+        original=describe(shared, 'M3 Heat Set:1',
+                          f'ROOT/heat_set_{i}', 'source.step')
+        parts.append(_relocate(original,np.eye(3),
+                               np.array([150.+i*17., -30.+(i%3)*11., 40.])))
+    restored,path,stats=save_aligned_step_and_reload(parts,tmp_path,0.01)
+    assert path.is_file()
+    assert stats['solids_expected']==stats['solids_reimported']==24
+    assert sorted(x.path for x in restored)==sorted(x.path for x in parts)
+    for old in parts:
+        new=next(x for x in restored if x.path==old.path)
+        assert np.linalg.norm(np.array(old.center)-np.array(new.center))<.001
+        assert abs(old.volume-new.volume)<.001
+
+
+def test_roundtrip_permuted_import_order_is_bijective():
+    parts=_assembly()
+    matched=_match_imported(parts,list(reversed(parts)),0.01)
+    assert [x.path for x in matched]==list(reversed([x.path for x in parts]))
