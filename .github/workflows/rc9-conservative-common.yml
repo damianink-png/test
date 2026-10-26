@@ -45,6 +45,10 @@ jobs:
         run: |
           ./BUDUJ_WINDOWS.ps1 -InstallOnly
           if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+          python -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { throw 'pytest install failed' }
+          python -m pytest -q tests/test_stability.py --junitxml=stability-tests.xml
+          if ($LASTEXITCODE -ne 0) { throw 'RC9 stability tests failed' }
           python TESTUJ.py
           if ($LASTEXITCODE -ne 0) { throw 'Small regressions failed' }
       - name: Build patched RC9
