@@ -1,0 +1,32 @@
+name: DS Compare RC7 - overlap extended source
+on:
+  push:
+    branches:
+      - audit/dscompare-rc7-revision-overlap-diagnosis-20261026
+    paths:
+      - .github/workflows/rc7-overlap-extended-source.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract source for guarded alignment-aware revision overlap patch
+        shell: bash
+        run: |
+          python -m zipfile -e DSCompare_RC7_SOURCES.zip extracted
+          mkdir -p review
+          cp extracted/dsac29/cli.py review/
+          cp extracted/dsac29/native_guard.py review/
+          cp extracted/dsac29/material_deltas.py review/
+          cp extracted/dsac29/trace_r22.py review/
+          cp extracted/dsac29/worker_v37.py review/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc7-overlap-extended-sources
+          path: review/**
+          retention-days: 14
+          if-no-files-found: error
