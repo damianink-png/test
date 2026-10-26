@@ -48,5 +48,30 @@ jobs:
         shell: pwsh
         working-directory: src
         run: |
-          python -m pytest -q tests/test_rc7_aligned_step_restart.py tests/test_r13_deferred_alignment.py::test_single_comparison_without_shift_and_reused_cache_after_shift --durations=10
+          python -m pytest -q tests/test_rc7_aligned_step_restart.py tests/test_r13_deferred_alignment.py::test_single_comparison_without_shift_and_reused_cache_after_shift --durations=10 --junitxml=../evidence/small-step-results.xml
           if ($LASTEXITCODE -ne 0) { throw 'STEP roundtrip tests failed' }
+      - name: Preserve small CAD STEP and round-trip diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          $root=Join-Path $env:TEMP 'pytest-of-runneradmin'
+          $i=0
+          if (Test-Path $root) {
+            Get-ChildItem $root -Filter 'WERYFIKACJA_IMPORTU.json' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object {
+              Copy-Item $_.FullName ("evidence/reimport_{0:D2}.json" -f $i)
+              $i++
+            }
+            $i=0
+            Get-ChildItem $root -Filter 'B_WYROWNANY.step' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 8 | ForEach-Object {
+              Copy-Item $_.FullName ("evidence/aligned_{0:D2}.step" -f $i)
+              $i++
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RC7-fast-small-STEP-evidence
+          path: evidence/**
+          if-no-files-found: warn
+          retention-days: 14
