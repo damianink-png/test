@@ -27,13 +27,21 @@ jobs:
         run: |
           python -m zipfile -e DSCompare_RC7_SOURCES.zip src
           if ($LASTEXITCODE -ne 0) { throw 'Extraction failed' }
+          python scripts/rc7_parametric_proof_patch.py src
+          if ($LASTEXITCODE -ne 0) { throw 'Proof patch failed' }
+          python scripts/rc7_alignment_only_common_guard.py src
+          if ($LASTEXITCODE -ne 0) { throw 'Native Common guard failed' }
           Copy-Item scripts/rc7_aligned_step_restart.py src/dsac29/aligned_step_restart.py
+          python scripts/rc7_aligned_step_restart_patch.py src
+          if ($LASTEXITCODE -ne 0) { throw 'Aligned STEP integration patch failed' }
           Copy-Item tests/test_rc7_aligned_step_restart.py src/tests/test_rc7_aligned_step_restart.py
-          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3' pytest
-          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+          ./src/BUDUJ_WINDOWS.ps1 -InstallOnly
+          if ($LASTEXITCODE -ne 0) { throw 'RC7 dependencies failed' }
+          python -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { throw 'pytest install failed' }
       - name: Fast real OCC STEP write and reimport tests
         shell: pwsh
         working-directory: src
         run: |
-          python -m pytest -q tests/test_rc7_aligned_step_restart.py --durations=10
+          python -m pytest -q tests/test_rc7_aligned_step_restart.py tests/test_r13_deferred_alignment.py::test_single_comparison_without_shift_and_reused_cache_after_shift --durations=10
           if ($LASTEXITCODE -ne 0) { throw 'STEP roundtrip tests failed' }
