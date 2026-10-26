@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  statuses: write
 jobs:
   small-cad:
     runs-on: windows-2022
@@ -76,3 +77,14 @@ jobs:
           path: evidence/**
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Publish machine-readable result for external diagnostics
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $state = if ('${{ job.status }}' -eq 'success') { 'success' } else { 'failure' }
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh api --method POST "repos/$env:GITHUB_REPOSITORY/statuses/$env:GITHUB_SHA" -f "state=$state" -f "context=DSCompare/RC7-fast-STEP" -f "description=Small OCC STEP reimport and R13 restart tests" -f "target_url=$url"
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to publish CI status' }
