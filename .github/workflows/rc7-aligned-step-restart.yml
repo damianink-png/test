@@ -9,6 +9,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  statuses: write
 jobs:
   build:
     runs-on: windows-2022
@@ -106,3 +107,21 @@ jobs:
           path: evidence/**
           if-no-files-found: warn
           retention-days: 14
+
+  publish-result:
+    needs: [build, cad]
+    if: always()
+    runs-on: windows-2022
+    steps:
+      - name: Publish combined large-CAD result
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          CAD_RESULT: ${{ needs.cad.result }}
+        run: |
+          $state = if ($env:BUILD_RESULT -eq 'success' -and $env:CAD_RESULT -eq 'success') { 'success' } else { 'failure' }
+          $target = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $desc = "RC7 build=$env:BUILD_RESULT, six-CAD-matrix=$env:CAD_RESULT"
+          gh api --method POST "repos/$env:GITHUB_REPOSITORY/statuses/$env:GITHUB_SHA" -f "state=$state" -f "context=DSCompare/RC7-large-6CAD" -f "description=$desc" -f "target_url=$target"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish large CAD status' }
