@@ -44,7 +44,28 @@ def _match_imported(original, imported, tolerance):
             if best is None or metric < best[0]:
                 best = (metric, idx)
         if best is None:
-            raise RuntimeError('Wyrównany STEP: brak jednoznacznie odpowiadającego elementu '+part.name)
+            # Diagnostic only: do not relax geometry tolerances or infer SAME.
+            # Report why an apparently successful STEP round-trip cannot be
+            # bijectively associated with the original occurrences.
+            def metrics(i):
+                old = original[i]
+                dc = float(sum((float(x)-float(y))**2 for x,y in zip(old.center, part.center)))**.5
+                return {'index': i, 'name': old.name, 'center_delta_mm': round(dc, 7),
+                        'volume_delta': round(abs(float(old.volume)-float(part.volume)), 7),
+                        'area_delta': round(abs(float(old.area)-float(part.area)), 7),
+                        'old_center': [round(float(v),5) for v in old.center],
+                        'new_center': [round(float(v),5) for v in part.center]}
+            by_name = [i for i in candidates if i not in used]
+            all_unused = [i for i in range(len(original)) if i not in used]
+            closest_by_name = sorted(by_name, key=lambda i: metrics(i)['center_delta_mm'])[:3]
+            closest_any = sorted(all_unused, key=lambda i: metrics(i)['center_delta_mm'])[:3]
+            detail = {'imported_name': part.name, 'imported_center': list(map(float,part.center)),
+                      'imported_volume': float(part.volume), 'imported_area': float(part.area),
+                      'same_name_unused': len(by_name), 'same_name_used': len(candidates)-len(by_name),
+                      'nearest_same_name': [metrics(i) for i in closest_by_name],
+                      'nearest_any_name': [metrics(i) for i in closest_any]}
+            raise RuntimeError('Wyrównany STEP: brak jednoznacznie odpowiadającego elementu '
+                               +part.name+'; diagnostyka='+json.dumps(detail,ensure_ascii=False))
         old = original[best[1]]
         used.add(best[1])
         restored.append(replace(part, name=old.name, path=old.path,
