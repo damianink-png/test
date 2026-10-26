@@ -1,0 +1,93 @@
+name: RC9 faceproof V2 real BOM verification
+on:
+  push:
+    paths: ['.github/workflows/rc9-faceproof-bom.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUTF8: '1'
+  PYTHONUNBUFFERED: '1'
+  PYTHONFAULTHANDLER: '1'
+  QT_QPA_PLATFORM: offscreen
+  DSCOMPARE_IMPORT_CACHE: 'off'
+jobs:
+  v2_bom:
+    runs-on: windows-2022
+    timeout-minutes: 85
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch the SAME faceproof executable as six CAD tests
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept="application/vnd.github+json"}
+          Invoke-WebRequest -Uri 'https://api.github.com/repos/damianink-png/test/actions/artifacts/12696862815/zip' -Headers $headers -OutFile app.zip
+          Expand-Archive app.zip -DestinationPath app -Force
+          if (-not (Test-Path app/DSCompare.exe)) { throw 'Compiled EXE missing' }
+          Invoke-WebRequest -Uri 'https://api.github.com/repos/damianink-png/test/actions/artifacts/12650346634/zip' -Headers $headers -OutFile src.zip
+          Expand-Archive src.zip -DestinationPath source -Force
+          Expand-Archive source/DSCompare_RC9_STABILITY_SOURCES.zip -DestinationPath rc9 -Force
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+          if ($LASTEXITCODE -ne 0) { throw 'CAD dependencies failed' }
+      - name: Run real V2 revision with BOM enabled (no --no-bom)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $env:PYTHONPATH=(Resolve-Path rc9/src).Path
+          New-Item -ItemType Directory -Path evidence -Force | Out-Null
+          @'
+          from pathlib import Path
+          p=Path('rc9/src/ci/real_revision_without_shift.py')
+          s=p.read_text(encoding='utf-8')
+          assert s.count("'--no-bom'")==1, 'Unexpected original script; refusing unverified modification'
+          s=s.replace(",'--no-bom'",'').replace(", '--no-bom'",'')
+          assert "'--no-bom'" not in s
+          compile(s,str(p),'exec')
+          p.write_text(s,encoding='utf-8')
+          print('LARGE_V2_BOM_ENABLED: original test script with --no-bom removed')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to enable BOM safely' }
+          python -u rc9/src/ci/real_revision_without_shift.py app/DSCompare.exe v2
+          if ($LASTEXITCODE -ne 0) { throw 'Large V2 BOM comparison failed' }
+      - name: Verify real BOM CSV content
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import csv,json
+          root=Path('evidence')
+          results={}
+          for label in ('A','B'):
+              files=list(root.rglob('BOM_'+label+'.csv'))
+              if len(files)!=1: raise SystemExit(f'BOM_{label} expected 1 real CSV, found {len(files)}')
+              p=files[0]
+              with p.open(encoding='utf-8-sig',errors='replace',newline='') as f:
+                  sample=f.read(4096)
+              assert len(sample)>20, f'Empty BOM_{label}'
+              with p.open(encoding='utf-8-sig',errors='replace',newline='') as f:
+                  lines=sum(1 for row in csv.reader(f,delimiter=';') if any(x.strip() for x in row))
+              assert lines>=2, f'No BOM_{label} records'
+              results[label]={'path':str(p),'bytes':p.stat().st_size,'nonempty_rows':lines}
+          print('VERIFIED_LARGE_V2_BOM',json.dumps(results))
+          Path('evidence/bom_verification.json').write_text(json.dumps(results,indent=2),encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'BOM content verification failed' }
+      - name: Upload real BOM files and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-FACEPROOF-real-V2-BOM-evidence
+          path: |
+            evidence/**/BOM_*.csv
+            evidence/bom_verification.json
+            evidence/**/*.json
+            evidence/**/*.log
+          if-no-files-found: warn
+          retention-days: 14
