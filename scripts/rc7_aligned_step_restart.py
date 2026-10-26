@@ -44,6 +44,26 @@ def _match_imported(original, imported, tolerance):
             if best is None or metric < best[0]:
                 best = (metric, idx)
         if best is None:
+            # STEPCAF may replace an instance name with its shared definition
+            # name. Recover metadata ONLY when an otherwise unmatched original
+            # occurrence is uniquely identified by strict spatial and scalar
+            # invariants. This is not a geometry identity certificate.
+            fallback=[]
+            for idx,old in enumerate(original):
+                if idx in used:
+                    continue
+                dc=float(sum((float(x)-float(y))**2 for x,y in zip(old.center,part.center)))**.5
+                if dc > max_center:
+                    continue
+                ve=abs(float(old.volume)-float(part.volume))
+                ae=abs(float(old.area)-float(part.area))
+                if ve <= max(1.e-3,abs(float(old.volume))*1.e-5) and ae <= max(1.e-3,abs(float(old.area))*1.e-5):
+                    fallback.append(((dc,ve,ae,idx),idx))
+            if len(fallback)==1:
+                best=fallback[0]
+            # If more than one source occurrence qualifies, the identity is
+            # ambiguous. Refuse to invent an occurrence mapping.
+        if best is None:
             # Diagnostic only: do not relax geometry tolerances or infer SAME.
             # Report why an apparently successful STEP round-trip cannot be
             # bijectively associated with the original occurrences.
