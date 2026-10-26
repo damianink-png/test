@@ -10,9 +10,11 @@ tests=next(ast.literal_eval(n.value) for n in module.body if isinstance(n,ast.As
 results=[]
 for name in tests:
     start=time.monotonic();log=out/(name+'.log')
+    command=([sys.executable,str(root/'tests'/name)] if name=='test_r16_231_world.py' else
+             [sys.executable,'-m','pytest','-vv','-x','--tb=short',str(root/'tests'/name),'--junitxml='+str(out/(name+'.xml'))])
     with log.open('w',encoding='utf8') as handle:
         try:
-            r=subprocess.run([sys.executable,'-m','pytest','-vv','-x','--tb=short',str(root/'tests'/name),'--junitxml='+str(out/(name+'.xml'))],cwd=root,stdout=handle,stderr=subprocess.STDOUT,timeout=240)
+            r=subprocess.run(command,cwd=root,stdout=handle,stderr=subprocess.STDOUT,timeout=240)
             code=r.returncode
         except subprocess.TimeoutExpired:code=124
     entry={'test':name,'code':code,'seconds':round(time.monotonic()-start,2)};results.append(entry)
