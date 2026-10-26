@@ -1,0 +1,182 @@
+name: RC9 strict face-candidate proof - six real CAD cases
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/rc9-faceproof.yml'
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUTF8: '1'
+  PYTHONUNBUFFERED: '1'
+  PYTHONFAULTHANDLER: '1'
+  QT_QPA_PLATFORM: offscreen
+  DSCOMPARE_IMPORT_CACHE: 'off'
+  DSCOMPARE_TRACE_BREP: '1'
+  DSCOMPARE_SAVE_FAILED_BREP: '1'
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch pinned RC9 Stability source artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = "application/vnd.github+json"; "X-GitHub-Api-Version" = "2022-11-28" }
+          Invoke-WebRequest -Uri 'https://api.github.com/repos/damianink-png/test/actions/artifacts/12650346634/zip' -Headers $headers -OutFile source_artifact.zip
+          Expand-Archive source_artifact.zip -DestinationPath source_artifact -Force
+          Expand-Archive source_artifact/DSCompare_RC9_STABILITY_SOURCES.zip -DestinationPath rc9 -Force
+          if (-not (Test-Path rc9/src/dsac29/revision_overlap.py)) { throw 'Pinned RC9 source missing' }
+          python patches/rc9/apply_patch.py rc9/src/dsac29/revision_overlap.py
+          if ($LASTEXITCODE -ne 0) { throw 'RC9 patch failed' }
+          Copy-Item patches/rc9/robust_translation.py rc9/src/dsac29/robust_translation.py
+          python patches/rc9/integrate_deferred_translation.py rc9/src/dsac29/deferred_alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Automatic deferred alignment patch failed' }
+          python -m py_compile rc9/src/dsac29/deferred_alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Deferred alignment syntax invalid' }
+          python patches/rc9/integrate_translation.py rc9/src/dsac29/alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Robust translation integration failed' }
+          python -m py_compile rc9/src/dsac29/robust_translation.py rc9/src/dsac29/alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Alignment syntax failed' }
+          python patches/rc9/patch_face_candidates.py rc9/src/dsac29/step_reexport_tolerance.py
+          if ($LASTEXITCODE -ne 0) { throw 'Face candidate patch failed' }
+          Copy-Item patches/rc9/test_face_candidates.py rc9/src/tests/test_face_candidates.py
+          python -m py_compile rc9/src/dsac29/step_reexport_tolerance.py
+          if ($LASTEXITCODE -ne 0) { throw 'Face candidate syntax invalid' }
+          python -m py_compile rc9/src/dsac29/revision_overlap.py
+          if ($LASTEXITCODE -ne 0) { throw 'RC9 patch syntax invalid' }
+          python patches/rc9/patch_stability_test.py rc9/src/tests/test_stability.py
+          if ($LASTEXITCODE -ne 0) { throw 'RC9 conservative stability regression update failed' }
+      - name: Install and run small regressions
+        shell: pwsh
+        working-directory: rc9/src
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+          python -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { throw 'pytest install failed' }
+          python -m pytest -q tests/test_stability.py tests/test_face_candidates.py --junitxml=stability-tests.xml
+          if ($LASTEXITCODE -ne 0) { throw 'RC9 stability tests failed' }
+          # TESTUJ.py ships with a 240 s aggregate timeout, too short for the
+          # full native B-Rep suite on a shared Windows runner. Keep every test.
+          $testRunner = Get-Content TESTUJ.py -Raw
+          if (-not $testRunner.Contains('timeout=240')) { throw 'Unexpected TESTUJ.py: cannot safely adjust aggregate timeout' }
+          $testRunner = $testRunner.Replace('timeout=240', 'timeout=1800').Replace("'-q'", "'-vv'")
+          Set-Content TESTUJ.py -Value $testRunner -Encoding utf8
+          python -u TESTUJ.py
+          if ($LASTEXITCODE -ne 0) { throw 'Small regressions failed' }
+      - name: Preserve small regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-FACEPROOF-small-regression-diagnostics
+          path: |
+            rc9/src/stability-tests.xml
+            rc9/src/full-regressions.xml
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Build patched RC9
+        shell: pwsh
+        working-directory: rc9/src
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          if (-not (Test-Path dist/DSCompare/DSCompare.exe)) { throw 'No EXE' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RC9-FACEPROOF-FALLBACK-Windows-x64
+          path: rc9/src/dist/DSCompare/**
+          if-no-files-found: error
+          retention-days: 14
+  cad:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        model: [v2, trident]
+        case: [revision, shift, revision_shift]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: RC9-FACEPROOF-FALLBACK-Windows-x64
+          path: app
+      - name: Restore identical RC9 test scripts and dependencies
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = "application/vnd.github+json"; "X-GitHub-Api-Version" = "2022-11-28" }
+          Invoke-WebRequest -Uri 'https://api.github.com/repos/damianink-png/test/actions/artifacts/12650346634/zip' -Headers $headers -OutFile source_artifact.zip
+          Expand-Archive source_artifact.zip -DestinationPath source_artifact -Force
+          Expand-Archive source_artifact/DSCompare_RC9_STABILITY_SOURCES.zip -DestinationPath rc9 -Force
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+          if ($LASTEXITCODE -ne 0) { throw 'CAD test dependencies failed' }
+          ./ci/rc10_diagnostics.ps1 -OutputDirectory diagnostics
+      - name: Run real CAD assembly scenario
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = (Resolve-Path rc9/src).Path
+          $case = '${{ matrix.case }}'
+          $model = '${{ matrix.model }}'
+          New-Item -ItemType Directory -Path evidence -Force | Out-Null
+          $ramPath = Join-Path (Resolve-Path evidence).Path 'ram-samples.csv'
+          Set-Content -Path $ramPath -Value 'utc,combined_working_set_bytes,max_process_working_set_bytes,process_count'
+          $sampler = Start-Job -ArgumentList $ramPath -ScriptBlock {
+            param($path)
+            while ($true) {
+              try {
+                $p = @(Get-Process -Name DSCompare -ErrorAction SilentlyContinue)
+                if ($p.Count -gt 0) {
+                  $sum = ($p | Measure-Object -Property WorkingSet64 -Sum).Sum
+                  $max = ($p | Measure-Object -Property WorkingSet64 -Maximum).Maximum
+                  $stamp = [DateTime]::UtcNow.ToString('o')
+                  Add-Content -Path $path -Value "$stamp,$sum,$max,$($p.Count)"
+                }
+              } catch {}
+              Start-Sleep -Seconds 2
+            }
+          }
+          try {
+            if ($case -eq 'revision') {
+              python rc9/src/ci/real_revision_without_shift.py app/DSCompare.exe $model
+            } else {
+              python rc9/src/ci/large_exe.py app/DSCompare.exe $model $case
+            }
+            $exitCode = $LASTEXITCODE
+          } finally {
+            Stop-Job $sampler -ErrorAction SilentlyContinue
+            Remove-Job $sampler -Force -ErrorAction SilentlyContinue
+          }
+          $samples = @(Import-Csv $ramPath)
+          if ($samples.Count -gt 0) {
+            $peak = ($samples | Measure-Object -Property combined_working_set_bytes -Maximum).Maximum
+            Write-Host "SAMPLED_COMBINED_PEAK_WORKING_SET_BYTES=$peak"
+          }
+          if ($exitCode -ne 0) { throw "Real CAD $model $case failed" }
+      - name: Preserve real export and crash evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-FACEPROOF-${{ matrix.model }}-${{ matrix.case }}
+          path: |
+            evidence/**
+            diagnostics/**
+          if-no-files-found: warn
+          retention-days: 14
