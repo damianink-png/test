@@ -175,3 +175,22 @@ def test_roundtrip_rejects_nonfinite_centroid_metadata():
     corrupt[0]=replace(corrupt[0],center=(float('nan'),)+tuple(corrupt[0].center[1:]))
     with pytest.raises(RuntimeError):
         _match_imported(parts,corrupt,0.01)
+
+
+def test_roundtrip_continues_with_native_imported_metadata_when_names_cannot_be_recovered(tmp_path,monkeypatch):
+    # Real-user repro: manually comparing A with B_WYROWNANY.step works,
+    # while attempting to restore old B names aborts before B-Rep comparison.
+    import dsac29.aligned_step_restart as restart
+    original_match=restart._match_imported
+    def fail_metadata_only(original,imported,tolerance):
+        raise RuntimeError('Wyrównany STEP: brak jednoznacznie odpowiadającego elementu 04244003_AF1')
+    monkeypatch.setattr(restart,'_match_imported',fail_metadata_only)
+    parts=_assembly()
+    imported,path,stats=restart.save_aligned_step_and_reload(parts,tmp_path,.01)
+    assert path.is_file()
+    assert len(imported)==len(parts)
+    assert stats['metadata_association']=='imported_step_native'
+    assert '04244003_AF1' in stats['metadata_association_warning']
+    # This must return independently imported STEP shapes, not pre-export B.
+    assert all(a.shape is not b.shape for a,b in zip(parts,imported))
+    monkeypatch.setattr(restart,'_match_imported',original_match)
