@@ -66,7 +66,7 @@ def test_roundtrip_repeated_shared_shape_with_distinct_occurrences(tmp_path):
 
 
 
-@pytest.mark.parametrize('count',[12,50,120])
+@pytest.mark.parametrize('count',[12,50,120,200])
 def test_roundtrip_repeated_identical_names_different_positions(tmp_path,count):
     # STEP assemblies may repeat both the geometry definition and occurrence name.
     shared=BRepPrimAPI_MakeBox(8., 12., 6.).Shape()
@@ -146,7 +146,7 @@ def test_roundtrip_refuses_ambiguous_same_name_coincident_occurrences():
         _match_imported([first,second],[first,second],0.01)
 
 
-@pytest.mark.parametrize('count',[12,50,120])
+@pytest.mark.parametrize('count',[12,50,120,200])
 def test_roundtrip_repeated_names_with_global_shift(tmp_path,count):
     # Combined shared-definition/duplicate-name/global-shift case.
     shared=BRepPrimAPI_MakeBox(9.,11.,7.).Shape()
