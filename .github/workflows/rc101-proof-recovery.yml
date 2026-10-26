@@ -1,0 +1,119 @@
+name: RC10.1 - proof recovery and real CAD diagnostics
+on:
+  push:
+    branches: [fix/dscompare-rc101-proof-recovery]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply RC10.1 to exact RC10 sources
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_RC10_GitHub_CI.zip src
+          python rc101/scripts/apply.py src
+          Copy-Item rc101/tests/test_rc101.py src/tests/test_rc101.py
+          python -m zipfile -c RC101-sources.zip src
+      - name: Regressions
+        working-directory: src
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          python -m pip install pytest
+          python -m pytest -q tests/test_rc101.py --junitxml=rc101-tests.xml
+          if ($LASTEXITCODE -ne 0) { throw 'RC101 tests failed' }
+          python ../rc101/ci/regressions.py .
+          if ($LASTEXITCODE -ne 0) { throw 'Regression failed' }
+      - name: Build and UI smoke test
+        working-directory: src
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          $p=Start-Process ./dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)) { throw 'UI failed' }
+      - name: Six small compiled CAD cases
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          python rc101/ci/small_exe.py src/dist/DSCompare/DSCompare.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Small EXE tests failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RC101-build-evidence
+          path: |
+            src/regression_evidence/**
+            src/rc101-tests.xml
+            src/UI_CHECK/**
+            small_evidence/**
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RC101-sources
+          path: RC101-sources.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RC101-Windows-x64
+          path: src/dist/DSCompare/**
+          if-no-files-found: error
+  cad:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        model: [v2, trident]
+        scenario: [revision, shift, revision_shift]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: RC101-Windows-x64
+          path: app
+      - name: Prepare helpers
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_RC10_GitHub_CI.zip src
+          python rc101/scripts/apply.py src
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Real CAD on compiled EXE
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          if ('${{ matrix.scenario }}' -eq 'revision') {
+            python src/ci/real_revision_without_shift.py app/DSCompare.exe ${{ matrix.model }}
+          } else {
+            python src/ci/large_exe.py app/DSCompare.exe ${{ matrix.model }} ${{ matrix.scenario }}
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Real CAD failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RC101-${{ matrix.model }}-${{ matrix.scenario }}-evidence
+          path: evidence/**
+          retention-days: 14
