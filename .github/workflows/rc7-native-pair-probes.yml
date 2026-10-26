@@ -1,0 +1,55 @@
+name: DS Compare RC7 diagnostic - isolated failing OCC pairs
+on:
+  push:
+    branches: [audit/dscompare-rc7-native-probes-20261026]
+    paths:
+      - ci/probe_rc7_native.py
+      - .github/workflows/rc7-native-pair-probes.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-probe:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [trident_revision_common_679, trident_shift_common_136, v2_shift_rigid_1454]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 40245403179
+          repository: damianink-png/test
+          github-token: ${{ github.token }}
+          name: DSCompare-RC7-SESSION-Windows-x64
+          path: app
+      - name: Unpack exact matching RC7 Python sources
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_RC7_SOURCES.zip src
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Run bounded native probe against compiled Windows EXE
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          python ci/probe_rc7_native.py app/DSCompare.exe ${{ matrix.case }} --timeout 120
+          if ($LASTEXITCODE -ne 0) { throw 'Isolated native probe failed; see evidence' }
+      - name: Upload exact pair B-Rep and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-probe-${{ matrix.case }}
+          path: evidence/**
+          if-no-files-found: warn
+          retention-days: 14
