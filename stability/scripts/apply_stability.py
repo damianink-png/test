@@ -19,3 +19,23 @@ change('worker_v37.py','    try:\n        if ns.worker==',"    try:\n        fro
 # Keep diagnostics useful even when no Python exception is raised.
 change('diagnostics.py',"        faulthandler.enable(file=_log_file,all_threads=True)","        _log_file.write('Uruchomiono DS Compare. Postęp analizy: folder wyników / _ETAPY_DIAGNOSTYKA.jsonl\\n')\n        faulthandler.enable(file=_log_file,all_threads=True)")
 print('Stability patch applied')
+
+# This regression used in-process monkeypatch counters; observe the new IPC boundary
+# instead, retaining the same classification and exact material-volume assertions.
+p=root/'tests/test_r20_regressions.py'
+s=p.read_text(encoding='utf8')
+old=""" calls=[];original=material_deltas.operate
+ def tracked(klass,*args):calls.append(klass.__name__);return original(klass,*args)
+ monkeypatch.setattr(material_deltas,'operate',tracked);monkeypatch.setattr(revision_overlap,'operate',tracked)"""
+new=""" from dsac29 import native_guard
+ calls=[];original_common=native_guard.guarded_common;original_calculate=revision_overlap.calculate
+ def tracked_common(*args,**kwargs):
+  calls.append('Common');return original_common(*args,**kwargs)
+ def tracked_calculate(*args,**kwargs):
+  assert kwargs.get('common_shape') is not None
+  calls.append('ReuseCommon');return original_calculate(*args,**kwargs)
+ monkeypatch.setattr(native_guard,'guarded_common',tracked_common)
+ monkeypatch.setattr(revision_overlap,'calculate',tracked_calculate)"""
+assert old in s
+s=s.replace(old,new).replace("assert calls.count('BRepAlgoAPI_Common')==1 and calls.count('BRepAlgoAPI_Cut')==2", "assert calls==['Common','ReuseCommon']")
+ast.parse(s);p.write_text(s,encoding='utf8')
