@@ -28,7 +28,9 @@ replacement = '''            # Restart in the verified A frame from an actual ST
                 # Old indices and shape certificates refer to pre-STEP shapes.
                 # Do not reuse them after reimport, even if counts are equal.
                 certified_pairs=[]
-                step_reexport_tol=False
+                # Fresh geometry requires full STEP surface/trim proof and
+                # isolated native workers; this does not reuse old certificates.
+                step_reexport_tol=True
                 geometry_context=GeometryRegistry()
             proven=proposal.get('full_pair_map') or []'''
 s=s.replace(anchor,replacement)
@@ -64,3 +66,19 @@ assert test.count(old_assert)==1, 'Unexpected original R13 regression assertion'
 test_file.write_text(test.replace(old_assert,new_assert),encoding='utf-8')
 ast.parse(test_file.read_text(encoding='utf-8'))
 print('Updated R13 regression to require independent compare after saved/reimported STEP')
+
+# A STEP round-trip changes integrated scalar descriptors. Search margins
+# admit hypotheses only; the final proof still uses the user's tolerance.
+compare = root / 'dsac29' / 'compare.py'
+s = compare.read_text(encoding='utf-8')
+s = s.replace('import coarse_candidate,reexport_equivalent_world,search_radius',
+              'import coarse_candidate,reexport_equivalent_world,search_radius,world_candidate')
+old = '    cells = _spatial_index(b, free_b, tolerance)'
+assert s.count(old)==1
+s = s.replace(old, '    world_radius = search_radius(tolerance) if step_reexport_tolerance else tolerance\n    cells = _spatial_index(b, free_b, world_radius)')
+s = s.replace('_nearby(cells, s, tolerance)', '_nearby(cells, s, world_radius)')
+s = s.replace('and dist(s, b[j]) <= tolerance and', 'and dist(s, b[j]) <= world_radius and')
+s = s.replace('coarse_candidate(s,b[j],tolerance))]',
+              'coarse_candidate(s,b[j],tolerance) or\n                   (step_reexport_tolerance and world_candidate(s,b[j],tolerance)))]')
+ast.parse(s)
+compare.write_text(s,encoding='utf-8')

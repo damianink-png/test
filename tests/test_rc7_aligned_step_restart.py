@@ -71,3 +71,17 @@ def test_shared_coincident_shapes_keep_distinct_occurrences(tmp_path):
     restored,_,stats=save_aligned_step_and_reload(parts,tmp_path,.01)
     assert stats['solids_reimported']==3
     assert sorted(p.path for p in restored)==sorted(p.path for p in parts)
+
+
+def test_fresh_step_comparison_checks_geometry_despite_integral_drift():
+    from dsac29.compare import compare
+    a=_assembly()[0]
+    b=replace(a,volume=a.volume*.997,center=a.center+np.array([.036,0,0]))
+    # Independent topology, no IsSame shortcut or pre-existing certificates.
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
+    b=replace(b,shape=BRepBuilderAPI_Copy(a.shape).Shape())
+    records=compare([a],[b],.01,step_reexport_tolerance=True)
+    assert len(records)==1 and records[0].status=='SAME'
+    changed=_relocate(b,np.eye(3),np.array([.03,0,0]))
+    records=compare([a],[changed],.01,step_reexport_tolerance=True)
+    assert not any(r.status in ('SAME','RENAMED') for r in records)
