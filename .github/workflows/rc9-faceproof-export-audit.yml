@@ -1,0 +1,56 @@
+name: RC9 faceproof real STEP HTML export audit
+on:
+  push:
+    paths: ['.github/workflows/rc9-faceproof-export-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download actual V2 revision output from faceproof CAD test
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12697524386/zip > real-cad.zip
+      - name: Inspect full STEP styles and HTML 3D bytes; report BOM separately
+        run: |
+          python - <<'PY'
+          from zipfile import ZipFile
+          import json
+          found={'step':[], 'html':[], 'bom':[], 'other':[]}
+          with ZipFile('real-cad.zip') as z:
+              for item in z.infolist():
+                  n=item.filename.lower()
+                  if n.endswith(('.step','.stp')):
+                      found['step'].append(item.filename)
+                      needles=[b'COLOUR_RGB',b'STYLED_ITEM']
+                      counts={x.decode():0 for x in needles}
+                      with z.open(item) as f:
+                          carry=b''
+                          while True:
+                              block=f.read(4*1024*1024)
+                              if not block: break
+                              buf=carry+block
+                              for k in needles:counts[k.decode()]+=buf[:-64].count(k)
+                              carry=buf[-64:]
+                          for k in needles:counts[k.decode()]+=carry.count(k)
+                      print('REAL_STEP',item.filename,'bytes',item.file_size,'style_counts',counts)
+                      assert item.file_size>100000 and counts['COLOUR_RGB']>0 and counts['STYLED_ITEM']>0
+                  elif n.endswith('.html'):
+                      found['html'].append(item.filename)
+                      with z.open(item) as f:
+                          head=f.read(min(item.file_size,2000000)).decode('utf-8','ignore').lower()
+                      print('REAL_HTML',item.filename,'bytes',item.file_size,'html',('<html' in head),'three',('three' in head),'tree',('tree' in head))
+                      assert item.file_size>100000 and '<html' in head
+                  elif n.endswith('.csv') and ('bom' in n or 'zestaw' in n):
+                      found['bom'].append(item.filename)
+                      print('REAL_BOM',item.filename,'bytes',item.file_size)
+              print('AUDIT',json.dumps(found,ensure_ascii=False))
+              assert found['step'] and found['html'], 'Missing real STEP or HTML export'
+              print('BOM_STATUS','present' if found['bom'] else 'NOT_TESTED_BY_NO_BOM_RUN')
+          PY
