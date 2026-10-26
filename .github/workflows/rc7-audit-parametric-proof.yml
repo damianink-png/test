@@ -1,8 +1,9 @@
 name: DS Compare RC7 audit - exact parametric STEP proof and six CAD tests
 on:
   push:
-    branches: [audit/dscompare-rc7-parametric-proof-20261026]
+    branches: [audit/dscompare-rc7-parametric-proof-20261026, audit/dscompare-rc7-parametric-sixcase-harness-20261026]
     paths:
+      - ci/large_exe.py
       - scripts/rc7_parametric_proof_patch.py
       - tests/test_rc7_parametric_proof.py
       - .github/workflows/rc7-audit-parametric-proof.yml
@@ -89,7 +90,7 @@ jobs:
           if ('${{ matrix.case }}' -eq 'revision') {
             python src/ci/real_revision_without_shift.py app/DSCompare.exe ${{ matrix.model }}
           } else {
-            python src/ci/large_exe.py app/DSCompare.exe ${{ matrix.model }} ${{ matrix.case }}
+            python ci/large_exe.py app/DSCompare.exe ${{ matrix.model }} ${{ matrix.case }}
           }
           if ($LASTEXITCODE -ne 0) { throw 'Real CAD test failed' }
       - uses: actions/upload-artifact@v4
