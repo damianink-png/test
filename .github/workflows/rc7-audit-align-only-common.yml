@@ -1,0 +1,104 @@
+name: DS Compare RC7 - aligned-only Common safety and six CAD tests
+on:
+  push:
+    branches: [audit/dscompare-rc7-revision-overlap-diagnosis-20261026]
+    paths:
+      - scripts/rc7_alignment_only_common_guard.py
+      - scripts/rc7_parametric_proof_patch.py
+      - tests/test_rc7_parametric_proof.py
+      - .github/workflows/rc7-audit-parametric-proof.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract exact Work RC7 source and apply conservative geometry patch
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_RC7_SOURCES.zip src
+          if ($LASTEXITCODE -ne 0) { throw 'RC7 source extraction failed' }
+          python scripts/rc7_parametric_proof_patch.py src
+          if ($LASTEXITCODE -ne 0) { throw 'Parametric patch failed' }
+          python scripts/rc7_alignment_only_common_guard.py src
+          if ($LASTEXITCODE -ne 0) { throw 'Geometry patch failed' }
+          Copy-Item tests/test_rc7_parametric_proof.py src/tests/test_rc7_parametric_proof.py
+      - name: Install, negative-control geometry test, full regression, compile Windows EXE
+        working-directory: src
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+          python -m pip install pytest
+          python -m pytest -q tests/test_rc7_parametric_proof.py
+          if ($LASTEXITCODE -ne 0) { throw 'Parametric proof test failed' }
+          python TESTUJ.py
+          if ($LASTEXITCODE -ne 0) { throw 'Regression failed' }
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
+          $p=Start-Process ./dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)) { throw 'UI smoke failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-RC7-ALIGN-GUARD-Windows-x64
+          path: src/dist/DSCompare/**
+          if-no-files-found: error
+          retention-days: 14
+  cad:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        model: [v2, trident]
+        case: [shift, revision_shift, revision]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: DSCompare-RC7-ALIGN-GUARD-Windows-x64
+          path: app
+      - name: Prepare matching real STEP CAD test harness
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_RC7_SOURCES.zip src
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Run real large CAD scenarios on frozen Windows EXE
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path src).Path
+          if ('${{ matrix.case }}' -eq 'revision') {
+            python src/ci/real_revision_without_shift.py app/DSCompare.exe ${{ matrix.model }}
+          } else {
+            python src/ci/large_exe.py app/DSCompare.exe ${{ matrix.model }} ${{ matrix.case }}
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Real CAD test failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RC7-ALIGN-GUARD-${{ matrix.model }}-${{ matrix.case }}
+          path: evidence/**
+          if-no-files-found: warn
+          retention-days: 14
