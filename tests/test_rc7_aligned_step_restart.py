@@ -85,3 +85,33 @@ def test_fresh_step_comparison_checks_geometry_despite_integral_drift():
     changed=_relocate(b,np.eye(3),np.array([.03,0,0]))
     records=compare([a],[changed],.01,step_reexport_tolerance=True)
     assert not any(r.status in ('SAME','RENAMED') for r in records)
+
+
+def test_repeated_parts_keep_shared_definitions_after_step(tmp_path):
+    from dsac29.geometry_registry import GeometryRegistry
+    first=_assembly()[0]
+    parts=[replace(_relocate(first,np.eye(3),np.array([i*40.,0.,0.])),
+                   name='same-name',path=f'ROOT/{i}') for i in range(30)]
+    restored,_,stats=save_aligned_step_and_reload(parts,tmp_path,.01)
+    assert stats['definitions_created']==1
+    assert stats['definitions_reused']==29
+    registry=GeometryRegistry()
+    assert len({registry.definition(p) for p in restored})==1
+    for old in parts:
+        new=next(p for p in restored if p.path==old.path)
+        assert np.linalg.norm(new.center-old.center)<1.e-6
+
+
+def test_fresh_comparison_scopes_native_worker_session():
+    from dsac29.aligned_step_restart import run_fresh_comparison
+    from dsac29.native_session import current
+    assert current() is None
+    def large():
+        assert current() is not None
+        return 123
+    assert run_fresh_comparison(large,600)==123
+    assert current() is None
+    assert run_fresh_comparison(lambda: current(),10) is None
+    with pytest.raises(ValueError):
+        run_fresh_comparison(lambda: (_ for _ in ()).throw(ValueError()),600)
+    assert current() is None

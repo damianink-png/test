@@ -104,16 +104,32 @@ def save_aligned_step_and_reload(parts, output, tolerance, max_solids=20000, pro
     BRep_Builder().MakeCompound(compound)
     root = tool.AddShape(compound, True)
     TDataStd_Name.Set_s(root, TCollection_ExtendedString('DS_COMPARE_B_WYROWNANY'))
+    from .geometry_registry import GeometryRegistry
+    registry = GeometryRegistry()
+    definitions = {}
+    definitions_created = 0
     for occurrence_index, part in enumerate(parts):
         occurrence_name=f'DSC_OCC_{occurrence_index:08d}'
         loc = part.shape.Location()
-        local = _single_solid_without_wrapper(part.shape.Located(TopLoc_Location()))
-        local = BRepBuilderAPI_Copy(local, False, False).Shape()
-        label = tool.NewShape()
-        tool.SetShape(label, local)
-        if label.IsNull():
-            raise RuntimeError('Wyrównany STEP: nie można dodać bryły '+part.name)
-        TDataStd_Name.Set_s(label, TCollection_ExtendedString(occurrence_name))
+        key = (registry.definition(part), int(part.shape.Orientation()))
+        pool = definitions.setdefault(key, [])
+        # Reuse exact native definitions, never group by numeric signatures.
+        # Coincident instances need a distinct topology/label to survive STEP.
+        chosen = next((entry for entry in pool
+                       if not any(part.shape.IsEqual(previous) for previous in entry[1].get(hash(part.shape), ()))), None)
+        if chosen is None:
+            local = _single_solid_without_wrapper(part.shape.Located(TopLoc_Location()))
+            local = BRepBuilderAPI_Copy(local, False, False).Shape()
+            label = tool.NewShape()
+            tool.SetShape(label, local)
+            if label.IsNull():
+                raise RuntimeError('Wyrównany STEP: nie można dodać bryły '+part.name)
+            definitions_created += 1
+            TDataStd_Name.Set_s(label, TCollection_ExtendedString(f'DSC_DEF_{definitions_created:08d}'))
+            chosen = (label, {})
+            pool.append(chosen)
+        label, placements = chosen
+        placements.setdefault(hash(part.shape), []).append(part.shape)
         instance = tool.AddComponent(root, label, loc)
         if instance.IsNull():
             raise RuntimeError('Wyrównany STEP: nie można dodać wystąpienia '+part.name)
@@ -138,8 +154,17 @@ def save_aligned_step_and_reload(parts, output, tolerance, max_solids=20000, pro
     restored = _match_imported(parts, imported, tolerance, occurrence_ids=True)
     diagnostics = {'path': str(target), 'solids_expected': len(parts),
                    'solids_reimported': len(imported), 'write_s': round(write_s,3),
+                   'definitions_created': definitions_created,
+                   'definitions_reused': len(parts)-definitions_created,
                    'total_s': round(perf_counter()-t0,3),
                    'validation': 'unique_occurrence_id_bijection_only_not_geometry_proof'}
     (folder / 'WERYFIKACJA_IMPORTU.json').write_text(
         json.dumps(diagnostics, ensure_ascii=False, indent=2), encoding='utf-8')
     return restored, target, diagnostics
+
+
+def run_fresh_comparison(compare_call, solid_count):
+    """Reuse a bounded native worker session, never reuse old shape proofs."""
+    from .native_session import world_session
+    with world_session(solid_count >= 600):
+        return compare_call()

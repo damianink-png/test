@@ -38,7 +38,8 @@ anchor2="            if alignment.get('applied') and len(proven)==len(a)==len(b)
 assert s.count(anchor2) == 1, 'RC7 CLI full proof shortcut anchor changed'
 s=s.replace(anchor2,"""            if restart_from_aligned_step:
                 with trace.phase('fresh_comparison_from_aligned_step'):
-                    rec=do_compare()
+                    from .aligned_step_restart import run_fresh_comparison
+                    rec=run_fresh_comparison(do_compare, max(len(a),len(b)))
             elif alignment.get('applied') and len(proven)==len(a)==len(b):""")
 ast.parse(s)
 cli.write_text(s,encoding='utf-8')
