@@ -24,6 +24,11 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import ast
+          for path,lo,hi in [('dsac29/deferred_alignment.py',17,123),('dsac29/cli.py',110,153)]:
+              src=(Path('rc9/src')/path).read_text(encoding='utf-8').splitlines()
+              print('FULL_SOURCE',path)
+              for i in range(lo-1,min(hi,len(src))):
+                  print(f'SOURCE_{i+1}: {src[i][:220]}')
           for name in ('dsac29/cli.py','dsac29/deferred_alignment.py','dsac29/alignment.py','ci/large_exe.py'):
               p=Path('rc9/src')/name
               s=p.read_text(encoding='utf-8',errors='replace').splitlines()
