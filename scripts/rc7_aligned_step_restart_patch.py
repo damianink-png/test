@@ -44,3 +44,23 @@ module = root / 'dsac29' / 'aligned_step_restart.py'
 assert module.is_file(), 'Copy aligned_step_restart.py into source tree first'
 ast.parse(module.read_text(encoding='utf-8'))
 print('STEP aligned round-trip restart installed; default on after verified alignment')
+
+
+# The original R13 regression expected reusing a certified in-memory comparison
+# after alignment. That contradicts the newly requested STEP round-trip restart.
+# Replace it with stronger proof of an independent second pass, a saved STEP,
+# and fresh geometry context. Non-aligned assemblies still use only one pass.
+test_file = root / 'tests' / 'test_r13_deferred_alignment.py'
+test = test_file.read_text(encoding='utf-8')
+old_assert = " assert len(contexts)==1  # reuse all proven pairs without repeating compare"
+new_assert = """ assert len(contexts)==2  # stage 1 discovery followed by independent STEP reimport comparison
+ assert contexts[0] is not contexts[1]  # no stale geometry certificates after round-trip
+ aligned_step=other/'out'/'_WYROWNANY_STEP'/'B_WYROWNANY.step'
+ assert aligned_step.is_file() and aligned_step.stat().st_size>500
+ summary=json.loads((other/'out'/'PODSUMOWANIE.json').read_text())
+ assert summary['alignment']['aligned_step_restart']['solids_reimported']==len(b)
+ assert summary['statuses'].get('SAME',0)==len(a)"""
+assert test.count(old_assert)==1, 'Unexpected original R13 regression assertion'
+test_file.write_text(test.replace(old_assert,new_assert),encoding='utf-8')
+ast.parse(test_file.read_text(encoding='utf-8'))
+print('Updated R13 regression to require independent compare after saved/reimported STEP')
