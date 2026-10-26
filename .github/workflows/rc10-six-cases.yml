@@ -36,6 +36,10 @@ jobs:
           if (-not $build) { throw 'RC10 build entrypoint missing in archive' }
           Push-Location $build.DirectoryName
           try { & $build.FullName; if ($LASTEXITCODE -ne 0) { throw "RC10 build failed: $LASTEXITCODE" } } finally { Pop-Location }
+      - name: Configure native crash diagnostics
+        shell: pwsh
+        run: |
+          ./ci/rc10_diagnostics.ps1 -OutputDirectory diagnostics
       - name: Run real assembly regression
         shell: pwsh
         env:
@@ -55,6 +59,7 @@ jobs:
           if (-not $package) { throw 'RC10 dsac29 package not found after extraction' }
           $sourceRoot = $package.Parent.FullName
           $env:PYTHONPATH = $sourceRoot
+          $env:PYTHONUNBUFFERED = '1'
           Write-Host "RC10 source root: $sourceRoot"
           python -c 'import dsac29; print(dsac29.__file__)'
           if ($LASTEXITCODE -ne 0) { throw 'RC10 Python import preflight failed' }
@@ -70,6 +75,7 @@ jobs:
         with:
           name: RC10-${{ matrix.model }}-${{ matrix.scenario }}-evidence
           path: |
+            diagnostics/**
             **/CRASH_STACK.txt
             **/*.log
             **/evidence/**
