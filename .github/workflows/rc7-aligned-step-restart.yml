@@ -2,6 +2,10 @@ name: DS Compare RC7 - aligned STEP reimport and six real CAD tests
 # Large 6-case CAD matrix runs only after the fast small-CAD gate passes.
 # Avoid re-running 1500+ solids on every diagnostic commit.
 on:
+  push:
+    branches: [audit/dscompare-rc7-aligned-step-restart-20261026]
+    paths:
+      - .github/workflows/rc7-aligned-step-restart.yml
   workflow_dispatch:
 permissions:
   contents: read
@@ -39,7 +43,7 @@ jobs:
           ./BUDUJ_WINDOWS.ps1 -InstallOnly
           if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
           python -m pip install pytest
-          python -m pytest -q tests/test_rc7_parametric_proof.py tests/test_rc7_aligned_step_restart.py
+          python -m pytest -q tests/test_rc7_parametric_proof.py tests/test_rc7_aligned_step_restart.py tests/test_r13_deferred_alignment.py::test_single_comparison_without_shift_and_reused_cache_after_shift
           if ($LASTEXITCODE -ne 0) { throw 'STEP round-trip unit tests failed' }
           python TESTUJ.py
           if ($LASTEXITCODE -ne 0) { throw 'Regression failed' }
