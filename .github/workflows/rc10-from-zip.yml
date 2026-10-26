@@ -1,0 +1,60 @@
+name: RC10 ZIP inspection and Windows build
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/rc10-from-zip.yml'
+      - 'DSCompare_RC10_GitHub_CI.zip'
+      - 'DSCompare-RC10-sources.zip'
+permissions:
+  contents: read
+jobs:
+  inspect-build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect both RC10 archives
+        shell: pwsh
+        run: |
+          @'
+          import zipfile, pathlib
+          for name in ("DSCompare_RC10_GitHub_CI.zip","DSCompare-RC10-sources.zip"):
+              p=pathlib.Path(name)
+              print("ARCHIVE",name,"EXISTS",p.exists(),"BYTES",p.stat().st_size if p.exists() else -1,flush=True)
+              if not p.exists(): continue
+              with zipfile.ZipFile(p) as z:
+                  bad=z.testzip()
+                  print("ZIP_INTEGRITY",bad or "OK", "MEMBERS",len(z.infolist()),flush=True)
+                  for item in z.infolist():
+                      print("ZIP_ENTRY",item.filename,item.file_size,flush=True)
+          '@ | python -
+      - name: Extract CI package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force rc10 | Out-Null
+          Expand-Archive -LiteralPath DSCompare_RC10_GitHub_CI.zip -DestinationPath rc10 -Force
+          Get-ChildItem rc10 -Recurse -File | Select-Object -ExpandProperty FullName
+      - name: Attempt RC10 Windows compilation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $build = Get-ChildItem rc10 -Recurse -File -Filter BUDUJ_WINDOWS.ps1 | Select-Object -First 1
+          if ($build) {
+            Push-Location $build.DirectoryName
+            try { & $build.FullName; if ($LASTEXITCODE -ne 0) { throw "Build exit code $LASTEXITCODE" } } finally { Pop-Location }
+          } else {
+            $scripts = Get-ChildItem rc10 -Recurse -File -Filter '*.ps1' | Where-Object { $_.Name -match 'build|kompil|compile' }
+            Write-Host 'Available build scripts:'; $scripts | Select-Object -ExpandProperty FullName
+            throw 'No verified BUDUJ_WINDOWS.ps1 entrypoint; inspect archive listing before choosing build command'
+          }
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC10-build-output-and-sources
+          path: |
+            rc10/**/dist/**
+            rc10/**/build/**
+            rc10/**/CRASH_STACK.txt
+          if-no-files-found: warn
