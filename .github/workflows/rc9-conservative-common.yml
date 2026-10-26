@@ -6,6 +6,7 @@ on:
       - '.github/workflows/rc9-conservative-common.yml'
 permissions:
   contents: read
+  actions: read
 env:
   PYTHONUTF8: '1'
   PYTHONUNBUFFERED: '1'
