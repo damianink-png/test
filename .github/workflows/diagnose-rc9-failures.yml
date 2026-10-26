@@ -1,0 +1,49 @@
+name: Diagnose strict RC9 CAD failures
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/diagnose-rc9-failures.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect actual failed CAD artifacts without extracting large STEP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import os,urllib.request,zipfile,io,json
+          ids={
+            'new_trident_revision':12695070973,
+            'new_v2_shift':12695615298,
+            'new_trident_shift':12694541713,
+            'new_v2_revision_shift':12694341924,
+          }
+          for label,art in ids.items():
+            print('\n===== ARTIFACT',label,art,'=====',flush=True)
+            req=urllib.request.Request(f'https://api.github.com/repos/damianink-png/test/actions/artifacts/{art}/zip',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+            with urllib.request.urlopen(req,timeout=120) as r: raw=r.read()
+            with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              for n in z.namelist():
+                inf=z.getinfo(n)
+                print('ENTRY',n,inf.file_size)
+                if inf.file_size>2_000_000 or not n.lower().endswith(('.txt','.json','.log','.stderr','.stdout','.csv','.xml')):continue
+                data=z.read(n).decode('utf-8','replace')
+                if n.lower().endswith('.json'):
+                  try:
+                    obj=json.loads(data)
+                    if isinstance(obj,dict):
+                      for key in ('error','exception','traceback','status','seconds','returncode','alignment','summary','reason','ram_peak_mb','peak_rss_mb'):
+                        if key in obj:print('FIELD',key,str(obj[key])[:1600])
+                  except Exception:pass
+                lines=data.splitlines()
+                hits=[x for x in lines if any(k in x.lower() for k in ('error','exception','traceback','timeout','fatal','failed','brep','incomplete','alignment','memory','peak','limit','aborted','exit','terminated','same','common','stage'))]
+                for line in hits[-70:]:print('LOG',line[:650])
+                if not hits:
+                  for line in lines[-12:]:print('TAIL',line[:500])
+          PY
