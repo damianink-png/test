@@ -1,0 +1,60 @@
+name: RC9 alignment call path and export evidence audit
+on:
+  push:
+    paths: ['.github/workflows/rc9-alignment-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download pinned source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12650346634/zip > src.zip
+          unzip -q src.zip -d source
+          unzip -q source/DSCompare_RC9_STABILITY_SOURCES.zip -d rc9
+      - name: Inspect relevant source and test checks
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+          for name in ('dsac29/cli.py','dsac29/deferred_alignment.py','dsac29/alignment.py','ci/large_exe.py'):
+              p=Path('rc9/src')/name
+              s=p.read_text(encoding='utf-8',errors='replace').splitlines()
+              print('\n###',name,len(s))
+              keywords=('align_assembly','_align_sparse_translation','propose(','alignment_approval','registered','revision_shift','same!=','expected','original_coordinates','aligned.step','--align-auto','--no-bom')
+              indexes={i for i,l in enumerate(s) if any(k in l for k in keywords)}
+              expanded=sorted({j for i in indexes for j in range(max(0,i-4),min(len(s),i+9))})
+              prev=-2
+              for i in expanded[:750]:
+                  if i>prev+1:print('...')
+                  print(f'{i+1}: {s[i][:220]}')
+                  prev=i
+          PY
+      - name: Check RC9 real exported STEP and HTML artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12687413769/zip > result.zip
+          python - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('result.zip') as z:
+              for i in z.infolist():
+                  n=i.filename.lower()
+                  if any(n.endswith(e) for e in ('.step','.stp','.html','.csv','.json')):
+                      print('ARTIFACT',i.filename,'bytes',i.file_size)
+                      if n.endswith(('.step','.stp')) and i.file_size>100000:
+                          with z.open(i) as f:
+                              text=f.read(1024*1024*8).decode('latin-1',errors='ignore')
+                          print('STEP_HEADER',text[:160].replace('\n',' '))
+                          print('STEP_STYLE_SAMPLE', {k:text.count(k) for k in ('COLOUR_RGB','STYLED_ITEM','PRESENTATION_STYLE_ASSIGNMENT')},'first_8MB_only')
+                      if n.endswith('.html'):
+                          with z.open(i) as f: head=f.read(100000).decode('utf-8',errors='ignore')
+                          print('HTML_TAGS', {k:k in head.lower() for k in ('<html','<canvas','three','tree')})
+          PY
