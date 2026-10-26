@@ -183,9 +183,29 @@ def save_aligned_step_and_reload(parts, output, tolerance, max_solids=20000, pro
         progress(f'Wyrównanie: zapisano {len(parts)} wystąpień w {target.name}; ponowny import…')
     # Do not use cache: reimport is an intentional independent round-trip.
     imported = load_step_persistent(str(target), max_solids=max_solids, progress=progress)
-    restored = _match_imported(parts, imported, tolerance)
+    # A manual comparison of A against B_WYROWNANY.step does not require
+    # restoring the old B occurrence labels. A failed metadata association
+    # must not prevent the independent B-Rep comparison from running.
+    # Preserve fail-closed validation of lost solids / invalid numbers.
+    if len(imported) != len(parts):
+        raise RuntimeError(f'Wyrównany STEP: liczba brył {len(imported)} != {len(parts)}')
+    for item in imported:
+        if not all(math.isfinite(float(v)) for v in (*item.center, item.volume, item.area)):
+            raise RuntimeError('Invalid STEP numeric metadata')
+    association_warning = None
+    try:
+        restored = _match_imported(parts, imported, tolerance)
+    except RuntimeError as exc:
+        if not str(exc).startswith('Wyrównany STEP: brak jednoznacznie odpowiadającego elementu'):
+            raise
+        # Same behavior as selecting the aligned STEP manually as model B.
+        # Keep the imported occurrence names/paths, not guessed source labels.
+        restored = imported
+        association_warning = str(exc)
     renamed_occurrences = sum(a.name != b.name for a,b in zip(restored, imported))
     diagnostics = {'path': str(target), 'solids_expected': len(parts),
+                   'metadata_association': 'imported_step_native' if association_warning else 'source_occurrences_restored',
+                   'metadata_association_warning': association_warning,
                    'step_names_recovered_from_unique_metadata': renamed_occurrences,
                    'solids_reimported': len(imported), 'write_s': round(write_s,3),
                    'total_s': round(perf_counter()-t0,3),
