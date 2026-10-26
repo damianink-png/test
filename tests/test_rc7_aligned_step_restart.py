@@ -166,3 +166,12 @@ def test_roundtrip_repeated_names_with_global_shift(tmp_path,count):
         assert np.linalg.norm(np.array(old.center)-np.array(new.center))<.001
         assert abs(old.volume-new.volume)<.001
         assert abs(old.area-new.area)<.001
+
+
+def test_roundtrip_rejects_nonfinite_centroid_metadata():
+    # A NaN centroid must never silently pass a distance threshold.
+    parts=_assembly()
+    corrupt=list(parts)
+    corrupt[0]=replace(corrupt[0],center=(float('nan'),)+tuple(corrupt[0].center[1:]))
+    with pytest.raises(RuntimeError):
+        _match_imported(parts,corrupt,0.01)
