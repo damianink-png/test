@@ -43,6 +43,27 @@ def _match_imported(original, imported, tolerance):
             metric = (dc, vol_error, area_error, idx)
             if best is None or metric < best[0]:
                 best = (metric, idx)
+        if best is not None:
+            # Multiple occurrences with the same name and indistinguishable
+            # spatial/scalar metadata cannot be assigned stable source paths.
+            # A deterministic index choice would invent occurrence identity.
+            ambiguous=[]
+            for idx in candidates:
+                if idx in used or idx == best[1]:
+                    continue
+                old=original[idx]
+                dc=float(sum((float(x)-float(y))**2 for x,y in zip(old.center,part.center)))**.5
+                ve=abs(float(old.volume)-float(part.volume))
+                ae=abs(float(old.area)-float(part.area))
+                if (abs(dc-best[0][0])<=1.e-7 and
+                    abs(ve-best[0][1])<=1.e-6 and
+                    abs(ae-best[0][2])<=1.e-6):
+                    ambiguous.append(idx)
+            if ambiguous:
+                raise RuntimeError(
+                    'Wyrównany STEP: brak jednoznacznie odpowiadającego elementu '
+                    +part.name+'; nierozróżnialne wystąpienia o tej samej nazwie: '
+                    +str([best[1]]+ambiguous))
         if best is None:
             # STEPCAF may replace an instance name with its shared definition
             # name. Recover metadata ONLY when an otherwise unmatched original
