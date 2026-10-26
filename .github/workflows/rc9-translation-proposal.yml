@@ -1,0 +1,21 @@
+name: RC9 robust translation proposal tests
+on:
+  push:
+    paths:
+      - 'patches/rc9/robust_translation.py'
+      - 'patches/rc9/test_robust_translation.py'
+      - '.github/workflows/rc9-translation-proposal.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  translation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pytest
+      - run: python -m pytest -q patches/rc9/test_robust_translation.py
