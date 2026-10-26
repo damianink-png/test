@@ -1,6 +1,7 @@
 name: DS Compare RC7 - aligned STEP reimport and six real CAD tests
 # Large 6-case CAD matrix runs only after the fast small-CAD gate passes.
 # Avoid re-running 1500+ solids on every diagnostic commit.
+# RC7 native STEP metadata fallback validated by 23/23 small Windows tests (40315671293); launch full six-CAD verification.
 on:
   push:
     branches: [audit/dscompare-rc7-aligned-step-restart-20261026]
