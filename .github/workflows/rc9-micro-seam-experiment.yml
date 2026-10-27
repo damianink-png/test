@@ -45,6 +45,23 @@ jobs:
           from OCP.TopoDS import TopoDS_Shape
           from OCP.BRep import BRep_Builder
           from OCP.BRepTools import BRepTools
+          # Trace the first remaining exact-trim failure after micro-seam cleanup.
+          proof_path=pathlib.Path('rc9/src/dsac29/parametric_identity.py')
+          code=proof_path.read_text(encoding='utf-8')
+          probes={
+              "if not surface_equal(fa[i],fb[j],face_data[i][4],tol):return False":
+              "if not surface_equal(fa[i],fb[j],face_data[i][4],tol):print('MICRO_FAIL_SURFACE',i,j,flush=True);return False",
+              "if len(wa)!=len(wb) or not wa:return False":
+              "if len(wa)!=len(wb) or not wa:print('MICRO_FAIL_WIRE_COUNT',i,j,len(wa),len(wb),flush=True);return False",
+              "if not options[-1]:return False":
+              "if not options[-1]:print('MICRO_FAIL_WIRE',i,j,k,flush=True);return False",
+              "if not perfect(options):return False":
+              "if not perfect(options):print('MICRO_FAIL_ASSIGN',i,j,flush=True);return False",
+          }
+          for old,new in probes.items():
+              assert old in code,old
+              code=code.replace(old,new)
+          proof_path.write_text(code,encoding='utf-8')
           from dsac29.geometry import describe
           from dsac29.step_reexport_tolerance import reexport_equivalent_world
           def read(p):
