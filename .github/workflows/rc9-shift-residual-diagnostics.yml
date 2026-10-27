@@ -1,0 +1,55 @@
+name: RC9 faceproof shift residual diagnostics
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/rc9-shift-residual-diagnostics.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download pinned source and two failed large-case evidence archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os,subprocess,zipfile,json,pathlib,collections
+          refs={'v2_shift':12699481075,'trident_shift':12699485972}
+          for label,aid in refs.items():
+              print('====',label,'====',flush=True)
+              with open('/tmp/evidence.zip','wb') as f:
+                  subprocess.run(['gh','api',f'repos/damianink-png/test/actions/artifacts/{aid}/zip'],stdout=f,check=True)
+              with zipfile.ZipFile('/tmp/evidence.zip') as z:
+                  files=z.namelist()
+                  for n in files:
+                      info=z.getinfo(n)
+                      if any(k in n.lower() for k in ('failed_brep','test_result','_wynik','_etapy','_postep','comparison.json','result.json')):
+                          print('FILE',n,info.file_size)
+                  for n in files:
+                      low=n.lower()
+                      if not low.endswith(('.json','.jsonl','.txt','.log')) or z.getinfo(n).file_size>4_000_000:continue
+                      if not any(k in low for k in ('test_result','_wynik','_etapy','_postep','comparison','alignment','diagnostyka')):continue
+                      s=z.read(n).decode('utf-8','replace')
+                      if low.endswith('.json'):
+                          try:
+                              obj=json.loads(s)
+                              if isinstance(obj,dict):
+                                  print('JSON',n,'KEYS',list(obj.keys()))
+                                  for k in ('status','result','error','seconds','counts','summary','alignment','timings','statistics','same','new_solids','old_solids'):
+                                      if k in obj:print('FIELD',k,str(obj[k])[:1800])
+                                  if 'records' in obj:
+                                      rec=obj['records']
+                                      if isinstance(rec,list):
+                                          neg=[r for r in rec if r.get('status') not in ('SAME',)]
+                                          print('NEGATIVE_RECORDS',len(neg),'SAMPLE',str(neg[:8])[:3000])
+                          except Exception as e:print('JSON_ERROR',str(e))
+                      else:
+                          lines=s.splitlines()
+                          matches=[l for l in lines if any(k in l.lower() for k in ('world_negative','failed','brep','proof','same','alignment','timeout','error','stage','common','inconclusive'))]
+                          for l in matches[-45:]:print('TRACE',n,l[:450])
+          PY
