@@ -1,0 +1,34 @@
+name: RC9 inspect strict face proof source
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/rc9-proof-source-inspect.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read pinned RC9 B-Rep proof implementation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12650346634/zip > /tmp/src_artifact.zip
+          mkdir -p /tmp/src_artifact rc9
+          unzip -q /tmp/src_artifact.zip -d /tmp/src_artifact
+          unzip -q /tmp/src_artifact/DSCompare_RC9_STABILITY_SOURCES.zip -d rc9
+          python - <<'PY'
+          import pathlib,ast
+          p=pathlib.Path('rc9/src/dsac29/step_reexport_tolerance.py')
+          s=p.read_text(encoding='utf-8')
+          lines=s.splitlines()
+          tree=ast.parse(s)
+          for n in tree.body:
+              if isinstance(n,(ast.FunctionDef,ast.ClassDef)):
+                  print('FUNCTION',n.name,n.lineno,n.end_lineno)
+                  if n.name in ('reexport_equivalent_world','_faces','_face_wires','_edge_signatures','_edge_features','coarse_candidate','_wires','_vertices','_face_shape'):
+                      print('\n'.join(f'{i+1}: {lines[i]}' for i in range(n.lineno-1,n.end_lineno)))
+          PY
