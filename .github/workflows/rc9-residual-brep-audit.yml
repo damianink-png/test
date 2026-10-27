@@ -37,7 +37,7 @@ jobs:
           from OCP.BRep import BRep_Builder
           from OCP.BRepTools import BRepTools
           from OCP.TopExp import TopExp_Explorer
-          from OCP.TopAbs import TopAbs_FACE,TopoAbs_EDGE
+          from OCP.TopAbs import TopAbs_ShapeEnum
           from OCP.BRepGProp import BRepGProp
           from OCP.GProp import GProp_GProps
           from OCP.BRepBndLib import BRepBndLib
@@ -54,7 +54,7 @@ jobs:
               p=GProp_GProps();BRepGProp.VolumeProperties_s(s,p)
               box=Bnd_Box();BRepBndLib.Add_s(s,box)
               n=[]
-              for typ in (TopoAbs_FACE,TopoAbs_EDGE):
+              for typ in (TopAbs_ShapeEnum.TopAbs_FACE,TopAbs_ShapeEnum.TopAbs_EDGE):
                   exp=TopExp_Explorer(s,typ);ct=0
                   while exp.More():ct+=1;exp.Next()
                   n.append(ct)
