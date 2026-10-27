@@ -66,14 +66,27 @@ def propose_translation(a: Sequence[Anchor], b: Sequence[Anchor],
     # One repeated family (e.g. bolts) cannot establish a global transform.
     if len(keys) < 2:
         return None
+    # Round-robin across independent signature families. With a bounded
+    # hypothesis budget, exhausting the first family can hide the actual
+    # global frame supported by many other families.
     hypotheses = []
-    for k in keys:
-        for x in ga[k]:
-            for y in gb[k]:
-                hypotheses.append(tuple(x.center[i]-y.center[i] for i in range(3)))
-                if len(hypotheses) >= max_hypotheses: break
-            if len(hypotheses) >= max_hypotheses: break
-        if len(hypotheses) >= max_hypotheses: break
+    family_pairs = [
+        iter((x, y) for x in ga[k] for y in gb[k])
+        for k in keys
+    ]
+    active = list(family_pairs)
+    while active and len(hypotheses) < max_hypotheses:
+        remaining = []
+        for pairs in active:
+            try:
+                x, y = next(pairs)
+            except StopIteration:
+                continue
+            hypotheses.append(tuple(x.center[i]-y.center[i] for i in range(3)))
+            remaining.append(pairs)
+            if len(hypotheses) >= max_hypotheses:
+                break
+        active = remaining
     if not hypotheses: return None
     # Exact deduplication only: close hypotheses may have different support at
     # the tolerance boundary and must not be merged.
