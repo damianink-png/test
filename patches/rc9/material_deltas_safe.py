@@ -68,6 +68,63 @@ def _check_result(result):
         raise RuntimeError('OCCT Boolean returned invalid or null topology')
     return result
 
+@dataclass(frozen=True)
+class RegionEvidence:
+    """Pair-scoped material regions from a trusted isolated OCCT calculation.
+
+    Like CommonEvidence, this is provenance, not a geometric SAME proof.
+    """
+    regions: MaterialRegions
+    old_shape: object
+    new_shape: object
+    tolerance_mm: float
+
+
+def bind_regions(regions, old, new, tolerance):
+    """Bind a verified producer's material regions to exact source shapes."""
+    from .brep_safety import is_valid
+    tol = float(tolerance)
+    if not 0. < tol <= .01:
+        raise ValueError('Region evidence tolerance must be within 0.01 mm')
+    if not isinstance(regions, MaterialRegions):
+        raise TypeError('Only MaterialRegions can be bound')
+    if not is_valid(old.shape) or not is_valid(new.shape):
+        raise ValueError('Cannot cache regions for invalid original B-Reps')
+    for shape in (regions.common, regions.added, regions.removed):
+        _check_result(shape)
+    if not _regions_balance(regions, old, new, tol):
+        raise ValueError('Cannot bind material regions with invalid volume balance')
+    return RegionEvidence(regions, old.shape, new.shape, tol)
+
+
+def _regions_balance(regions, old, new, tolerance):
+    import math
+    cv, av, rv = regions.common_mm3, regions.added_mm3, regions.removed_mm3
+    if not all(math.isfinite(v) and v >= 0 for v in (cv, av, rv)):
+        return False
+    limit = max(1e-3, 10.*tolerance**3, 5e-5*max(old.volume, new.volume))
+    return (abs(cv + rv - old.volume) <= limit
+            and abs(cv + av - new.volume) <= limit)
+
+
+def _matching_regions(entry, old, new, tolerance):
+    """Reject unbound, stale, repaired, or cross-pair precomputed regions."""
+    from .brep_safety import is_valid
+    if not isinstance(entry, RegionEvidence):
+        return False
+    if entry.tolerance_mm != float(tolerance):
+        return False
+    if not is_valid(old.shape) or not is_valid(new.shape):
+        return False
+    if not (entry.old_shape.IsEqual(old.shape)
+            and entry.new_shape.IsEqual(new.shape)):
+        return False
+    if not _regions_balance(entry.regions, old, new, float(tolerance)):
+        return False
+    return all(is_valid(shape) for shape in
+               (entry.regions.common, entry.regions.added, entry.regions.removed))
+
+
 def operate(klass,s,t,tolerance):
     """One-off native Boolean, used only in isolated proof operations."""
     from .boolean_ops import configured
@@ -138,12 +195,15 @@ def calculate(old,new,tolerance=0.01,*,common_shape=None):
 
 def all_changes(records,a,b,tolerance=0.01,progress=None,precomputed=None):
     """Generate once for STEP/HTML/CSV, reusing precomputed region evidence."""
-    out=dict(precomputed or {});errors={}
+    cache=dict(precomputed or {});out={};errors={}
     indices=[i for i,r in enumerate(records) if r.status=='CHANGED'
              and r.a_index is not None and r.b_index is not None]
     for n,index in enumerate(indices,1):
-        if index in out:continue
         r=records[index]
+        entry=cache.get(index)
+        if _matching_regions(entry,a[r.a_index],b[r.b_index],tolerance):
+            out[index]=entry.regions
+            continue
         if progress:progress(f'R15: podział materiału {n}/{len(indices)} — {b[r.b_index].name}')
         from .material_guard import calculate_isolated
         from .native_guard import NativeGeometryFailure
