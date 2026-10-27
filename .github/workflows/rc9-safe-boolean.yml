@@ -1,0 +1,29 @@
+name: RC9 isolated Boolean worker regression
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'patches/rc9/safe_boolean_worker.py'
+      - 'patches/rc9/test_safe_boolean_worker.py'
+      - '.github/workflows/rc9-safe-boolean.yml'
+permissions:
+  contents: read
+concurrency:
+  group: rc9-safe-boolean-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  unit:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pytest
+      - run: python -m pytest -q patches/rc9/test_safe_boolean_worker.py --junitxml=safe-boolean-tests.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc9-safe-boolean-unit-results
+          path: safe-boolean-tests.xml
+          if-no-files-found: warn
