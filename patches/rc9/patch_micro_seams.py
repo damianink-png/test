@@ -16,5 +16,14 @@ old2="if not tiny or len(tiny)>2 or sum(spans[k] for k in tiny)>tol/4:return edg
 new2="if not tiny or len(tiny)>2 or sum(spans[k] for k in tiny)>tol*2:return edges"
 if s.count(old2)!=1:raise SystemExit('Unexpected RC9 micro-edge total budget')
 s=s.replace(old2,new2)
+# Keep inline documentation consistent with the actual conservative budget.
+s=s.replace(
+    'tol/16, the sum of removed spans is <=tol/4, and at least two full',
+    'tolerance/4, the sum of removed spans is <=tolerance/4, and two full'
+)
+s=s.replace(
+    '# tol is already the stricter user tolerance/8.',
+    '# tol is user tolerance/8; the micro-seam budget is user tolerance/4.'
+)
 ast.parse(s);p.write_text(s,encoding='utf-8')
 print('Micro-seam experiment: per-edge and total AABB span <= CAD tolerance/4')
