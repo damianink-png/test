@@ -37,7 +37,7 @@ jobs:
           for n in ast.parse(src).body:
               if isinstance(n,ast.FunctionDef):
                   print('PROOF_FUNCTION',n.name,n.lineno,n.end_lineno,flush=True)
-                  if n.name in ('prove','_face_match','_edge_match','_face_identity','_same_surface','_same_trim'):
+                  if n.name in ('prove','surface_equal','edge_equal','edge_options','edge_data'):
                       print('\n'.join(f'{i+1}: {lines[i]}' for i in range(n.lineno-1,n.end_lineno)),flush=True)
           from OCP.TopoDS import TopoDS_Shape
           from OCP.BRep import BRep_Builder
@@ -48,6 +48,26 @@ jobs:
           from OCP.TopExp import TopExp_Explorer
           from OCP.TopAbs import TopAbs_FACE
           from OCP.BRepAdaptor import BRepAdaptor_Surface
+          from OCP.TopoDS import TopoDS
+          # Diagnostic instrumentation only: no modifications to production proof.
+          proof_path=pathlib.Path('rc9/src/dsac29/parametric_identity.py')
+          code=proof_path.read_text(encoding='utf-8')
+          probes={
+              "if not surface_equal(fa[i],fb[j],face_data[i][4],tol):return False":
+              "if not surface_equal(fa[i],fb[j],face_data[i][4],tol):print('PROOF_MISMATCH_SURFACE',i,j,flush=True);return False",
+              "if len(wa)!=len(wb) or not wa:return False":
+              "if len(wa)!=len(wb) or not wa:print('PROOF_MISMATCH_WIRE_COUNT',i,j,len(wa),len(wb),flush=True);return False",
+              "if not options[-1]:return False":
+              "if not options[-1]:print('PROOF_MISMATCH_WIRE',i,j,k,flush=True);return False",
+              "if not perfect(options):return False":
+              "if not perfect(options):print('PROOF_MISMATCH_WIRE_ASSIGN',i,j,flush=True);return False",
+              "except Exception:return False":
+              "except Exception as exc:print('PROOF_EXCEPTION',type(exc).__name__,str(exc)[:300],flush=True);return False",
+          }
+          for old,new in probes.items():
+              if old not in code: print('PROBE_NOT_FOUND',old,flush=True)
+              else: code=code.replace(old,new)
+          proof_path.write_text(code,encoding='utf-8')
           from dsac29.geometry import describe
           from dsac29.step_reexport_tolerance import reexport_equivalent_world
           def read(p):
@@ -57,13 +77,13 @@ jobs:
           def stats(s):
               exp=TopExp_Explorer(s,TopAbs_FACE);typ=collections.Counter()
               while exp.More():
-                  typ[str(BRepAdaptor_Surface(exp.Current()).GetType())]+=1
+                  typ[str(BRepAdaptor_Surface(TopoDS.Face_s(exp.Current())).GetType())]+=1
                   exp.Next()
               return typ
           def alarm(*args):raise TimeoutError('native proof budget exceeded')
           signal.signal(signal.SIGALRM,alarm)
           with zipfile.ZipFile('/tmp/failed.zip') as z,tempfile.TemporaryDirectory() as tmp:
-              for n in (1,3,4,5,6,10):
+              for n in (1,6,10,3,4,5):
                   pref=f'evidence/comparison/FAILED_BREP/world_negative_{n:02d}'
                   a=pathlib.Path(tmp)/'A.brep';b=pathlib.Path(tmp)/'B.brep'
                   a.write_bytes(z.read(pref+'/A.brep'));b.write_bytes(z.read(pref+'/B.brep'))
