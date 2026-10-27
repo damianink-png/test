@@ -1,0 +1,78 @@
+name: RC9 faceproof residual B-Rep geometry audit
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/rc9-residual-brep-audit.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native CAD reader
+        run: python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Download pinned source and real failed geometry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12650346634/zip > /tmp/src_artifact.zip
+          mkdir -p /tmp/src_artifact rc9
+          unzip -q /tmp/src_artifact.zip -d /tmp/src_artifact
+          unzip -q /tmp/src_artifact/DSCompare_RC9_STABILITY_SOURCES.zip -d rc9
+          gh api repos/damianink-png/test/actions/artifacts/12699485972/zip > /tmp/fail_artifact.zip
+      - name: Inspect actual negative B-Rep pairs and strict proof
+        env:
+          PYTHONPATH: rc9/src
+        run: |
+          python - <<'PY'
+          import zipfile,os,tempfile,pathlib,collections,inspect
+          import numpy as np
+          from OCP.TopoDS import TopoDS_Shape
+          from OCP.BRep import BRep_Builder
+          from OCP.BRepTools import BRepTools
+          from OCP.TopExp import TopExp_Explorer
+          from OCP.TopAbs import TopAbs_FACE,TopoAbs_EDGE
+          from OCP.BRepGProp import BRepGProp
+          from OCP.GProp import GProp_GProps
+          from OCP.BRepBndLib import BRepBndLib
+          from OCP.Bnd import Bnd_Box
+          from dsac29.geometry import describe
+          from dsac29.step_reexport_tolerance import reexport_equivalent_world
+          from dsac29 import step_reexport_tolerance as mod
+          print('PROOF_SOURCE',inspect.getsource(reexport_equivalent_world)[:18000])
+          def read(path):
+              s=TopoDS_Shape();b=BRep_Builder()
+              if not BRepTools.Read_s(s,str(path),b):raise RuntimeError(path)
+              return s
+          def stats(s):
+              p=GProp_GProps();BRepGProp.VolumeProperties_s(s,p)
+              box=Bnd_Box();BRepBndLib.Add_s(s,box)
+              n=[]
+              for typ in (TopoAbs_FACE,TopoAbs_EDGE):
+                  exp=TopExp_Explorer(s,typ);ct=0
+                  while exp.More():ct+=1;exp.Next()
+                  n.append(ct)
+              return {'volume':p.Mass(),'bbox':box.Get(),'faces':n[0],'edges':n[1]}
+          with zipfile.ZipFile('/tmp/fail_artifact.zip') as z:
+              names=z.namelist()
+              pairs=sorted(set(n.rsplit('/',1)[0] for n in names if 'FAILED_BREP/world_negative_' in n and n.endswith('/A.brep')))
+              print('NEGATIVE_PAIRS',len(pairs))
+              with tempfile.TemporaryDirectory() as tmp:
+                  for pair in pairs:
+                      try:
+                          a=pathlib.Path(tmp)/'A.brep';b=pathlib.Path(tmp)/'B.brep'
+                          a.write_bytes(z.read(pair+'/A.brep'));b.write_bytes(z.read(pair+'/B.brep'))
+                          sa=read(a);sb=read(b)
+                          st_a=stats(sa);st_b=stats(sb)
+                          pa=describe(sa,'A','A');pb=describe(sb,'B','B')
+                          same=reexport_equivalent_world(pa,pb,.01,allow_boolean=False)
+                          print('PAIR',pair,'same',same,'A',st_a,'B',st_b,flush=True)
+                      except Exception as e:
+                          print('PAIR_ERROR',pair,type(e).__name__,str(e)[:500],flush=True)
+          PY
