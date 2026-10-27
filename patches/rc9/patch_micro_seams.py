@@ -13,7 +13,7 @@ new="tiny=[k for k,span in enumerate(spans) if span<=tol*2]"
 if s.count(old)!=1:raise SystemExit('Unexpected RC9 micro-edge implementation')
 s=s.replace(old,new)
 old2="if not tiny or len(tiny)>2 or sum(spans[k] for k in tiny)>tol/4:return edges"
-new2="if not tiny or len(tiny)>2 or sum(spans[k] for k in tiny)>tol*2:return edges"
+new2="if not tiny or len(tiny)>8 or sum(spans[k] for k in tiny)>tol*2:return edges"
 if s.count(old2)!=1:raise SystemExit('Unexpected RC9 micro-edge total budget')
 s=s.replace(old2,new2)
 # Keep inline documentation consistent with the actual conservative budget.
