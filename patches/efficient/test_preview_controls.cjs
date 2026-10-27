@@ -1,0 +1,15 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(process.argv[2],'utf8');
+const controls=source.slice(source.indexOf('function selectPreviewMode'),source.indexOf('makeTree();',source.indexOf('function selectPreviewMode')));
+assert(controls.length>0);
+const statuses=['SAME','REMOVED','ADDED','CHANGED_REMOVED','CHANGED_ADDED','MOVED_OLD'];
+const state={isolation:true,selectedId:1,itemVisible:Array(6).fill(false),checks:statuses.map(status=>({dataset:{status},checked:false})),visible:{},chunks:statuses.map((status,i)=>({status,pair_id:i===1||i===2?'pair0':'other'+i})),document:{getElementById:()=>({})},syncTree:()=>{},schedule:()=>{}};
+vm.createContext(state);vm.runInContext(controls,state);
+vm.runInContext("selectPreviewMode('all')",state);
+assert(state.itemVisible.every(Boolean)&&!state.isolation&&state.checks.every(x=>x.checked));
+vm.runInContext("selectPreviewMode('removed')",state);
+assert.deepStrictEqual(Array.from(state.checks,x=>x.checked),[false,true,false,true,false,true]);
+vm.runInContext('showRevisionPair()',state);
+assert.deepStrictEqual(Array.from(state.itemVisible),[false,true,true,false,false,false]);
+vm.runInContext("selectPreviewMode('all')",state);assert(state.itemVisible.every(Boolean));
+console.log('Preview controls: all/reset, removed material, pair A/B PASS');
