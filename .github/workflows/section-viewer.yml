@@ -1,0 +1,136 @@
+name: DS Compare section viewer - Windows build and browser verification
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/section-viewer.yml'
+      - 'patches/section/**'
+concurrency:
+  group: section-viewer-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUTF8: '1'
+  PYTHONUNBUFFERED: '1'
+  PYTHONFAULTHANDLER: '1'
+  QT_QPA_PLATFORM: offscreen
+  DSCOMPARE_IMPORT_CACHE: 'off'
+  DSCOMPARE_TRACE_BREP: '1'
+  DSCOMPARE_SAVE_FAILED_BREP: '1'
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch pinned RC9 Stability source artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = "application/vnd.github+json"; "X-GitHub-Api-Version" = "2022-11-28" }
+          Invoke-WebRequest -Uri 'https://api.github.com/repos/damianink-png/test/actions/artifacts/12650346634/zip' -Headers $headers -OutFile source_artifact.zip
+          Expand-Archive source_artifact.zip -DestinationPath source_artifact -Force
+          Expand-Archive source_artifact/DSCompare_RC9_STABILITY_SOURCES.zip -DestinationPath rc9 -Force
+          if (-not (Test-Path rc9/src/dsac29/revision_overlap.py)) { throw 'Pinned RC9 source missing' }
+          python patches/efficient/apply.py rc9/src/dsac29
+          if ($LASTEXITCODE -ne 0) { throw 'Exact reuse patch failed' }
+          python patches/rc9/patch_face_candidates.py rc9/src/dsac29/step_reexport_tolerance.py
+          if ($LASTEXITCODE -ne 0) { throw 'Face candidates patch failed' }
+          python patches/rc9/patch_micro_seams.py rc9/src/dsac29/parametric_identity.py
+          if ($LASTEXITCODE -ne 0) { throw 'Micro-seams patch failed' }
+          Copy-Item patches/rc9/test_face_candidates.py rc9/src/tests/test_face_candidates.py
+          python patches/efficient/apply_controls.py rc9/src/dsac29
+          if ($LASTEXITCODE -ne 0) { throw 'Preview controls patch failed' }
+          node patches/efficient/test_preview_controls.cjs rc9/src/dsac29/preview_template.html
+          if ($LASTEXITCODE -ne 0) { throw 'Preview behavior regression' }
+          python patches/section/apply_section.py rc9/src/dsac29
+          if ($LASTEXITCODE -ne 0) { throw 'Section patch failed' }
+          node patches/section/test_section.cjs rc9/src/dsac29/preview_template.html
+          if ($LASTEXITCODE -ne 0) { throw 'Section logic failed' }
+
+
+          Copy-Item patches/efficient/test_efficient.py rc9/src/tests/test_efficient.py
+          Copy-Item patches/efficient/test_robust_translation.py rc9/src/tests/test_robust_translation.py
+          # Tests import the installed package, never a sibling source copy.
+          (Get-Content rc9/src/tests/test_robust_translation.py -Raw).Replace('from robust_translation import', 'from dsac29.robust_translation import') | Set-Content rc9/src/tests/test_robust_translation.py -Encoding utf8
+          python patches/rc9/integrate_deferred_translation.py rc9/src/dsac29/deferred_alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Automatic deferred alignment patch failed' }
+          python -m py_compile rc9/src/dsac29/deferred_alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Deferred alignment syntax invalid' }
+          python patches/rc9/integrate_translation.py rc9/src/dsac29/alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Robust translation integration failed' }
+          python -m py_compile rc9/src/dsac29/robust_translation.py rc9/src/dsac29/alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Alignment syntax failed' }
+          python -m py_compile rc9/src/dsac29/revision_overlap.py
+          if ($LASTEXITCODE -ne 0) { throw 'RC9 patch syntax invalid' }
+      - name: Install and run small regressions
+        shell: pwsh
+        working-directory: rc9/src
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+          python -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { throw 'pytest install failed' }
+          python -m pytest -q tests/test_stability.py tests/test_efficient.py tests/test_robust_translation.py tests/test_face_candidates.py --junitxml=stability-tests.xml
+          if ($LASTEXITCODE -ne 0) { throw 'RC9 stability tests failed' }
+          # TESTUJ.py ships with a 240 s aggregate timeout, too short for the
+          # full native B-Rep suite on a shared Windows runner. Keep every test.
+          $testRunner = Get-Content TESTUJ.py -Raw
+          if (-not $testRunner.Contains('timeout=240')) { throw 'Unexpected TESTUJ.py: cannot safely adjust aggregate timeout' }
+          $testRunner = $testRunner.Replace('timeout=240', 'timeout=1800').Replace("'-q'", "'-vv','--junitxml=full-regressions.xml'")
+          Set-Content TESTUJ.py -Value $testRunner -Encoding utf8
+          python -u TESTUJ.py
+          if ($LASTEXITCODE -ne 0) { throw 'Small regressions failed' }
+      - name: Preserve small regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SECTION-VIEWER-small-regression-diagnostics
+          path: |
+            rc9/src/stability-tests.xml
+            rc9/src/full-regressions.xml
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Verify actual Edge WebGL section rendering
+        shell: pwsh
+        run: |
+          python -m pip install playwright==1.58.0
+          if ($LASTEXITCODE -ne 0) { throw 'Browser test dependency failed' }
+          $env:PYTHONPATH = (Resolve-Path rc9/src).Path
+          python patches/section/browser_test.py evidence/section
+          if ($LASTEXITCODE -ne 0) { throw 'Section rendering failed' }
+      - name: Preserve browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SECTION-VIEWER-browser
+          path: evidence/section/**
+      - name: Build patched RC9
+        shell: pwsh
+        working-directory: rc9/src
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          if (-not (Test-Path dist/DSCompare/DSCompare.exe)) { throw 'No EXE' }
+      - name: Package exact patched sources
+        shell: pwsh
+        run: |
+          $sourceItems = Get-ChildItem rc9/src | Where-Object { $_.Name -notin @('dist','build','.venv','__pycache__') }
+          Compress-Archive -Path $sourceItems.FullName -DestinationPath DSCompare-Efficient-Sources.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SECTION-VIEWER-sources
+          path: DSCompare-Efficient-Sources.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SECTION-VIEWER-FALLBACK-Windows-x64
+          path: rc9/src/dist/DSCompare/**
+          if-no-files-found: error
+          retention-days: 14
