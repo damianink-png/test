@@ -37,6 +37,8 @@ jobs:
           if (-not (Test-Path rc9/src/dsac29/revision_overlap.py)) { throw 'Pinned RC9 source missing' }
           python patches/efficient/apply.py rc9/src/dsac29
           if ($LASTEXITCODE -ne 0) { throw 'Exact reuse patch failed' }
+          python patches/rc9/patch_occt_obb.py rc9/src/dsac29
+          if ($LASTEXITCODE -ne 0) { throw 'OCCT OBB integration failed' }
           python patches/rc9/patch_optional_revision.py rc9/src/dsac29/revision_overlap.py rc9/src/tests/test_stability.py
           if ($LASTEXITCODE -ne 0) { throw 'Fail-closed optional material proof patch failed' }
           python patches/rc9/patch_face_candidates.py rc9/src/dsac29/step_reexport_tolerance.py
