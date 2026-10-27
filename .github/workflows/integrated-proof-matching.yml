@@ -1,6 +1,11 @@
 name: DS Compare integrated proof and matching - six real CAD cases
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - fix/integrated-proof-matching
+    paths:
+      - patches/rc9/INTEGRATION_READY_20261027.txt
 concurrency:
   group: integrated-proof-matching-${{ github.ref }}
   cancel-in-progress: false
