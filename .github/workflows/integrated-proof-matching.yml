@@ -46,6 +46,11 @@ jobs:
           python patches/rc9/patch_micro_seams.py rc9/src/dsac29/parametric_identity.py
           if ($LASTEXITCODE -ne 0) { throw 'Micro-seams patch failed' }
           Copy-Item patches/rc9/test_face_candidates.py rc9/src/tests/test_face_candidates.py
+          Copy-Item patches/rc9/brep_safety.py rc9/src/dsac29/brep_safety.py
+          Copy-Item patches/rc9/material_deltas_safe.py rc9/src/dsac29/material_deltas.py
+          python patches/rc9/patch_occt_pipeline.py rc9/src/dsac29
+          if ($LASTEXITCODE -ne 0) { throw 'Integrated OCCT safety and alignment patch failed' }
+          Copy-Item patches/rc9/test_occt_integration.py rc9/src/tests/test_occt_integration.py
           Copy-Item patches/rc9/safe_boolean_worker.py rc9/src/dsac29/safe_boolean_worker.py
           Copy-Item patches/rc9/test_safe_boolean_worker.py rc9/src/tests/test_safe_boolean_worker.py
           python patches/efficient/apply_controls.py rc9/src/dsac29
@@ -75,7 +80,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
           python -m pip install pytest
           if ($LASTEXITCODE -ne 0) { throw 'pytest install failed' }
-          python -m pytest -q tests/test_stability.py tests/test_efficient.py tests/test_robust_translation.py tests/test_face_candidates.py tests/test_safe_boolean_worker.py --junitxml=stability-tests.xml
+          python -m pytest -q tests/test_stability.py tests/test_efficient.py tests/test_robust_translation.py tests/test_face_candidates.py tests/test_safe_boolean_worker.py tests/test_occt_integration.py --junitxml=stability-tests.xml
           if ($LASTEXITCODE -ne 0) { throw 'RC9 stability tests failed' }
           # TESTUJ.py ships with a 240 s aggregate timeout, too short for the
           # full native B-Rep suite on a shared Windows runner. Keep every test.
@@ -149,6 +154,11 @@ jobs:
           python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
           if ($LASTEXITCODE -ne 0) { throw 'CAD test dependencies failed' }
           ./ci/rc10_diagnostics.ps1 -OutputDirectory diagnostics
+          $revisionScript = 'rc9/src/ci/real_revision_without_shift.py'
+          $revisionText = Get-Content $revisionScript -Raw
+          if (-not $revisionText.Contains(",'--no-bom'")) { throw 'Revision BOM CI contract changed' }
+          $revisionText = $revisionText.Replace(",'--no-bom'", '')
+          Set-Content -Path $revisionScript -Value $revisionText -Encoding utf8
       - name: Run real CAD assembly scenario
         shell: pwsh
         run: |
@@ -191,6 +201,11 @@ jobs:
             Write-Host "SAMPLED_COMBINED_PEAK_WORKING_SET_BYTES=$peak"
           }
           if ($exitCode -ne 0) { throw "Real CAD $model $case failed" }
+      - name: Audit real STEP HTML report and revision BOM artifacts
+        shell: pwsh
+        run: |
+          python patches/rc9/audit_artifacts.py evidence '${{ matrix.case }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Real output artifact audit failed' }
       - name: Preserve real export and crash evidence
         if: always()
         uses: actions/upload-artifact@v4
