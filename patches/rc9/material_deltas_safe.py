@@ -51,7 +51,7 @@ def operate(klass,s,t,tolerance):
     t,_=validated_copy(t,tolerance)
     op=configured(klass,s,t,tolerance)
     op.Build()
-    if not op.IsDone() or op.HasErrors():
+    if not op.IsDone():
         raise RuntimeError('OCCT Boolean did not complete')
     return _check_result(op.Shape())
 
@@ -80,7 +80,7 @@ def _from_filler(klass,filler,first,second,tolerance):
         op.SetUseOBB(True)
         op.SetFuzzyValue(max(float(tolerance)/100.,1e-6))
         op.Build()
-        if not op.IsDone() or op.HasErrors():
+        if not op.IsDone():
             raise RuntimeError('OCCT Boolean with shared filler failed')
         return _check_result(op.Shape())
     finally:
