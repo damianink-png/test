@@ -46,9 +46,17 @@ jobs:
           from pathlib import Path
           p=Path('rc9/src/ci/real_revision_without_shift.py')
           s=p.read_text(encoding='utf-8')
-          assert s.count("'--no-bom'")==1, 'Unexpected original script; refusing unverified modification'
-          s=s.replace(",'--no-bom'",'').replace(", '--no-bom'",'')
-          assert "'--no-bom'" not in s
+          import re
+          # RC9 source revisions use different quoting or omit the switch.
+          # Remove only a complete CLI argument, never change BOM defaults.
+          before=s.count('--no-bom')
+          s,n1=re.subn(r",\\s*(['\\\"])--no-bom\\1", "", s)
+          s,n2=re.subn(r"(['\\\"])--no-bom\\1\\s*,\\s*", "", s)
+          if '--no-bom' in s:
+              raise RuntimeError('Unrecognized --no-bom syntax; refusing unsafe edit')
+          print(f'BOM flag occurrences before={before}; removed={n1+n2}')
+          if before != n1+n2:
+              raise RuntimeError('Not every BOM suppression flag was removed')
           compile(s,str(p),'exec')
           p.write_text(s,encoding='utf-8')
           print('LARGE_V2_BOM_ENABLED: original test script with --no-bom removed')
