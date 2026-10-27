@@ -3,7 +3,7 @@ import pytest
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
 from dsac29.brep_safety import validated_copy,is_valid,UnprovenRepair
-from dsac29.material_deltas import calculate,operate,volume
+from dsac29.material_deltas import calculate,operate,volume,bind_common
 from dsac29.geometry import describe
 from dsac29.step_reexport_tolerance import reexport_equivalent_world
 
@@ -40,9 +40,40 @@ def test_material_regions_shared_intersection_and_volume_balance():
 def test_cached_common_reuse_preserves_regions():
     a,b=info(box(20)),info(box(25))
     common=operate(BRepAlgoAPI_Common,a.shape,b.shape,.01)
-    regions=calculate(a,b,.01,common_shape=common)
+    regions=calculate(a,b,.01,common_shape=bind_common(common,a.shape,b.shape,.01))
+    assert regions.common.IsEqual(common)
     assert abs(regions.common_mm3-volume(common))<1e-3
     assert abs(regions.added_mm3-500)<1e-3
+
+def test_raw_or_wrong_pair_common_never_reused(monkeypatch):
+    import dsac29.material_deltas as mod
+    a,b,c=info(box(20)),info(box(25)),info(box(22))
+    common=operate(BRepAlgoAPI_Common,a.shape,b.shape,.01)
+    evidence=bind_common(common,a.shape,b.shape,.01)
+    original=mod._from_filler
+    common_calls=[]
+    def observed(klass,*args,**kwargs):
+        if klass is BRepAlgoAPI_Common:
+            common_calls.append(True)
+        return original(klass,*args,**kwargs)
+    monkeypatch.setattr(mod,'_from_filler',observed)
+    # Raw shape has no pair provenance, even if valid.
+    mod.calculate(a,b,.01,common_shape=common)
+    assert len(common_calls)==1
+    # Correctly bound evidence is reused without rebuilding Common.
+    common_calls.clear()
+    mod.calculate(a,b,.01,common_shape=evidence)
+    assert not common_calls
+    # Different input B-Rep must recompute Common, not silently reuse it.
+    common_calls.clear()
+    regions=mod.calculate(c,b,.01,common_shape=evidence)
+    assert len(common_calls)==1
+    assert abs(regions.common_mm3-2200)<1e-3
+    # Tolerance changes invalidate the same pair's cache.
+    common_calls.clear()
+    mod.calculate(a,b,.005,common_shape=evidence)
+    assert len(common_calls)==1
+
 
 def test_different_geometry_never_same_from_repair_flag():
     a,b=info(box(20)),info(box(20.2))

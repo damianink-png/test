@@ -73,3 +73,36 @@ Open3D-style mesh registration also cannot establish the occurrence
 ledger or exact trimmed-surface equality. No new runtime or RAM
 measurement was made for this static audit change, and no workflow
 was triggered. The six real cases remain unverified after the CI fix.
+
+
+## Static cache-provenance hardening (2026-10-27; not yet tested)
+
+`material_deltas_safe.calculate()` previously accepted any valid `TopoDS_Shape`
+passed as `common_shape`. A valid Common from a **different pair** could be
+silently reused, and coincidental volume conservation would not independently
+prove that its surfaces belonged to the intended pair. This is a correctness
+risk for colored material-difference regions, not an established production
+failure. The new `CommonEvidence`/`bind_common()` contract retains the source
+B-Rep references and tolerance, and reuses the result only when both source
+shapes match using `TopoDS_Shape.IsEqual` (topology, location, orientation),
+the tolerance is identical, and no repair occurred. Unbound or mismatched
+cache entries fall back to recomputing Common with the existing pair-scoped
+PaveFiller. The trusted producer is still responsible for computing the
+original Common correctly: the binding is provenance, not a standalone SAME
+proof. The source STEP geometry is not modified; the 0.01 mm limit and MOVED
+rules are unchanged. Added regression cases for raw, matching, wrong-pair and
+wrong-tolerance caches; these tests have **not been run**.
+
+**Technique comparison:** OCCT's `BRepAlgoAPI_Common` accepts a prepared
+`BOPAlgo_PaveFiller`, so reuse of intersection data is kernel-supported
+(https://occt3d.com/dev/doc/refman/html/class_b_rep_algo_a_p_i___common.html).
+FreeCAD's Part Common/Cut operate on OCCT shapes
+(https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Part_Cut.md),
+while CadQuery exposes the OCCT kernel through OCP
+(https://github.com/CadQuery/OCP). None of these facts independently verifies
+that a DS Compare cache belongs to a specific revision pair; explicit pair
+provenance is an application-level safeguard. Correctly bound cached Common
+retains its reuse path; unbound/mismatched entries now incur recomputation.
+**No new comparable timing, RAM, stability or six-case measurements exist.**
+The extra evidence wrapper holds references to two existing shapes; its real
+memory impact remains to be measured. Do not claim a performance win.

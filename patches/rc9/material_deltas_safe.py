@@ -17,6 +17,31 @@ COLORS={
  'CHANGED_REMOVED':(190/255,18/255,60/255),
 }
 
+@dataclass(frozen=True)
+class CommonEvidence:
+    """Pair-bound Common produced earlier by the trusted OCCT pipeline.
+
+    This is a provenance guard, NOT an independent geometric proof. Keep
+    source shape references so location/orientation and topology identity
+    can be checked before reusing a previously calculated intersection.
+    """
+    shape: object
+    old_shape: object
+    new_shape: object
+    tolerance_mm: float
+
+
+def bind_common(common, old_shape, new_shape, tolerance):
+    """Bind a trusted precomputed Common to its exact input B-Reps."""
+    from .brep_safety import is_valid
+    tol = float(tolerance)
+    if not 0. < tol <= .01:
+        raise ValueError('Common evidence tolerance must be within 0.01 mm')
+    if not is_valid(old_shape) or not is_valid(new_shape):
+        raise ValueError('Cannot cache Common for invalid source B-Reps')
+    return CommonEvidence(_check_result(common), old_shape, new_shape, tol)
+
+
 @dataclass
 class MaterialRegions:
     common:object
@@ -92,13 +117,17 @@ def calculate(old,new,tolerance=0.01,*,common_shape=None):
     a,repaired_a=validated_copy(old.shape,tolerance)
     b,repaired_b=validated_copy(new.shape,tolerance)
     filler=_shared_filler(a,b,tolerance)
-    # Cached Common refers to original inputs: invalidate after any repair.
-    if common_shape is not None and not (repaired_a or repaired_b):
-        if not is_valid(common_shape):
-            raise RuntimeError('Precomputed Common has invalid topology')
-        common=common_shape
-    else:
-        common=_from_filler(BRepAlgoAPI_Common,filler,a,b,tolerance)
+    # A bare TopoDS_Shape has no pair provenance: its volume may happen
+    # to balance even when the intersection belongs to a different pair.
+    # IsEqual checks TShape, location and orientation; repairs invalidate it.
+    cached = None
+    if isinstance(common_shape, CommonEvidence) and not (repaired_a or repaired_b):
+        if (common_shape.tolerance_mm == float(tolerance)
+                and common_shape.old_shape.IsEqual(a)
+                and common_shape.new_shape.IsEqual(b)):
+            cached = _check_result(common_shape.shape)
+    common = cached if cached is not None else _from_filler(
+        BRepAlgoAPI_Common, filler, a, b, tolerance)
     added=_from_filler(BRepAlgoAPI_Cut,filler,b,a,tolerance)
     removed=_from_filler(BRepAlgoAPI_Cut,filler,a,b,tolerance)
     cv,av,rv=map(volume,(common,added,removed))
