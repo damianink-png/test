@@ -1,0 +1,41 @@
+name: RC9 native crash and shift residual audit
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/rc9-native-crash-audit.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact failed-case artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12711316263/zip > multi_v2_revision_shift.zip
+          gh api repos/damianink-png/test/actions/artifacts/12711795748/zip > micro_trident_shift.zip
+      - name: Extract failure-stage evidence (without declaring SAME)
+        run: |
+          python - <<'PY'
+          from zipfile import ZipFile
+          import json,re,os
+          for archive in ('multi_v2_revision_shift.zip','micro_trident_shift.zip'):
+              print('\\n===',archive,'===')
+              with ZipFile(archive) as z:
+                  members=z.infolist()
+                  print('files:',[(x.filename,x.file_size) for x in members[:90]])
+                  for x in members:
+                      n=x.filename.lower()
+                      if x.file_size>5_000_000 or x.is_dir():continue
+                      if not n.endswith(('.log','.txt','.jsonl','.trace','.csv','.json')):continue
+                      if 'ram-samples' in n:continue
+                      s=z.read(x).decode('utf-8','replace')
+                      lines=s.splitlines()
+                      matches=[(i,l) for i,l in enumerate(lines) if re.search(r'exception|error|crash|failed|begin|end|brep|timeout|segfault|0xc0000005|access violation|last|stage|candidate',l,re.I)]
+                      print('FILE',x.filename,'bytes',x.file_size,'lines',len(lines),'markers',len(matches))
+                      for i,l in matches[-45:]:print(f'{i+1}: {l[:350]}')
+                      if not matches:print('TAIL', '\\n'.join(lines[-12:])[:1000])
+          PY
