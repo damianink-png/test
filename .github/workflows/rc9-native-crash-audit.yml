@@ -39,3 +39,24 @@ jobs:
                       for i,l in matches[-45:]:print(f'{i+1}: {l[:350]}')
                       if not matches:print('TAIL', '\\n'.join(lines[-12:])[:1000])
           PY
+      - name: Inspect native verification call site in pinned RC9 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12650346634/zip > pinned_sources.zip
+          python - <<'PY'
+          from zipfile import ZipFile
+          from pathlib import Path
+          with ZipFile('pinned_sources.zip') as z:
+              names=z.namelist()
+              print('outer entries',names[:20])
+              candidate=next(n for n in names if n.endswith('.zip'))
+              Path('rc9_inner.zip').write_bytes(z.read(candidate))
+          with ZipFile('rc9_inner.zip') as z:
+              for suffix,lo,hi in [('deferred_alignment.py',170,240),('trace_r22.py',100,135),('step_reexport_tolerance.py',1,65)]:
+                  names=[n for n in z.namelist() if n.endswith('/dsac29/'+suffix)]
+                  if not names:continue
+                  lines=z.read(names[0]).decode('utf-8','replace').splitlines()
+                  print('===',names[0],'===')
+                  for i in range(lo-1,min(hi,len(lines))):print(f'{i+1}: {lines[i]}')
+          PY
