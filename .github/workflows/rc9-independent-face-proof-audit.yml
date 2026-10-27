@@ -1,0 +1,82 @@
+name: RC9 residual independent face proof audit
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/rc9-independent-face-proof-audit.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Fetch pinned sources and failed Trident shapes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12650346634/zip > /tmp/src.zip
+          mkdir -p /tmp/src rc9
+          unzip -q /tmp/src.zip -d /tmp/src
+          unzip -q /tmp/src/DSCompare_RC9_STABILITY_SOURCES.zip -d rc9
+          gh api repos/damianink-png/test/actions/artifacts/12699485972/zip > /tmp/failed.zip
+      - name: Inspect strict independent proof and measure residuals
+        env:
+          PYTHONPATH: rc9/src
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python - <<'PY'
+          import ast,pathlib,zipfile,tempfile,collections,time,signal
+          p=pathlib.Path('rc9/src/dsac29/parametric_identity.py')
+          src=p.read_text(encoding='utf-8');lines=src.splitlines()
+          for n in ast.parse(src).body:
+              if isinstance(n,ast.FunctionDef):
+                  print('PROOF_FUNCTION',n.name,n.lineno,n.end_lineno,flush=True)
+                  if n.name in ('prove','_face_match','_edge_match','_face_identity','_same_surface','_same_trim'):
+                      print('\n'.join(f'{i+1}: {lines[i]}' for i in range(n.lineno-1,n.end_lineno)),flush=True)
+          from OCP.TopoDS import TopoDS_Shape
+          from OCP.BRep import BRep_Builder
+          from OCP.BRepTools import BRepTools
+          from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+          from OCP.BRepGProp import BRepGProp
+          from OCP.GProp import GProp_GProps
+          from OCP.TopExp import TopExp_Explorer
+          from OCP.TopAbs import TopAbs_FACE
+          from OCP.BRepAdaptor import BRepAdaptor_Surface
+          from dsac29.geometry import describe
+          from dsac29.step_reexport_tolerance import reexport_equivalent_world
+          def read(p):
+              s=TopoDS_Shape()
+              assert BRepTools.Read_s(s,str(p),BRep_Builder())
+              return s
+          def stats(s):
+              exp=TopExp_Explorer(s,TopAbs_FACE);typ=collections.Counter()
+              while exp.More():
+                  typ[str(BRepAdaptor_Surface(exp.Current()).GetType())]+=1
+                  exp.Next()
+              return typ
+          def alarm(*args):raise TimeoutError('native proof budget exceeded')
+          signal.signal(signal.SIGALRM,alarm)
+          with zipfile.ZipFile('/tmp/failed.zip') as z,tempfile.TemporaryDirectory() as tmp:
+              for n in (1,3,4,5,6,10):
+                  pref=f'evidence/comparison/FAILED_BREP/world_negative_{n:02d}'
+                  a=pathlib.Path(tmp)/'A.brep';b=pathlib.Path(tmp)/'B.brep'
+                  a.write_bytes(z.read(pref+'/A.brep'));b.write_bytes(z.read(pref+'/B.brep'))
+                  sa=read(a);sb=read(b)
+                  print('PAIR_SURFACE_TYPES',n,stats(sa),stats(sb),flush=True)
+                  pa=describe(sa,'A','A');pb=describe(sb,'B','B')
+                  phases=[]
+                  try:
+                      signal.alarm(25)
+                      result=reexport_equivalent_world(pa,pb,.01,allow_boolean=False,progress=phases.append)
+                      signal.alarm(0)
+                      print('PAIR_STRICT_RESULT',n,result,phases,flush=True)
+                  except Exception as e:
+                      signal.alarm(0)
+                      print('PAIR_STRICT_ERROR',n,type(e).__name__,str(e),flush=True)
+          PY
