@@ -161,9 +161,18 @@ jobs:
           ./ci/rc10_diagnostics.ps1 -OutputDirectory diagnostics
           $revisionScript = 'rc9/src/ci/real_revision_without_shift.py'
           $revisionText = Get-Content $revisionScript -Raw
-          if (-not $revisionText.Contains(",'--no-bom'")) { throw 'Revision BOM CI contract changed' }
-          $revisionText = $revisionText.Replace(",'--no-bom'", '')
-          Set-Content -Path $revisionScript -Value $revisionText -Encoding utf8
+          # Pinned RC9 revisions do not all contain the --no-bom argument.
+          # Never fail just because the flag is absent: the artifact audit below
+          # independently requires actual BOM A/B files and occurrence counts.
+          if ($revisionText.Contains(",'--no-bom'")) {
+            $revisionText = $revisionText.Replace(",'--no-bom'", '')
+            Set-Content -Path $revisionScript -Value $revisionText -Encoding utf8
+            Write-Host 'Enabled revision BOM by removing the known no-bom flag'
+          } elseif ($revisionText.Contains('--no-bom')) {
+            throw 'Unknown --no-bom syntax: refusing unsafe script rewrite'
+          } else {
+            Write-Host 'No --no-bom flag in pinned revision script; BOM artifact audit remains mandatory'
+          }
       - name: Run real CAD assembly scenario
         shell: pwsh
         run: |
