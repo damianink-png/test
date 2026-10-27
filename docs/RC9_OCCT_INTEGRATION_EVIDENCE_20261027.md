@@ -51,3 +51,25 @@ These are archived **old failed-run** B-Rep files, not six new EXE test outcomes
 - This exposes a concrete acceptance blocker: the existing 35 s native-world timeout is too short for some real repair-plus-proof paths. The workflow must not silently classify a timeout as SAME. Further work must either reduce the proof cost or retain an explicit inconclusive outcome; simply increasing the timeout is not evidence of geometric correctness.
 
 Archived evidence: https://github.com/damianink-png/test/actions/runs/40463488094
+
+## Static artifact-accounting hardening (2026-10-27, not yet CI-tested)
+
+The six-case artifact auditor now requires exact occurrence conservation rather
+than the weaker check that the total status count is at least the larger assembly.
+For the supported status set SAME/MOVED/CHANGED/ADDED/REMOVED, let
+`matched = SAME + MOVED + CHANGED`. The audit enforces
+`matched + REMOVED == solids_A` and `matched + ADDED == solids_B`.
+Unexpected status categories or negative/non-integer counts fail closed.
+STEP/HTML/report SHA-256 fingerprints are emitted for reproducibility.
+This verifies **accounting**, not geometric truth: STEP colors, triangle
+topology, and HTML selection still require independent inspection.
+
+Technique comparison: OCCT, FreeCAD Part and CadQuery/OCP expose B-Rep
+operations but none of those Boolean primitives proves DS Compare's
+application-specific occurrence/status accounting. A count-conservation
+invariant is therefore independent of the CAD kernel and complements
+strict oriented B-Rep SAME proof; it is not a replacement for it.
+Open3D-style mesh registration also cannot establish the occurrence
+ledger or exact trimmed-surface equality. No new runtime or RAM
+measurement was made for this static audit change, and no workflow
+was triggered. The six real cases remain unverified after the CI fix.
