@@ -53,7 +53,7 @@ jobs:
               except Exception as exc:kind=str(exc)
               return {'kind':kind,'span':round(float(np.linalg.norm(c[3:]-c[:3])),8),'bounds':[round(float(x),5) for x in c]}
           with zipfile.ZipFile('/tmp/fail.zip') as z,tempfile.TemporaryDirectory() as d:
-              for n,face in ((1,250),(6,137)):
+              for n,face in ((1,250),(1,538),(6,137)):
                   edges=[]
                   for role in ('A','B'):
                       p=pathlib.Path(d)/(role+'.brep')
