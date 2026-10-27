@@ -1,0 +1,58 @@
+name: RC9 fast residual geometry metrics
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/rc9-residual-fast-metrics.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'cadquery-ocp==7.9.3.1.1'
+      - name: Analyze negative B-Rep without slow Boolean operations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12699485972/zip > /tmp/fail.zip
+          python - <<'PY'
+          import zipfile,tempfile,pathlib,math
+          from OCP.TopoDS import TopoDS_Shape
+          from OCP.BRep import BRep_Builder
+          from OCP.BRepTools import BRepTools
+          from OCP.TopExp import TopExp_Explorer
+          from OCP.TopAbs import TopAbs_ShapeEnum
+          from OCP.BRepGProp import BRepGProp
+          from OCP.GProp import GProp_GProps
+          from OCP.BRepBndLib import BRepBndLib
+          from OCP.Bnd import Bnd_Box
+          def stat(s):
+              p=GProp_GProps();BRepGProp.VolumeProperties_s(s,p)
+              box=Bnd_Box();BRepBndLib.Add_s(s,box)
+              n=[]
+              for typ in (TopAbs_ShapeEnum.TopAbs_FACE,TopAbs_ShapeEnum.TopAbs_EDGE):
+                  exp=TopExp_Explorer(s,typ);ct=0
+                  while exp.More():ct+=1;exp.Next()
+                  n.append(ct)
+              return {'volume':p.Mass(),'bbox':box.Get(),'faces':n[0],'edges':n[1]}
+          with zipfile.ZipFile('/tmp/fail.zip') as z:
+              pairs=sorted(set(n.rsplit('/',1)[0] for n in z.namelist() if 'FAILED_BREP/world_negative_' in n and n.endswith('/A.brep')))
+              print('PAIRS',len(pairs))
+              with tempfile.TemporaryDirectory() as tmp:
+                  for pair in pairs:
+                      vals=[]
+                      for role in ('A','B'):
+                          p=pathlib.Path(tmp)/(role+'.brep')
+                          p.write_bytes(z.read(pair+'/'+role+'.brep'))
+                          s=TopoDS_Shape();builder=BRep_Builder()
+                          assert BRepTools.Read_s(s,str(p),builder)
+                          vals.append(stat(s))
+                      a,b=vals
+                      print('PAIR',pair,'faces',a['faces'],b['faces'],'edges',a['edges'],b['edges'],'vol_delta',b['volume']-a['volume'],'max_bbox_delta',max(abs(x-y) for x,y in zip(a['bbox'],b['bbox'])),flush=True)
+          PY
