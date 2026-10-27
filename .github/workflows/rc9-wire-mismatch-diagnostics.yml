@@ -1,0 +1,78 @@
+name: RC9 exact wire mismatch diagnostics
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/rc9-wire-mismatch-diagnostics.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Fetch exact real residuals and pinned proof source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12650346634/zip > /tmp/src.zip
+          mkdir -p /tmp/src rc9
+          unzip -q /tmp/src.zip -d /tmp/src
+          unzip -q /tmp/src/DSCompare_RC9_STABILITY_SOURCES.zip -d rc9
+          gh api repos/damianink-png/test/actions/artifacts/12699485972/zip > /tmp/fail.zip
+      - name: Compare exact native edge signatures of first failing wire
+        env:
+          PYTHONPATH: rc9/src
+        run: |
+          python - <<'PY'
+          import zipfile,tempfile,pathlib,collections,numpy as np
+          from OCP.TopoDS import TopoDS_Shape,TopoDS
+          from OCP.BRep import BRep_Builder
+          from OCP.BRepTools import BRepTools
+          from OCP.TopExp import TopExp_Explorer
+          from OCP.TopAbs import TopAbs_FACE,TopAbs_WIRE,TopAbs_EDGE
+          from OCP.BRepAdaptor import BRepAdaptor_Curve
+          from OCP.Bnd import Bnd_Box
+          from OCP.BRepBndLib import BRepBndLib
+          from dsac29.parametric_identity import edge_data,edge_equal,edge_options
+          def children(shape,typ,cast):
+              out=[];it=TopExp_Explorer(shape,typ)
+              while it.More():out.append(cast(it.Current()));it.Next()
+              return out
+          def read(p):
+              s=TopoDS_Shape();assert BRepTools.Read_s(s,str(p),BRep_Builder());return s
+          def row(e):
+              bb=Bnd_Box();BRepBndLib.AddOptimal_s(e,bb,False,False)
+              c=np.array(bb.Get())
+              try: kind=str(BRepAdaptor_Curve(e).GetType())
+              except Exception as exc:kind=str(exc)
+              return {'kind':kind,'span':round(float(np.linalg.norm(c[3:]-c[:3])),8),'bounds':[round(float(x),5) for x in c]}
+          with zipfile.ZipFile('/tmp/fail.zip') as z,tempfile.TemporaryDirectory() as d:
+              for n,face in ((1,250),(6,137)):
+                  edges=[]
+                  for role in ('A','B'):
+                      p=pathlib.Path(d)/(role+'.brep')
+                      p.write_bytes(z.read(f'evidence/comparison/FAILED_BREP/world_negative_{n:02d}/{role}.brep'))
+                      s=read(p)
+                      f=children(s,TopAbs_FACE,TopoDS.Face_s)[face]
+                      wires=children(f,TopAbs_WIRE,TopoDS.Wire_s)
+                      assert wires
+                      ee=children(wires[0],TopAbs_EDGE,TopoDS.Edge_s)
+                      edges.append(ee)
+                      print('WIRE',n,role,'face',face,'wires',len(wires),'edges',len(ee),flush=True)
+                      print('EDGE_TYPES',n,role,collections.Counter(row(e)['kind'] for e in ee),flush=True)
+                      print('SHORTEST',n,role,sorted((row(e) for e in ee),key=lambda v:v['span'])[:12],flush=True)
+                  ea,eb=edges
+                  da=[edge_data(e) for e in ea];db=[edge_data(e) for e in eb]
+                  options=edge_options(da,db,.01/8)
+                  misses=[i for i,v in enumerate(options) if not v]
+                  print('MATCH_COUNTS',n,'A',len(ea),'B',len(eb),'unmatched_A',len(misses),'index',misses[:12],flush=True)
+                  for i in misses[:5]:
+                      print('UNMATCHED_EDGE',n,'A',i,row(ea[i]),flush=True)
+                  # Diagnostic only: never use relaxed tolerance to classify SAME.
+          PY
