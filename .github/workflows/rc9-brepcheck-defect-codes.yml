@@ -1,0 +1,53 @@
+name: RC9 BRepCheck exact defect codes
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/rc9-brepcheck-defect-codes.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'cadquery-ocp==7.9.3.1.1'
+      - name: Download real B-Rep residuals
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api repos/damianink-png/test/actions/artifacts/12699485972/zip > /tmp/fail.zip
+      - name: Extract precise native validity defect categories
+        run: |
+          python - <<'PY'
+          import zipfile,tempfile,pathlib,collections
+          from OCP.TopoDS import TopoDS_Shape
+          from OCP.BRep import BRep_Builder
+          from OCP.BRepTools import BRepTools
+          from OCP.TopExp import TopExp_Explorer
+          from OCP.TopAbs import TopAbs_ShapeEnum
+          from OCP.BRepCheck import BRepCheck_Analyzer
+          kinds=[('solid',TopAbs_ShapeEnum.TopAbs_SOLID),
+                 ('shell',TopAbs_ShapeEnum.TopAbs_SHELL),
+                 ('face',TopAbs_ShapeEnum.TopAbs_FACE),
+                 ('wire',TopAbs_ShapeEnum.TopAbs_WIRE)]
+          with zipfile.ZipFile('/tmp/fail.zip') as z,tempfile.TemporaryDirectory() as d:
+            for n in (2,3,4,5):
+              for role in ('A','B'):
+                p=pathlib.Path(d)/(role+'.brep')
+                p.write_bytes(z.read(f'evidence/comparison/FAILED_BREP/world_negative_{n:02d}/{role}.brep'))
+                s=TopoDS_Shape()
+                assert BRepTools.Read_s(s,str(p),BRep_Builder())
+                checker=BRepCheck_Analyzer(s)
+                for label,typ in kinds:
+                  exp=TopExp_Explorer(s,typ);i=0
+                  while exp.More():
+                    i+=1;item=exp.Current()
+                    if not checker.IsValid(item):
+                      codes=[str(x) for x in checker.Result(item).Status()]
+                      print('INVALID_STATUS',n,role,label,i,codes,flush=True)
+                    exp.Next()
+          PY
