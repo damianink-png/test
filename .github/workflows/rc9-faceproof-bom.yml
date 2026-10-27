@@ -50,8 +50,8 @@ jobs:
           # RC9 source revisions use different quoting or omit the switch.
           # Remove only a complete CLI argument, never change BOM defaults.
           before=s.count('--no-bom')
-          s,n1=re.subn(r",\\s*(['\\\"])--no-bom\\1", "", s)
-          s,n2=re.subn(r"(['\\\"])--no-bom\\1\\s*,\\s*", "", s)
+          s,n1=re.subn(r",\s*(['\"])--no-bom\1", "", s)
+          s,n2=re.subn(r"(['\"])--no-bom\1\s*,\s*", "", s)
           if '--no-bom' in s:
               raise RuntimeError('Unrecognized --no-bom syntax; refusing unsafe edit')
           print(f'BOM flag occurrences before={before}; removed={n1+n2}')
