@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/integrated-proof-matching.yml'
       - 'patches/efficient/**'
+      - 'patches/rc9/**'
 concurrency:
   group: integrated-proof-matching-${{ github.ref }}
   cancel-in-progress: false
@@ -48,6 +49,8 @@ jobs:
           python patches/rc9/patch_micro_seams.py rc9/src/dsac29/parametric_identity.py
           if ($LASTEXITCODE -ne 0) { throw 'Micro-seams patch failed' }
           Copy-Item patches/rc9/test_face_candidates.py rc9/src/tests/test_face_candidates.py
+          Copy-Item patches/rc9/safe_boolean_worker.py rc9/src/dsac29/safe_boolean_worker.py
+          Copy-Item patches/rc9/test_safe_boolean_worker.py rc9/src/tests/test_safe_boolean_worker.py
           python patches/efficient/apply_controls.py rc9/src/dsac29
           if ($LASTEXITCODE -ne 0) { throw 'Preview controls patch failed' }
           node patches/efficient/test_preview_controls.cjs rc9/src/dsac29/preview_template.html
@@ -75,7 +78,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
           python -m pip install pytest
           if ($LASTEXITCODE -ne 0) { throw 'pytest install failed' }
-          python -m pytest -q tests/test_stability.py tests/test_efficient.py tests/test_robust_translation.py tests/test_face_candidates.py --junitxml=stability-tests.xml
+          python -m pytest -q tests/test_stability.py tests/test_efficient.py tests/test_robust_translation.py tests/test_face_candidates.py tests/test_safe_boolean_worker.py --junitxml=stability-tests.xml
           if ($LASTEXITCODE -ne 0) { throw 'RC9 stability tests failed' }
           # TESTUJ.py ships with a 240 s aggregate timeout, too short for the
           # full native B-Rep suite on a shared Windows runner. Keep every test.
