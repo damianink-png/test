@@ -106,3 +106,19 @@ def calculate(old,new,tolerance=0.01,*,common_shape=None):
     if abs(cv+rv-old.volume)>abs_tol or abs(cv+av-new.volume)>abs_tol:
         raise RuntimeError('OCCT Boolean material balance failed')
     return MaterialRegions(common,added,removed,cv,av,rv)
+
+def all_changes(records,a,b,tolerance=0.01,progress=None,precomputed=None):
+    """Generate once for STEP/HTML/CSV, reusing precomputed region evidence."""
+    out=dict(precomputed or {});errors={}
+    indices=[i for i,r in enumerate(records) if r.status=='CHANGED'
+             and r.a_index is not None and r.b_index is not None]
+    for n,index in enumerate(indices,1):
+        if index in out:continue
+        r=records[index]
+        if progress:progress(f'R15: podział materiału {n}/{len(indices)} — {b[r.b_index].name}')
+        from .material_guard import calculate_isolated
+        from .native_guard import NativeGeometryFailure
+        try:out[index]=calculate_isolated(a[r.a_index],b[r.b_index],tolerance)
+        except NativeGeometryFailure:raise
+        except Exception as exc:errors[index]=str(exc)
+    return out,errors
