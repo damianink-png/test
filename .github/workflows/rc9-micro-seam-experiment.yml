@@ -29,6 +29,16 @@ jobs:
       - name: Apply only experimental micro-seam patch
         run: |
           python patches/rc9/patch_micro_seams.py rc9/src/dsac29/parametric_identity.py
+          # EXPERIMENT ONLY: retain per-edge 0.0025 mm, test aggregate 0.005 mm.
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('rc9/src/dsac29/parametric_identity.py')
+          s=p.read_text(encoding='utf-8')
+          old='sum(spans[k] for k in tiny)>tol*2'
+          assert s.count(old)==1
+          p.write_text(s.replace(old,'sum(spans[k] for k in tiny)>tol*4'),encoding='utf-8')
+          print('EXPERIMENT_ONLY: aggregate micro-seam budget 0.005 mm; production remains 0.0025 mm')
+          PY
           python patches/rc9/patch_face_candidates.py rc9/src/dsac29/step_reexport_tolerance.py
           python -m py_compile rc9/src/dsac29/parametric_identity.py rc9/src/dsac29/step_reexport_tolerance.py
       - name: Strict negative and positive geometry regression
