@@ -106,3 +106,36 @@ retains its reuse path; unbound/mismatched entries now incur recomputation.
 **No new comparable timing, RAM, stability or six-case measurements exist.**
 The extra evidence wrapper holds references to two existing shapes; its real
 memory impact remains to be measured. Do not claim a performance win.
+
+## Precomputed material-region provenance (2026-10-27; static, NOT benchmarked)
+
+Static review identified a second cache boundary after the Common safeguard:
+`material_deltas_safe.all_changes(..., precomputed=...)` previously copied
+arbitrary index-keyed `MaterialRegions` entries and skipped recalculation for
+`CHANGED` records at the same index. A reordered record list could therefore
+reuse material regions for a different B-Rep pair, despite correct counts and
+volume totals. This was a **potential correctness defect**, not an observed
+failure in V2/Trident.
+
+The new `RegionEvidence` / `bind_regions()` contract associates the trusted
+isolated calculation with both exact original B-Rep shapes and the tolerance.
+`all_changes()` reuses a region only if the evidence matches the actual
+old/new pair (including location and orientation via `IsEqual`), tolerance,
+valid B-Reps and material-volume conservation. Unbound, wrong-pair,
+wrong-tolerance and extraneous index entries are ignored; the affected
+`CHANGED` pair is recalculated in the isolated worker. The evidence wrapper
+**does not prove SAME** and must only be constructed from a trusted producer.
+Source STEP shapes are not modified; the 0.01 mm maximum and MOVED rules
+remain unchanged. Regression cases were added but **not executed**.
+
+**Comparison of techniques:** OCCT provides `BOPAlgo_PaveFiller` and
+`BRepAlgoAPI_Common/Cut` for computing and reusing intersections; it does
+not automatically bind a Python application's cached result to revision
+record indices. FreeCAD Part and CadQuery/OCP expose the same underlying
+OCCT B-Rep operations, but do not provide a DS Compare occurrence-index
+cache contract. Pair-bound provenance is an application-specific safety
+invariant, not a claim that the kernel is faster or more accurate.
+Unbound legacy cache entries now require recomputation, which **may increase
+runtime**; the memory cost of retained shape references and real-world
+performance/stability remain unmeasured. The six Windows V2/Trident scenarios
+and STEP/HTML/BOM audits must still be run after full integration.
