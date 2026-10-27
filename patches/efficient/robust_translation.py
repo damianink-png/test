@@ -71,7 +71,7 @@ def propose_translation(a: Sequence[Anchor], b: Sequence[Anchor],
     # global frame supported by many other families.
     hypotheses = []
     family_pairs = [
-        iter((x, y) for x in ga[k] for y in gb[k])
+        iter(product(ga[k], gb[k]))
         for k in keys
     ]
     active = list(family_pairs)
