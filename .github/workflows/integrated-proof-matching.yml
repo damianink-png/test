@@ -1,11 +1,6 @@
 name: DS Compare integrated proof and matching - six real CAD cases
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/integrated-proof-matching.yml'
-      - 'patches/efficient/**'
-      - 'patches/rc9/**'
 concurrency:
   group: integrated-proof-matching-${{ github.ref }}
   cancel-in-progress: false
