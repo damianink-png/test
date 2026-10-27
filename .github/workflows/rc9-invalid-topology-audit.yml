@@ -1,0 +1,63 @@
+name: RC9 invalid topology root cause audit
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/rc9-invalid-topology-audit.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'cadquery-ocp==7.9.3.1.1'
+      - name: Retrieve real failed B-Rep pairs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12699485972/zip > /tmp/failed-brep.zip
+      - name: Audit native B-Rep validity per topology level without changing tolerance
+        run: |
+          python - <<'PY'
+          import zipfile,tempfile,pathlib,collections
+          from OCP.TopoDS import TopoDS_Shape
+          from OCP.BRep import BRep_Builder,BRep_Tool
+          from OCP.BRepTools import BRepTools
+          from OCP.TopExp import TopExp_Explorer
+          from OCP.TopAbs import TopAbs_ShapeEnum
+          from OCP.BRepCheck import BRepCheck_Analyzer
+          types=[('SOLID',TopAbs_ShapeEnum.TopAbs_SOLID),('SHELL',TopAbs_ShapeEnum.TopAbs_SHELL),
+                 ('FACE',TopAbs_ShapeEnum.TopAbs_FACE),('WIRE',TopAbs_ShapeEnum.TopAbs_WIRE),
+                 ('EDGE',TopAbs_ShapeEnum.TopAbs_EDGE)]
+          with zipfile.ZipFile('/tmp/failed-brep.zip') as z, tempfile.TemporaryDirectory() as tmp:
+            for number in (1,2,3,4,5,6,10):
+              for side in ('A','B'):
+                member=f'evidence/comparison/FAILED_BREP/world_negative_{number:02d}/{side}.brep'
+                p=pathlib.Path(tmp)/f'{number}-{side}.brep'
+                p.write_bytes(z.read(member))
+                shape=TopoDS_Shape()
+                assert BRepTools.Read_s(shape,str(p),BRep_Builder())
+                analyzer=BRepCheck_Analyzer(shape)
+                result={'pair':number,'side':side,'valid':bool(analyzer.IsValid())}
+                for name,kind in types:
+                  exp=TopExp_Explorer(shape,kind)
+                  count=invalid=0
+                  max_tol=0.
+                  while exp.More():
+                    sub=exp.Current()
+                    count+=1
+                    if not analyzer.IsValid(sub):invalid+=1
+                    if name=='EDGE':
+                      try:max_tol=max(max_tol,float(BRep_Tool.Tolerance_s(sub)))
+                      except Exception:pass
+                    exp.Next()
+                  result[name.lower()+'_count']=count
+                  result[name.lower()+'_invalid']=invalid
+                  if name=='EDGE':result['max_edge_tolerance_mm']=max_tol
+                print('TOPOLOGY_AUDIT',result,flush=True)
+          PY
