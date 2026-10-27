@@ -75,6 +75,39 @@ def test_raw_or_wrong_pair_common_never_reused(monkeypatch):
     assert len(common_calls)==1
 
 
+def test_material_region_cache_is_pair_bound_and_fails_closed(monkeypatch):
+    from types import SimpleNamespace
+    import dsac29.material_deltas as mod
+    import dsac29.material_guard as guard
+    a,b,c=info(box(20)),info(box(25)),info(box(22))
+    regions=mod.calculate(a,b,.01)
+    bound=mod.bind_regions(regions,a,b,.01)
+    records=[SimpleNamespace(status='CHANGED',a_index=0,b_index=0)]
+    calls=[]
+    def isolated(old,new,tolerance):
+        calls.append((old,new,tolerance))
+        return mod.calculate(old,new,tolerance)
+    monkeypatch.setattr(guard,'calculate_isolated',isolated)
+    # A raw MaterialRegions instance has no source provenance.
+    out,errors=mod.all_changes(records,[a],[b],.01,precomputed={0:regions})
+    assert not errors and len(calls)==1
+    assert out[0] is not regions
+    # Bound evidence is reused only for the exact pair and tolerance.
+    calls.clear()
+    out,errors=mod.all_changes(records,[a],[b],.01,precomputed={0:bound})
+    assert not errors and not calls and out[0] is regions
+    calls.clear()
+    out,errors=mod.all_changes(records,[c],[b],.01,precomputed={0:bound})
+    assert not errors and len(calls)==1 and out[0] is not regions
+    calls.clear()
+    out,errors=mod.all_changes(records,[a],[b],.005,precomputed={0:bound})
+    assert not errors and len(calls)==1 and out[0] is not regions
+    # Unrelated indices must never be emitted into the output.
+    calls.clear()
+    out,errors=mod.all_changes(records,[a],[b],.01,precomputed={0:bound,9:regions})
+    assert not errors and not calls and set(out)=={0}
+
+
 def test_different_geometry_never_same_from_repair_flag():
     a,b=info(box(20)),info(box(20.2))
     assert not reexport_equivalent_world(a,b,.01,allow_boolean=False,_repair_boundary_only=True)
