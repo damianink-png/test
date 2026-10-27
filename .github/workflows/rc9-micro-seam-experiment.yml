@@ -1,4 +1,5 @@
 name: RC9 micro-seam strict proof experiment
+# Validate multiple tiny seam fragments with a fixed aggregate geometric budget.
 on:
   workflow_dispatch:
   push:
