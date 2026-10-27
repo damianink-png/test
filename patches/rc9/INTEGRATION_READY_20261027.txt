@@ -1,0 +1,5 @@
+DS Compare RC9 OCCT integration candidate, 2026-10-27.
+Pinned source artifact: 12650346634.
+Integrated: isolated Boolean; strict copy-only B-Rep validation and selective repair; NonDestructive/OBB; shared PaveFiller; original oriented trim proof; global 1:1 frame matching; STEP/HTML/BOM artifact audit.
+Local tests: 28 passed, 1 Windows-only skipped. A longer optional regression run exceeded the local time budget and is not reported as PASS.
+Run six real CAD scenarios V2/Trident, inspect output artifacts, record exact timings and RAM. Do not claim release readiness unless all checks pass.
