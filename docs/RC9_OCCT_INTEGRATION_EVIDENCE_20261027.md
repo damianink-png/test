@@ -41,3 +41,13 @@ Peak process RSS (KiB) in those runs: baseline 328596 / 328592 / 328596; integra
 ## Pending acceptance gate
 
 Run the manual six-case Windows workflow only once integration is complete. Verify the six real V2/Trident outcomes and the generated STEP, 3D HTML, report, and revision BOM occurrence mappings. A failed test, missing artifact, native crash, timeout, unproven SAME, or false MOVED is a blocker. Report PASS only from actual artifacts and run logs.
+
+## Real failed B-Rep fixtures inspected locally (archived run 40463488094)
+
+These are archived **old failed-run** B-Rep files, not six new EXE test outcomes.
+
+- V2 `world_negative_01`: both original shapes invalid. `ShapeFix_Shape` alone leaves both invalid. The targeted `ShapeFix_Wire` attempt did not produce a provably valid replacement. `validated_copy` correctly rejects both (local diagnostic wall times ~1.43 s and ~0.55 s).
+- Trident `world_negative_01`: original A invalid, B valid. A's deep-copy repair passed the strict original-boundary gate and produced a valid repaired copy in ~28.76 s; B needed no repair. **Original A versus B did not pass strict face/wire identity** (False in ~9.89 s). A separate repaired-A versus B strict attempt exceeded 70 s without a result. None of these measurements proves SAME or fixes the shifted assembly.
+- This exposes a concrete acceptance blocker: the existing 35 s native-world timeout is too short for some real repair-plus-proof paths. The workflow must not silently classify a timeout as SAME. Further work must either reduce the proof cost or retain an explicit inconclusive outcome; simply increasing the timeout is not evidence of geometric correctness.
+
+Archived evidence: https://github.com/damianink-png/test/actions/runs/40463488094
