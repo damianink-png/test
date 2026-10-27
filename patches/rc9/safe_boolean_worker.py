@@ -71,8 +71,11 @@ def _worker(a: str, b: str, out: str, operation: str) -> None:
         raise RuntimeError("Null or invalid Boolean result")
     destination = Path(out)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if not BRepTools.Write_s(result, str(destination)):
-        raise RuntimeError("BREP write failed")
+    # OCCT Python bindings may expose Write_s as void rather than bool.
+    # Validate the actual file instead of treating None as failure.
+    BRepTools.Write_s(result, str(destination))
+    if not destination.is_file() or destination.stat().st_size == 0:
+        raise RuntimeError("BREP write failed: missing or empty output")
 
 
 if __name__ == "__main__":
