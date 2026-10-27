@@ -1,0 +1,67 @@
+name: RC9 topology normalization proof experiment
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/rc9-topology-normalization-experiment.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+      - name: Download source and failed pair geometry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/damianink-png/test/actions/artifacts/12650346634/zip > /tmp/src.zip
+          mkdir -p /tmp/src rc9
+          unzip -q /tmp/src.zip -d /tmp/src
+          unzip -q /tmp/src/DSCompare_RC9_STABILITY_SOURCES.zip -d rc9
+          gh api repos/damianink-png/test/actions/artifacts/12699485972/zip > /tmp/neg.zip
+      - name: Prove exact geometry after native same-domain normalization
+        env:
+          PYTHONPATH: rc9/src
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python - <<'PY'
+          import zipfile,tempfile,pathlib,signal
+          from OCP.TopoDS import TopoDS_Shape
+          from OCP.BRep import BRep_Builder
+          from OCP.BRepTools import BRepTools
+          from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
+          from dsac29.geometry import describe
+          from dsac29.step_reexport_tolerance import reexport_equivalent_world
+          def read(path):
+              s=TopoDS_Shape();assert BRepTools.Read_s(s,str(path),BRep_Builder());return s
+          def normalize(s):
+              tool=ShapeUpgrade_UnifySameDomain(s,True,True,False)
+              tool.Build()
+              return tool.Shape()
+          def alarm(_sig,_frame):raise TimeoutError('proof budget exceeded')
+          signal.signal(signal.SIGALRM,alarm)
+          with zipfile.ZipFile('/tmp/neg.zip') as z:
+              with tempfile.TemporaryDirectory() as tmp:
+                  for n in (4,6,1,2):
+                      prefix=f'evidence/comparison/FAILED_BREP/world_negative_{n:02d}'
+                      a=pathlib.Path(tmp)/'A.brep';b=pathlib.Path(tmp)/'B.brep'
+                      a.write_bytes(z.read(prefix+'/A.brep'));b.write_bytes(z.read(prefix+'/B.brep'))
+                      try:
+                          sa=read(a);sb=read(b)
+                          signal.alarm(40)
+                          na=normalize(sa);nb=normalize(sb)
+                          print('NORMALIZED',n,'done',flush=True)
+                          pa=describe(na,'A','A');pb=describe(nb,'B','B')
+                          proof=reexport_equivalent_world(pa,pb,.01,allow_boolean=False)
+                          signal.alarm(0)
+                          print('PROOF',n,proof,flush=True)
+                      except Exception as e:
+                          signal.alarm(0)
+                          print('ERROR',n,type(e).__name__,str(e)[:300],flush=True)
+          PY
