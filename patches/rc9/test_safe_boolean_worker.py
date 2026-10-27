@@ -4,7 +4,7 @@ from unittest.mock import patch
 import subprocess
 import pytest
 
-spec = importlib.util.spec_from_file_location("safe_boolean_worker", Path(__file__).with_name("safe_boolean_worker.py"))
+spec = importlib.util.spec_from_file_location("safe_boolean_worker", Path(__file__).resolve().parent.parent / "dsac29" / "safe_boolean_worker.py")
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
