@@ -1,8 +1,8 @@
 name: DS Compare RC9 large real CAD assemblies
 on:
   push:
-    branches: [fix/rc9-virtual-offset-20261028]
-    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py']
+    branches: [fix/rc9-native-crash-evidence-20261028]
+    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -43,6 +43,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
           python ci/patch_rc9_repair_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict repair fail-closed patch failed' }
+          python ci/patch_rc9_active_world_capture.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native crash evidence patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/native_guard.py
           if ($LASTEXITCODE -ne 0) { throw 'Repair fail-closed syntax failed' }
           python ci/patch_rc9_virtual_alignment.py
@@ -78,6 +80,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Common immediate failure regression failed' }
           python ../ci/test_rc9_repair_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Rejected repair fail-closed regression failed' }
+          python ../ci/test_rc9_active_world_capture.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native crash evidence regression failed' }
           python -m pytest -vv -s ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Native proof and Common regression failed' }
           ./BUDUJ_WINDOWS.ps1 -NoInstall
@@ -107,6 +111,7 @@ jobs:
       DSCOMPARE_IMPORT_CACHE: 'off'
       DSCOMPARE_TRACE_BREP: '1'
       DSCOMPARE_SAVE_FAILED_BREP: '1'
+      DSCOMPARE_CAPTURE_ACTIVE_BREP: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -132,6 +137,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
           python ci/patch_rc9_repair_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict repair fail-closed patch failed' }
+          python ci/patch_rc9_active_world_capture.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native crash evidence patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/native_guard.py
           if ($LASTEXITCODE -ne 0) { throw 'Repair fail-closed syntax failed' }
           python ci/patch_rc9_virtual_alignment.py
@@ -160,6 +167,17 @@ jobs:
           $case = '${{ matrix.case }}'
           $model = '${{ matrix.model }}'
           New-Item -ItemType Directory -Path evidence -Force | Out-Null
+          # Enable a user-scoped Windows Error Reporting minidump for native AV.
+          # A failed registry setup does not weaken the CAD assertions.
+          try {
+            $dumpPath = Join-Path (Resolve-Path evidence).Path 'crash-dumps'
+            New-Item -ItemType Directory -Path $dumpPath -Force | Out-Null
+            $werKey = 'HKCU:\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\DSCompare.exe'
+            New-Item -Path $werKey -Force | Out-Null
+            New-ItemProperty -Path $werKey -Name DumpFolder -PropertyType ExpandString -Value $dumpPath -Force | Out-Null
+            New-ItemProperty -Path $werKey -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
+            New-ItemProperty -Path $werKey -Name DumpCount -PropertyType DWord -Value 2 -Force | Out-Null
+          } catch { Write-Warning "WER crash dump setup unavailable: $_" }
           $ramPath = Join-Path (Resolve-Path evidence).Path 'ram-samples.csv'
           Set-Content -Path $ramPath -Value 'utc,combined_working_set_bytes,max_process_working_set_bytes,process_count'
           $sampler = Start-Job -ArgumentList $ramPath -ScriptBlock {
@@ -187,6 +205,13 @@ jobs:
           } finally {
             Stop-Job $sampler -ErrorAction SilentlyContinue
             Remove-Job $sampler -Force -ErrorAction SilentlyContinue
+            try {
+              $faultRoot = Join-Path $env:LOCALAPPDATA 'DSCompare\logs'
+              if (Test-Path $faultRoot) {
+                New-Item -ItemType Directory -Path evidence/faultlogs -Force | Out-Null
+                Copy-Item -Path (Join-Path $faultRoot '*') -Destination evidence/faultlogs -Force -ErrorAction SilentlyContinue
+              }
+            } catch { Write-Warning "Could not collect faulthandler logs: $_" }
           }
           $samples = @(Import-Csv $ramPath)
           if ($samples.Count -gt 0) {
