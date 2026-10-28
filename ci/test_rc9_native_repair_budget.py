@@ -14,8 +14,8 @@ def test_repaired_copies_are_used_with_conserved_budget(tmp_path,monkeypatch):
     monkeypatch.setattr(native_guard,'_load_brep',lambda _:next(inputs))
     monkeypatch.setattr(brep_safety,'is_valid',lambda shape:False)
     calls=[]
-    def repair(shape,tolerance):
-        calls.append(('repair',shape,tolerance))
+    def repair(shape,tolerance, *, max_source_tolerance=None):
+        calls.append(('repair',shape,tolerance,max_source_tolerance))
         return (repaired_a if shape is original_a else repaired_b),True
     monkeypatch.setattr(brep_safety,'validated_copy',repair)
     monkeypatch.setattr(geometry,'describe',lambda shape,*args:SimpleNamespace(shape=shape))
@@ -30,6 +30,7 @@ def test_repaired_copies_are_used_with_conserved_budget(tmp_path,monkeypatch):
     assert calls[0][0]=='prove' and calls[0][3]==0.01
     assert calls[0][4]['_repair_boundary_only'] is True
     assert [x[2] for x in calls[1:3]]==[0.005,0.005]
+    assert [x[3] for x in calls[1:3]]==[0.01,0.01]
     assert calls[3][1] is repaired_a and calls[3][2] is repaired_b
     assert calls[3][3]==0.005
     assert calls[3][4]['allow_boolean'] is False
@@ -67,7 +68,11 @@ def test_one_invalid_shape_never_uses_direct_fastpath(tmp_path,monkeypatch):
     monkeypatch.setattr(native_guard,'_load_brep',lambda _:next(inputs))
     monkeypatch.setattr(brep_safety,'is_valid',lambda shape:shape is b)
     repaired=BRepPrimAPI_MakeBox(10.,10.,10.).Shape()
-    monkeypatch.setattr(brep_safety,'validated_copy',lambda shape,tol:(repaired if shape is a else shape,shape is a))
+    repairs=[]
+    def repair_one(shape,tol, *, max_source_tolerance=None):
+        repairs.append((shape,tol,max_source_tolerance))
+        return (repaired if shape is a else shape,shape is a)
+    monkeypatch.setattr(brep_safety,'validated_copy',repair_one)
     monkeypatch.setattr(geometry,'describe',lambda shape,*args:SimpleNamespace(shape=shape))
     proofs=[]
     def strict(left,right,tol,**kwargs):
@@ -79,4 +84,5 @@ def test_one_invalid_shape_never_uses_direct_fastpath(tmp_path,monkeypatch):
     assert native_guard.worker(str(req),str(out))==0
     assert json.loads(out.read_text())=={'ok':True,'match':False}
     assert len(proofs)==1 and proofs[0][2]==0.005
+    assert repairs==[(a,0.005,0.01),(b,0.005,0.01)]
     assert proofs[0][3]['_repair_boundary_only'] is False
