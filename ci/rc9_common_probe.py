@@ -11,10 +11,11 @@ import subprocess
 import sys
 import time
 
-VARIANTS = ('standard', 'obb_off', 'parallel')
+VARIANTS = ('standard', 'obb_off', 'parallel', 'swapped', 'glue_full')
 
 
 def child(folder, variant):
+    from collections import Counter
     from OCP.BRep import BRep_Builder
     from OCP.BRepTools import BRepTools
     from OCP.TopoDS import TopoDS_Shape
@@ -22,6 +23,9 @@ def child(folder, variant):
     from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
+    from OCP.BOPAlgo import BOPAlgo_GlueEnum
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
     from OCP.TopTools import TopTools_ListOfShape
 
     def read(name):
@@ -32,8 +36,16 @@ def child(folder, variant):
             raise ValueError('Cannot load diagnostic BRep')
         return shape
 
+    def signed_volume(shape):
+        properties = GProp_GProps()
+        BRepGProp.VolumeProperties_s(shape, properties)
+        return float(properties.Mass())
+
     a, b = read('A.brep'), read('B.brep')
     valid_inputs = [bool(BRepCheck_Analyzer(s).IsValid()) for s in (a, b)]
+    source_volumes = [signed_volume(s) for s in (a, b)]
+    if variant == 'swapped':
+        a, b = b, a
     arguments, tools = TopTools_ListOfShape(), TopTools_ListOfShape()
     arguments.Append(a)
     tools.Append(b)
@@ -43,23 +55,50 @@ def child(folder, variant):
     op.SetNonDestructive(True)
     op.SetUseOBB(variant != 'obb_off')
     op.SetRunParallel(variant == 'parallel')
+    if variant == 'glue_full':
+        op.SetGlue(BOPAlgo_GlueEnum.BOPAlgo_GlueFull)
     op.SetFuzzyValue(0.0001)  # diagnostic only; production remains 0.01 mm
     started = time.monotonic()
     op.Build()
     result = {'variant': variant, 'input_valid': valid_inputs,
+              'source_signed_volumes_mm3': source_volumes,
               'seconds': round(time.monotonic() - started, 3),
               'is_done': bool(op.IsDone())}
     if op.IsDone():
         shape = op.Shape()
         result['null'] = bool(shape.IsNull())
         if not shape.IsNull():
-            properties = GProp_GProps()
-            BRepGProp.VolumeProperties_s(shape, properties)
-            signed = float(properties.Mass())
+            signed = signed_volume(shape)
             result['signed_volume_mm3'] = signed if math.isfinite(signed) else str(signed)
-            result['topology_valid'] = bool(BRepCheck_Analyzer(shape).IsValid())
+            analyzer = BRepCheck_Analyzer(shape)
+            result['topology_valid'] = bool(analyzer.IsValid())
             result['potentially_valid'] = bool(
                 math.isfinite(signed) and signed >= 0 and result['topology_valid'])
+            if not result['potentially_valid']:
+                # Diagnostic only: invalid OCCT output is never repaired or
+                # accepted as a SAME, MOVED or material-change proof.
+                face_status = Counter()
+                faces = TopExp_Explorer(shape, TopAbs_FACE)
+                nfaces = 0
+                while faces.More() and nfaces < 2000:
+                    nfaces += 1
+                    item = analyzer.Result(faces.Current())
+                    if item is not None:
+                        for status in item.Status():
+                            name = str(status).rsplit('.', 1)[-1]
+                            if name != 'BRepCheck_NoError':
+                                face_status[name] += 1
+                    faces.Next()
+                result['invalid_face_status_counts'] = dict(face_status)
+                result['faces_examined'] = nfaces
+                result['faces_truncated'] = bool(faces.More())
+                masses = []
+                solids = TopExp_Explorer(shape, TopAbs_SOLID)
+                while solids.More() and len(masses) < 100:
+                    masses.append(signed_volume(solids.Current()))
+                    solids.Next()
+                result['output_solid_signed_volumes_mm3'] = masses
+                result['solids_truncated'] = bool(solids.More())
     print(json.dumps(result), flush=True)
     os._exit(0)  # Avoid hanging in C++ destructor of an invalid diagnostic result.
 
