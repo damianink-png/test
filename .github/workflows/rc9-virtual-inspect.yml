@@ -1,0 +1,38 @@
+name: RC9 virtual alignment source inspection
+on:
+  push:
+    branches: [build/rc9-audyt-20261028]
+    paths: ['.github/workflows/rc9-virtual-inspect.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract source and inspect alignment stages
+        shell: bash
+        run: |
+          unzip -q DSCompare_RC9_AUDYT_20261028_ZRODLA.zip
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          root=Path('dscompare_rc9_manual/dsac29')
+          for fn in ['alignment.py','deferred_alignment.py','revision_overlap.py','comparison.py','matching.py']:
+              p=root/fn
+              if not p.exists(): continue
+              s=p.read_text(encoding='utf-8')
+              print('FILE',fn,'LINES',len(s.splitlines()))
+              tree=ast.parse(s)
+              for node in ast.walk(tree):
+                  if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and any(w in node.name.lower() for w in ('align','propos','translat','verif','match','same','equiv','stage')):
+                      print('FUNC',node.name,'LINES',node.lineno,node.end_lineno)
+              if fn in ('alignment.py','deferred_alignment.py'):
+                  lines=s.splitlines()
+                  for i,line in enumerate(lines):
+                      if any(t in line for t in ('histogram','hints=','frame_support','B-Rep','equivalent_world','add(candidate_offset','propose_from_stage1','candidate_offset','shift','offset')):
+                          lo=max(0,i-3);hi=min(len(lines),i+5)
+                          print('CONTEXT',fn,lo+1,hi)
+                          for j in range(lo,hi):print(f'{j+1:04d}: {lines[j]}')
+          PY
