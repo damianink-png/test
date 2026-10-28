@@ -73,6 +73,7 @@ jobs:
       fail-fast: false
       matrix:
         model: [voron2, trident]
+        scenario: [identical, shift]
     steps:
       - uses: actions/checkout@v4
       - name: Extract exact tested source
@@ -100,18 +101,18 @@ jobs:
           New-Item -ItemType Directory -Force -Path evidence | Out-Null
           git rev-parse HEAD | Out-File -Encoding utf8 evidence/source-commit.txt
           Get-FileHash OpenAssemblyCompare_sources.tar.xz.b64 -Algorithm SHA256 | Format-List | Out-File -Encoding utf8 evidence/source-sha256.txt
-      - name: Run previously problematic global-shift benchmark
+      - name: Run real public assembly regression (identical or shifted)
         shell: pwsh
         env:
           PYTHONUTF8: '1'
           PYTHONFAULTHANDLER: '1'
         run: |
-          python source/OpenAssemblyCompare/benchmarks/public_voron.py --model ${{ matrix.model }} --scenario shift --output evidence/${{ matrix.model }}-shift --executable app/OpenAssemblyCompareCLI.exe --timeout 3000
+          python source/OpenAssemblyCompare/benchmarks/public_voron.py --model ${{ matrix.model }} --scenario ${{ matrix.scenario }} --output evidence/${{ matrix.model }}-${{ matrix.scenario }} --executable app/OpenAssemblyCompareCLI.exe --timeout 3000
           if ($LASTEXITCODE -ne 0) {throw 'CAD regression failed'}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: OpenAssembly-v06-evidence-${{ matrix.model }}-shift
+          name: OpenAssembly-v06-evidence-${{ matrix.model }}-${{ matrix.scenario }}
           path: |
             evidence/source-commit.txt
             evidence/source-sha256.txt
@@ -122,4 +123,4 @@ jobs:
             evidence/**/comparison/CZASY_ANALIZY.json
           retention-days: 30
           if-no-files-found: warn
-# v0.6 inspection regression: 32 tests and Voron/Trident shift
+# v0.6 inspection regression: pytest + original Voron/Trident identical and shift scenarios
