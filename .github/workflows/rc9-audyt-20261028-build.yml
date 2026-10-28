@@ -37,6 +37,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native B-Rep proof patch failed' }
           python ci/patch_rc9_common_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Common diagnostic patch failed' }
+          python ci/patch_rc9_invalid_pair_fastpath.py
+          if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
       - name: Install dependencies and run regressions
         shell: pwsh
         working-directory: dscompare_rc9_manual
