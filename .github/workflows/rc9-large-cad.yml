@@ -37,6 +37,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Common diagnostic patch failed' }
           python ci/patch_rc9_invalid_pair_fastpath.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
+          Copy-Item patches/rc9/robust_translation.py dscompare_rc9_manual/dsac29/robust_translation.py -Force
+          python patches/rc9/integrate_deferred_translation.py dscompare_rc9_manual/dsac29/deferred_alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Virtual translation candidate integration failed' }
+          python -m py_compile dscompare_rc9_manual/dsac29/robust_translation.py dscompare_rc9_manual/dsac29/deferred_alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Virtual alignment syntax failed' }
       - name: Build current patched RC9 source for each large test
         shell: pwsh
         working-directory: dscompare_rc9_manual
@@ -45,6 +50,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Install failed' }
           python -m pip install pytest
           if ($LASTEXITCODE -ne 0) { throw 'pytest installation failed' }
+          python -m pytest -q ../patches/rc9/test_robust_translation.py
+          if ($LASTEXITCODE -ne 0) { throw 'Virtual translation proposal regressions failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
           python -m pytest -q ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
@@ -95,6 +102,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Common diagnostic patch failed' }
           python ci/patch_rc9_invalid_pair_fastpath.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
+          Copy-Item patches/rc9/robust_translation.py dscompare_rc9_manual/dsac29/robust_translation.py -Force
+          python patches/rc9/integrate_deferred_translation.py dscompare_rc9_manual/dsac29/deferred_alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Virtual translation candidate integration failed' }
+          python -m py_compile dscompare_rc9_manual/dsac29/robust_translation.py dscompare_rc9_manual/dsac29/deferred_alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Virtual alignment syntax failed' }
       - uses: actions/download-artifact@v4
         with:
           name: RC9-large-current-Windows-x64
