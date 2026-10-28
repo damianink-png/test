@@ -1,0 +1,115 @@
+name: OpenAssembly Compare v0.2 - Windows EXE and real Voron STEP
+on:
+  push:
+    branches: [openassembly-v02-windows-real-cad]
+    paths:
+      - 'OpenAssemblyCompare_V02_GITHUB_REAL_CAD.zip'
+      - '.github/workflows/openassembly-v02-windows-real-cad.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract independent OpenAssembly source
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'OpenAssemblyCompare_V02_GITHUB_REAL_CAD.zip')) { throw 'Upload OpenAssemblyCompare_V02_GITHUB_REAL_CAD.zip to the branch root to start compilation.' }
+          Expand-Archive -LiteralPath 'OpenAssemblyCompare_V02_GITHUB_REAL_CAD.zip' -DestinationPath source -Force
+          if (-not (Test-Path source/OpenAssemblyCompare/pyproject.toml)) { throw 'Unexpected ZIP structure' }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install dependencies
+        working-directory: source/OpenAssemblyCompare
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test,package]" psutil
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency install failed' }
+      - name: Run independent unit and STEP tests
+        working-directory: source/OpenAssemblyCompare
+        shell: pwsh
+        run: |
+          python -m pytest tests -q -ra
+          if ($LASTEXITCODE -ne 0) { throw 'Unit/STEP tests failed' }
+      - name: Compile Windows GUI
+        working-directory: source/OpenAssemblyCompare
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name OpenAssemblyCompare --collect-all OCP --hidden-import tkinter launch_gui.py
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path dist/OpenAssemblyCompare/OpenAssemblyCompare.exe)) { throw 'GUI EXE build failed' }
+      - name: Compile Windows CLI for independent automation
+        working-directory: source/OpenAssemblyCompare
+        shell: pwsh
+        run: |
+          @'
+          from openassembly.runner import main
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          '@ | Set-Content -Encoding utf8 launch_cli.py
+          python -m PyInstaller --noconfirm --clean --onedir --console --name OpenAssemblyCompareCLI --collect-all OCP launch_cli.py
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path dist/OpenAssemblyCompareCLI/OpenAssemblyCompareCLI.exe)) { throw 'CLI EXE build failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenAssemblyCompare-v02-Windows-GUI
+          path: source/OpenAssemblyCompare/dist/OpenAssemblyCompare/**
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenAssemblyCompare-v02-Windows-CLI
+          path: source/OpenAssemblyCompare/dist/OpenAssemblyCompareCLI/**
+          retention-days: 30
+          if-no-files-found: error
+  real-cad:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [voron2, trident]
+        scenario: [identical, shift]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract source and test runner
+        shell: pwsh
+        run: Expand-Archive -LiteralPath 'OpenAssemblyCompare_V02_GITHUB_REAL_CAD.zip' -DestinationPath source -Force
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install independent CAD test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -e "source/OpenAssemblyCompare[test]" psutil
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: OpenAssemblyCompare-v02-Windows-CLI
+          path: app
+      - name: Benchmark genuine public Voron CAD through compiled CLI
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          PYTHONFAULTHANDLER: '1'
+          PYTHONPATH: source/OpenAssemblyCompare/src
+        run: |
+          python source/OpenAssemblyCompare/benchmarks/public_voron.py --model ${{ matrix.model }} --scenario ${{ matrix.scenario }} --output evidence/${{ matrix.model }}-${{ matrix.scenario }} --executable app/OpenAssemblyCompareCLI.exe --timeout 2400
+          if ($LASTEXITCODE -ne 0) { throw 'Large CAD benchmark failed - inspect artifacts' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Evidence-v02-${{ matrix.model }}-${{ matrix.scenario }}
+          path: |
+            evidence/**/RESULT.json
+            evidence/**/worker.log
+            evidence/**/comparison/comparison.json
+            evidence/**/comparison/BOM_ZMIANY.csv
+          if-no-files-found: warn
+          retention-days: 30
