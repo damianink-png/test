@@ -36,6 +36,8 @@ jobs:
           Expand-Archive DSCompare_RC9_AUDYT_20261028_ZRODLA.zip -DestinationPath . -Force
           python ci/patch_rc9_faulthandler_lock.py
           if ($LASTEXITCODE -ne 0) { throw 'Source patch failed' }
+          python ci/patch_large_cad_diagnostics.py
+          if ($LASTEXITCODE -ne 0) { throw 'Large CAD diagnostic patch failed' }
       - uses: actions/download-artifact@v4
         with:
           name: RC9-audit-Windows-x64
@@ -105,5 +107,7 @@ jobs:
           path: |
             evidence/**
             diagnostics/**
+            dscompare_rc9_manual/ci/evidence/**
+            dscompare_rc9_manual/ci/models/**/comparison/**
           if-no-files-found: warn
           retention-days: 14
