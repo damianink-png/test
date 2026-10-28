@@ -18,11 +18,12 @@ jobs:
         run: |
           python - <<'PY'
           import os,subprocess,pathlib,json
+          # Exact latest failing Windows scenarios from run 40716826311.
+          # This diagnostic never changes CAD classification or acceptance.
           ids={
-            'new_trident_revision':12695070973,
-            'new_v2_shift':12695615298,
-            'new_trident_shift':12694541713,
-            'new_v2_revision_shift':12694341924,
+            'trident_revision':12829659510,
+            'trident_shift':12830273772,
+            'trident_revision_shift':12831143119,
           }
           for label,art in ids.items():
             print('\n===== ARTIFACT',label,art,'=====',flush=True)
@@ -32,7 +33,7 @@ jobs:
               for n in z.namelist():
                 inf=z.getinfo(n)
                 print('ENTRY',n,inf.file_size)
-                if inf.file_size>2_000_000 or not n.lower().endswith(('.txt','.json','.log','.stderr','.stdout','.csv','.xml')):continue
+                if inf.file_size>8_000_000 or not n.lower().endswith(('.txt','.json','.log','.stderr','.stdout','.csv','.xml')):continue
                 data=z.read(n).decode('utf-8','replace')
                 if n.lower().endswith('.json'):
                   try:
@@ -43,7 +44,9 @@ jobs:
                   except Exception:pass
                 lines=data.splitlines()
                 hits=[x for x in lines if any(k in x.lower() for k in ('error','exception','traceback','timeout','fatal','failed','brep','incomplete','alignment','memory','peak','limit','aborted','exit','terminated','same','common','stage'))]
-                for line in hits[-70:]:print('LOG',line[:650])
+                for line in hits[-110:]:print('LOG',line[:900])
                 if not hits:
-                  for line in lines[-12:]:print('TAIL',line[:500])
+                  for line in lines[-18:]:print('TAIL',line[:700])
+                if n.lower().endswith(('exe_stderr.log','exe_stdout.log')):
+                  for line in lines[-60:]:print('EXE_TAIL',line[:900])
           PY
