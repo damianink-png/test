@@ -1,0 +1,75 @@
+name: RC9 interleaved proof regression and Windows build
+on:
+  push:
+    branches: [fix/rc9-virtual-offset-20261028]
+    paths: ['.github/workflows/rc9-interleaved-regression.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 65
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract and apply strict geometry patches
+        shell: pwsh
+        run: |
+          Expand-Archive DSCompare_RC9_AUDYT_20261028_ZRODLA.zip -DestinationPath . -Force
+          python ci/patch_rc9_faulthandler_lock.py
+          if ($LASTEXITCODE -ne 0) { throw 'source patch failed' }
+          python ci/patch_large_cad_diagnostics.py
+          if ($LASTEXITCODE -ne 0) { throw 'diagnostic patch failed' }
+          python ci/patch_rc9_native_proof.py
+          if ($LASTEXITCODE -ne 0) { throw 'native patch failed' }
+          python ci/patch_rc9_common_failfast.py
+          if ($LASTEXITCODE -ne 0) { throw 'common patch failed' }
+          python ci/patch_rc9_invalid_pair_fastpath.py
+          if ($LASTEXITCODE -ne 0) { throw 'invalid pair patch failed' }
+          python ci/patch_rc9_virtual_alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'virtual alignment patch failed' }
+          python ci/patch_rc9_interleaved_verification.py
+          if ($LASTEXITCODE -ne 0) { throw 'interleaved proof patch failed' }
+          python -m compileall -q dscompare_rc9_manual/dsac29
+          if ($LASTEXITCODE -ne 0) { throw 'syntax failed' }
+      - name: Install and run regressions
+        shell: pwsh
+        working-directory: dscompare_rc9_manual
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if ($LASTEXITCODE -ne 0) { throw 'dependencies failed' }
+          python -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { throw 'pytest failed' }
+          python ci/run_manual_regressions.py
+          if ($LASTEXITCODE -ne 0) { throw 'regressions failed' }
+          node ci/test_preview_controls.cjs dsac29/preview_template.html
+          if ($LASTEXITCODE -ne 0) { throw 'preview failed' }
+      - name: Compile Windows EXE
+        shell: pwsh
+        working-directory: dscompare_rc9_manual
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+          if (-not (Test-Path dist/DSCompare/DSCompare.exe)) { throw 'EXE missing' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RC9-interleaved-regression-reports
+          path: |
+            dscompare_rc9_manual/integration.xml
+            dscompare_rc9_manual/full-regressions.xml
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: RC9-interleaved-Windows-x64
+          path: dscompare_rc9_manual/dist/DSCompare/**
+          if-no-files-found: error
