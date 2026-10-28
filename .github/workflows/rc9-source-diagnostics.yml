@@ -1,0 +1,35 @@
+name: RC9 source diagnostics export
+on:
+  push:
+    branches: [fix/rc9-virtual-offset-20261028]
+    paths: ['.github/workflows/rc9-source-diagnostics.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract source from audited archive
+        shell: bash
+        run: |
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('DSCompare_RC9_AUDYT_20261028_ZRODLA.zip') as z:
+              z.extractall('.')
+          PY
+          python ci/patch_rc9_faulthandler_lock.py
+          python ci/patch_large_cad_diagnostics.py
+          python ci/patch_rc9_native_proof.py
+          python ci/patch_rc9_common_failfast.py
+          python ci/patch_rc9_invalid_pair_fastpath.py
+          python ci/patch_rc9_virtual_alignment.py
+          python -m compileall -q dscompare_rc9_manual/dsac29
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RC9-patched-python-source-for-diagnostics
+          path: |
+            dscompare_rc9_manual/dsac29/*.py
+            dscompare_rc9_manual/ci/*.py
+          retention-days: 3
