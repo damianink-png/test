@@ -50,3 +50,26 @@ jobs:
                 if n.lower().endswith(('exe_stderr.log','exe_stdout.log')):
                   for line in lines[-60:]:print('EXE_TAIL',line[:900])
           PY
+
+      - name: Export exact RC9 source modules for diagnosis
+        shell: bash
+        run: |
+          python - <<'PY'
+          import zipfile,pathlib
+          src=pathlib.Path('DSCompare_RC9_AUDYT_20261028_ZRODLA.zip')
+          out=pathlib.Path('diagnostic-source')
+          out.mkdir(exist_ok=True)
+          wanted={'native_guard.py','material_deltas.py','deferred_alignment.py','brep_safety.py','compare.py','revision_overlap.py','trace_r22.py'}
+          with zipfile.ZipFile(src) as z:
+            for n in z.namelist():
+              if pathlib.PurePosixPath(n).name in wanted and '/dsac29/' in '/'+n:
+                dest=out/pathlib.PurePosixPath(n).name
+                dest.write_bytes(z.read(n))
+                print('EXPORTED',n,'->',dest)
+          assert (out/'native_guard.py').exists()
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc9-source-modules-for-debug
+          path: diagnostic-source/**
+          if-no-files-found: error
