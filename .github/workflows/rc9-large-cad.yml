@@ -2,7 +2,7 @@ name: DS Compare RC9 large real CAD assemblies
 on:
   push:
     branches: [fix/rc9-native-crash-evidence-20261028]
-    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py', 'ci/patch_rc9_original_tolerance_budget.py', 'ci/test_rc9_original_tolerance_budget.py', 'ci/test_rc9_native_repair_budget.py']
+    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py', 'ci/patch_rc9_original_tolerance_budget.py', 'ci/test_rc9_original_tolerance_budget.py', 'ci/test_rc9_native_repair_budget.py', 'ci/rc9_common_probe.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -229,6 +229,14 @@ jobs:
             Write-Host "SAMPLED_COMBINED_PEAK_WORKING_SET_BYTES=$peak"
           }
           if ($exitCode -ne 0) { throw "Real CAD $model $case failed" }
+      - name: Probe failed Common independently (diagnostic only)
+        if: failure()
+        shell: pwsh
+        run: |
+          # Captured A/B are the exact failed inputs; probes are never a CAD verdict.
+          # Timeouts and invalid OCCT outputs remain explicit in the JSON artifact.
+          python ci/rc9_common_probe.py evidence/comparison/FAILED_BREP/common evidence/common-probe.json 12
+          if ($LASTEXITCODE -ne 0) { Write-Warning 'Common probe failed; original CAD failure remains authoritative' }
       - name: Audit STEP HTML and BOM artifacts
         shell: pwsh
         run: |
