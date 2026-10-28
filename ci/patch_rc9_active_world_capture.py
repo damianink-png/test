@@ -1,0 +1,60 @@
+"""Capture the last two native STEP proof inputs before an access violation.
+
+Diagnostics only: no changes to B-Rep proofs, tolerance, or matching.
+"""
+from pathlib import Path
+import ast
+
+root=Path(__file__).resolve().parents[1]/'dscompare_rc9_manual'
+path=root/'dsac29'/'native_guard.py'
+s=path.read_text(encoding='utf-8')
+anchor='\ndef _load_brep(path):\n'
+assert s.count(anchor)==1, 'Unexpected native_guard anchor'
+insert='''
+_active_capture_counter=0
+
+def _capture_active_world(root,a,b,tolerance):
+    """Durably keep the last two world-proof requests for native crash analysis.
+
+    Uses atomic slot updates and already-serialized B-Rep bytes. This is
+    evidence only; never returns a geometry verdict.
+    """
+    if os.getenv('DSCOMPARE_CAPTURE_ACTIVE_BREP','0')!='1':return
+    from . import trace_r22 as trace
+    if trace._path is None:return
+    import shutil
+    global _active_capture_counter
+    _active_capture_counter+=1
+    count=_active_capture_counter
+    slot=count%2
+    destination=trace._path.parent/'FAILED_BREP'/'active_world'
+    try:
+        destination.mkdir(parents=True,exist_ok=True)
+        for name in ('A','B'):
+            temporary=destination/f'.slot{slot}_{name}.partial'
+            shutil.copyfile(Path(root)/(name+'.brep'),temporary)
+            os.replace(temporary,destination/f'slot{slot}_{name}.brep')
+        metadata={'sequence':count,'slot':slot,'a_path':str(a.path),
+                  'b_path':str(b.path),'tolerance_mm':float(tolerance)}
+        temporary=destination/'.current.partial'
+        temporary.write_text(json.dumps(metadata,ensure_ascii=False),encoding='utf-8')
+        os.replace(temporary,destination/'current.json')
+    except OSError as exc:
+        trace.mark('native_world_capture','ERROR',reason=str(exc),sequence=count)
+'''
+s=s.replace(anchor,'\n'+insert+anchor)
+anchor2="""        argv = process_args or (
+            [sys.executable, '--native-brep-compare'] if getattr(sys, 'frozen', False)
+            else [sys.executable, '-m', 'dsac29.native_guard'])
+        trace.mark('native_world', 'BEGIN', timeout_s=timeout_s)"""
+new2="""        # Save current B-Rep pair BEFORE a possible native access violation.
+        _capture_active_world(root,a,b,tolerance)
+        argv = process_args or (
+            [sys.executable, '--native-brep-compare'] if getattr(sys, 'frozen', False)
+            else [sys.executable, '-m', 'dsac29.native_guard'])
+        trace.mark('native_world', 'BEGIN', timeout_s=timeout_s)"""
+assert s.count(anchor2)==1, 'Unexpected world proof anchor'
+s=s.replace(anchor2,new2)
+ast.parse(s)
+path.write_text(s,encoding='utf-8')
+print('RC9 active native B-Rep ring installed; opt-in diagnostic only')
