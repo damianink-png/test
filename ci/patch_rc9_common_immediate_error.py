@@ -71,3 +71,31 @@ m=m.replace(old_negative,new_negative)
 ast.parse(m)
 material.write_text(m,encoding='utf-8')
 print('RC9 negative Common exits before unsafe OCCT object teardown in isolated child')
+
+# Keep the OCCT binding untouched in unit tests.  Patching OCP.GProp classes
+# globally can destabilize the native runtime during teardown on Windows.
+# Extract only the signed-volume read behind a narrow, mockable function.
+material=root/'dsac29'/'material_deltas.py'
+m=material.read_text(encoding='utf-8')
+volume_anchor="""        properties=GProp_GProps()
+        BRepGProp.VolumeProperties_s(result,properties)
+        signed=float(properties.Mass())"""
+if m.count(volume_anchor)!=1:
+    raise SystemExit(f'Common signed-volume anchor count {m.count(volume_anchor)}')
+m=m.replace(volume_anchor,"        signed=_common_signed_volume(result)")
+helper="""
+
+def _common_signed_volume(shape):
+    \"\"\"Read OCCT signed volume without monkeypatching C++ binding classes.\"\"\"
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    props=GProp_GProps()
+    BRepGProp.VolumeProperties_s(shape,props)
+    return float(props.Mass())
+"""
+if 'def _common_signed_volume(' in m:
+    raise SystemExit('Common signed-volume helper already present')
+m+=helper
+ast.parse(m)
+material.write_text(m,encoding='utf-8')
+print('RC9 signed Common volume isolated behind mockable Python helper')
