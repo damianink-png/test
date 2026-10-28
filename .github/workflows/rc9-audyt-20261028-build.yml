@@ -31,6 +31,8 @@ jobs:
           if (-not (Test-Path DSCompare_RC9_AUDYT_20261028_ZRODLA.zip)) { throw 'Missing source ZIP' }
           Expand-Archive -LiteralPath DSCompare_RC9_AUDYT_20261028_ZRODLA.zip -DestinationPath . -Force
           if (-not (Test-Path dscompare_rc9_manual/BUDUJ_WINDOWS.ps1)) { throw 'Missing build script' }
+          python ci/patch_rc9_faulthandler_lock.py
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to apply diagnostic handle fix' }
       - name: Install dependencies and run regressions
         shell: pwsh
         working-directory: dscompare_rc9_manual
