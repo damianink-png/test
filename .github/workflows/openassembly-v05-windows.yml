@@ -1,10 +1,10 @@
-name: OpenAssembly v0.5 - Windows build and large STEP regression
+name: OpenAssembly v0.6 - Windows build and large STEP regression
 on:
   push:
-    branches: ['feature/openassembly-v05-inspection']
+    branches: ['feature/openassembly-v06-inspection']
     paths:
       - 'OpenAssemblyCompare_sources.tar.xz.b64'
-      - '.github/workflows/openassembly-v05-windows.yml'
+      - '.github/workflows/openassembly-v06-windows.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Extract independent v0.5 sources
+      - name: Extract independent v0.6 sources
         shell: pwsh
         run: |
           $z=(Get-Content -Raw OpenAssemblyCompare_sources.tar.xz.b64).Trim()
@@ -47,13 +47,13 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path dist/OpenAssemblyCompareCLI/OpenAssemblyCompareCLI.exe)) {throw 'CLI compile failed'}
       - uses: actions/upload-artifact@v4
         with:
-          name: OpenAssemblyCompare-v05-Windows-GUI
+          name: OpenAssemblyCompare-v06-Windows-GUI
           path: source/OpenAssemblyCompare/dist/OpenAssemblyCompare/**
           retention-days: 30
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: OpenAssemblyCompare-v05-Windows-CLI
+          name: OpenAssemblyCompare-v06-Windows-CLI
           path: source/OpenAssemblyCompare/dist/OpenAssemblyCompareCLI/**
           retention-days: 30
           if-no-files-found: error
@@ -84,7 +84,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {throw 'Dependencies failed'}
       - uses: actions/download-artifact@v4
         with:
-          name: OpenAssemblyCompare-v05-Windows-CLI
+          name: OpenAssemblyCompare-v06-Windows-CLI
           path: app
       - name: Run previously problematic global-shift benchmark
         shell: pwsh
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: OpenAssembly-v05-evidence-${{ matrix.model }}-shift
+          name: OpenAssembly-v06-evidence-${{ matrix.model }}-shift
           path: |
             evidence/**/RESULT.json
             evidence/**/worker.log
