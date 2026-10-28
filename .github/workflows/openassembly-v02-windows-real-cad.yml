@@ -80,7 +80,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Extract source and test runner
         shell: pwsh
-        run: [IO.File]::WriteAllBytes('oac_source.tar.xz',[Convert]::FromBase64String((Get-Content -Raw 'OpenAssemblyCompare_sources.tar.xz.b64').Trim()))
+        run: |
+          [IO.File]::WriteAllBytes('oac_source.tar.xz',[Convert]::FromBase64String((Get-Content -Raw 'OpenAssemblyCompare_sources.tar.xz.b64').Trim()))
           python -c "import tarfile;tarfile.open('oac_source.tar.xz','r:xz').extractall('source/OpenAssemblyCompare',filter='data')"
       - uses: actions/setup-python@v5
         with:
