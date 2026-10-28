@@ -1,7 +1,7 @@
 name: DS Compare RC9 large real CAD assemblies
 on:
   push:
-    branches: [build/rc9-audyt-20261028]
+    branches: [fix/rc9-virtual-offset-20261028]
     paths: ['.github/workflows/rc9-large-cad.yml']
   workflow_dispatch:
 permissions:
@@ -39,6 +39,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
           python ci/patch_rc9_virtual_alignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Two-stage virtual alignment patch failed' }
+          python ci/patch_rc9_interleaved_verification.py
+          if ($LASTEXITCODE -ne 0) { throw 'Interleaved verification patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/deferred_alignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Virtual alignment syntax failed' }
       - name: Build current patched RC9 source for each large test
@@ -51,6 +53,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'pytest installation failed' }
           python -m pytest -q ../patches/rc9/test_robust_translation.py
           if ($LASTEXITCODE -ne 0) { throw 'Virtual translation proposal regressions failed' }
+          python ../ci/test_rc9_interleaved.py
+          if ($LASTEXITCODE -ne 0) { throw 'Interleaved proof regression failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
           python -m pytest -q ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
@@ -103,6 +107,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
           python ci/patch_rc9_virtual_alignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Two-stage virtual alignment patch failed' }
+          python ci/patch_rc9_interleaved_verification.py
+          if ($LASTEXITCODE -ne 0) { throw 'Interleaved verification patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/deferred_alignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Virtual alignment syntax failed' }
       - uses: actions/download-artifact@v4
