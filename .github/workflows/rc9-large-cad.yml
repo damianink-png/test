@@ -38,12 +38,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Source patch failed' }
           python ci/patch_large_cad_diagnostics.py
           if ($LASTEXITCODE -ne 0) { throw 'Large CAD diagnostic patch failed' }
-      - uses: actions/download-artifact@v4
-        with:
-          name: RC9-audit-Windows-x64
-          run-id: 40642937977
-          github-token: ${{ github.token }}
-          path: app
+      - name: Build current patched RC9 source for each large test
+        shell: pwsh
+        working-directory: dscompare_rc9_manual
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Install failed' }
+          python ci/run_manual_regressions.py
+          if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          if (-not (Test-Path dist/DSCompare/DSCompare.exe)) { throw 'Missing executable' }
       - name: Install CAD test dependencies
         shell: pwsh
         run: |
@@ -79,9 +84,9 @@ jobs:
           }
           try {
             if ($case -eq 'revision') {
-              python dscompare_rc9_manual/ci/real_revision_without_shift.py app/DSCompare.exe $model
+              python dscompare_rc9_manual/ci/real_revision_without_shift.py dscompare_rc9_manual/dist/DSCompare/DSCompare.exe $model
             } else {
-              python dscompare_rc9_manual/ci/large_exe.py app/DSCompare.exe $model $case
+              python dscompare_rc9_manual/ci/large_exe.py dscompare_rc9_manual/dist/DSCompare/DSCompare.exe $model $case
             }
             $exitCode = $LASTEXITCODE
           } finally {
