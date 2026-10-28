@@ -41,3 +41,29 @@ def test_impossible_negative_common_is_rejected_before_topology_validation(monke
     monkeypatch.setattr(material_deltas,'_check_result',no_topology_check)
     with pytest.raises(RuntimeError,match='impossible signed volume'):
         material_deltas.operate(material_deltas.BRepAlgoAPI_Common,a,b,.01)
+
+
+def test_negative_common_isolated_child_writes_error_before_native_teardown(monkeypatch,tmp_path):
+    import os
+    import OCP.BRepGProp as gprop
+    import OCP.GProp as props
+    from pathlib import Path
+    a=BRepPrimAPI_MakeBox(10,10,10).Shape()
+    b=BRepPrimAPI_MakeBox(gp_Pnt(5,0,0),10,10,10).Shape()
+    reply=tmp_path/'reply.json'
+    class NegativeProperties:
+        def Mass(self):return -122.58159431091562
+    class EarlyExit(BaseException):
+        def __init__(self,code):self.code=code
+    def exit_without_teardown(code):raise EarlyExit(code)
+    monkeypatch.setenv('DSCOMPARE_COMMON_FAILFAST_REPLY',str(reply))
+    monkeypatch.setattr(os,'_exit',exit_without_teardown)
+    monkeypatch.setattr(props,'GProp_GProps',NegativeProperties)
+    monkeypatch.setattr(gprop,'BRepGProp',SimpleNamespace(VolumeProperties_s=lambda shape,output:None))
+    with pytest.raises(EarlyExit) as caught:
+        material_deltas.operate(material_deltas.BRepAlgoAPI_Common,a,b,.01)
+    assert caught.value.code==70
+    data=json.loads(reply.read_text(encoding='utf-8'))
+    assert data['ok'] is False
+    assert 'impossible signed volume' in data['error']
+    assert reply.with_suffix('.phase').read_text(encoding='utf-8')=='common_rejected'
