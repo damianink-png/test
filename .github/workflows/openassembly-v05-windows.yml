@@ -1,10 +1,10 @@
 name: OpenAssembly v0.6 - Windows build and large STEP regression
 on:
   push:
-    branches: ['feature/openassembly-v06-inspection']
+    branches: ['feature/openassembly-v05-inspection']
     paths:
       - 'OpenAssemblyCompare_sources.tar.xz.b64'
-      - '.github/workflows/openassembly-v06-windows.yml'
+      - '.github/workflows/openassembly-v05-windows.yml'
   workflow_dispatch:
 permissions:
   contents: read
