@@ -106,3 +106,4 @@ jobs:
             evidence/**/comparison/CZASY_ANALIZY.json
           retention-days: 30
           if-no-files-found: warn
+# v0.6 inspection regression: 32 tests and Voron/Trident shift
