@@ -35,6 +35,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native B-Rep proof patch failed' }
           python ci/patch_rc9_common_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Common diagnostic patch failed' }
+          python ci/patch_rc9_common_immediate_error.py
+          if ($LASTEXITCODE -ne 0) { throw 'Common worker fail-fast patch failed' }
           python ci/patch_rc9_invalid_pair_fastpath.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
           python ci/patch_rc9_virtual_alignment.py
@@ -103,6 +105,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native B-Rep proof patch failed' }
           python ci/patch_rc9_common_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Common diagnostic patch failed' }
+          python ci/patch_rc9_common_immediate_error.py
+          if ($LASTEXITCODE -ne 0) { throw 'Common worker fail-fast patch failed' }
           python ci/patch_rc9_invalid_pair_fastpath.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
           python ci/patch_rc9_virtual_alignment.py
