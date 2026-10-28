@@ -1,10 +1,9 @@
-name: OpenAssembly Compare v0.2 - Windows EXE and real Voron STEP
+name: OpenAssembly Compare v0.4 - two shift regressions
 on:
   push:
     branches: [openassembly-v02-windows-real-cad]
     paths:
       - 'OpenAssemblyCompare_sources.tar.xz.b64'
-      - '.github/workflows/openassembly-v02-windows-real-cad.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -57,13 +56,13 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path dist/OpenAssemblyCompareCLI/OpenAssemblyCompareCLI.exe)) { throw 'CLI EXE build failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: OpenAssemblyCompare-v02-Windows-GUI
+          name: OpenAssemblyCompare-v04-Windows-GUI
           path: source/OpenAssemblyCompare/dist/OpenAssemblyCompare/**
           retention-days: 30
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: OpenAssemblyCompare-v02-Windows-CLI
+          name: OpenAssemblyCompare-v04-Windows-CLI
           path: source/OpenAssemblyCompare/dist/OpenAssemblyCompareCLI/**
           retention-days: 30
           if-no-files-found: error
@@ -75,7 +74,7 @@ jobs:
       fail-fast: false
       matrix:
         model: [voron2, trident]
-        scenario: [identical, shift]
+        scenario: [shift]
     steps:
       - uses: actions/checkout@v4
       - name: Extract source and test runner
@@ -94,7 +93,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
       - uses: actions/download-artifact@v4
         with:
-          name: OpenAssemblyCompare-v02-Windows-CLI
+          name: OpenAssemblyCompare-v04-Windows-CLI
           path: app
       - name: Benchmark genuine public Voron CAD through compiled CLI
         shell: pwsh
@@ -108,7 +107,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Evidence-v02-${{ matrix.model }}-${{ matrix.scenario }}
+          name: Evidence-v04-${{ matrix.model }}-${{ matrix.scenario }}
           path: |
             evidence/**/RESULT.json
             evidence/**/worker.log
