@@ -1,0 +1,109 @@
+name: DS Compare RC9 large real CAD assemblies
+on:
+  push:
+    branches: [build/rc9-audyt-20261028]
+    paths: ['.github/workflows/rc9-large-cad.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  cad:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        model: [v2, trident]
+        case: [revision, shift, revision_shift]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract exact audited source
+        shell: pwsh
+        run: |
+          Expand-Archive DSCompare_RC9_AUDYT_20261028_ZRODLA.zip -DestinationPath . -Force
+          python ci/patch_rc9_faulthandler_lock.py
+          if ($LASTEXITCODE -ne 0) { throw 'Source patch failed' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: RC9-audit-Windows-x64
+          run-id: 40642937977
+          github-token: ${{ github.token }}
+          path: app
+      - name: Install CAD test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+          New-Item -ItemType Directory -Path diagnostics -Force | Out-Null
+          python -m pip freeze | Out-File diagnostics/dependencies.txt
+          Get-ComputerInfo | Out-File diagnostics/system.txt
+      - name: Run real CAD assembly scenario
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = (Resolve-Path dscompare_rc9_manual).Path
+          $case = '${{ matrix.case }}'
+          $model = '${{ matrix.model }}'
+          New-Item -ItemType Directory -Path evidence -Force | Out-Null
+          $ramPath = Join-Path (Resolve-Path evidence).Path 'ram-samples.csv'
+          Set-Content -Path $ramPath -Value 'utc,combined_working_set_bytes,max_process_working_set_bytes,process_count'
+          $sampler = Start-Job -ArgumentList $ramPath -ScriptBlock {
+            param($path)
+            while ($true) {
+              try {
+                $p = @(Get-Process -Name DSCompare -ErrorAction SilentlyContinue)
+                if ($p.Count -gt 0) {
+                  $sum = ($p | Measure-Object -Property WorkingSet64 -Sum).Sum
+                  $max = ($p | Measure-Object -Property WorkingSet64 -Maximum).Maximum
+                  $stamp = [DateTime]::UtcNow.ToString('o')
+                  Add-Content -Path $path -Value "$stamp,$sum,$max,$($p.Count)"
+                }
+              } catch {}
+              Start-Sleep -Seconds 2
+            }
+          }
+          try {
+            if ($case -eq 'revision') {
+              python dscompare_rc9_manual/ci/real_revision_without_shift.py app/DSCompare.exe $model
+            } else {
+              python dscompare_rc9_manual/ci/large_exe.py app/DSCompare.exe $model $case
+            }
+            $exitCode = $LASTEXITCODE
+          } finally {
+            Stop-Job $sampler -ErrorAction SilentlyContinue
+            Remove-Job $sampler -Force -ErrorAction SilentlyContinue
+          }
+          $samples = @(Import-Csv $ramPath)
+          if ($samples.Count -gt 0) {
+            $peak = ($samples | Measure-Object -Property combined_working_set_bytes -Maximum).Maximum
+            Write-Host "SAMPLED_COMBINED_PEAK_WORKING_SET_BYTES=$peak"
+          }
+          if ($exitCode -ne 0) { throw "Real CAD $model $case failed" }
+      - name: Audit STEP HTML and BOM artifacts
+        shell: pwsh
+        run: |
+          python dscompare_rc9_manual/ci/audit_artifacts.py evidence '${{ matrix.case }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Output artifact audit failed' }
+      - name: Save evidence and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-large-${{ matrix.model }}-${{ matrix.case }}
+          path: |
+            evidence/**
+            diagnostics/**
+          if-no-files-found: warn
+          retention-days: 14
