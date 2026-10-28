@@ -36,10 +36,16 @@ jobs:
                           print('CONTEXT',fn,lo+1,hi)
                           for j in range(lo,hi):print(f'{j+1:04d}: {lines[j]}')
           print('===== ALIGNMENT SOURCE DETAILS =====')
-          for fn,lo,hi in [('deferred_alignment.py',1,145),('registration_gate.py',1,260),('compare.py',1,100)]:
+          for fn,lo,hi in [('deferred_alignment.py',170,313),('registration_gate.py',1,260),('compare.py',1,100)]:
               p=root/fn
               if not p.exists():continue
               lines=p.read_text(encoding='utf-8').splitlines()
               print('DETAIL FILE',fn)
               for i in range(lo-1,min(hi,len(lines))):print(f'{i+1:04d}: {lines[i]}')
+          print('===== CERTIFIED PAIR REFERENCES =====')
+          for p in root.glob('*.py'):
+              lines=p.read_text(encoding='utf-8').splitlines()
+              for i,line in enumerate(lines):
+                  if 'certified_pairs' in line or 'full_pair_map' in line:
+                      print(p.name,i+1,line.strip())
           PY
