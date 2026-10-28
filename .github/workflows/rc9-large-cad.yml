@@ -2,7 +2,7 @@ name: DS Compare RC9 large real CAD assemblies
 on:
   push:
     branches: [fix/rc9-native-crash-evidence-20261028]
-    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py']
+    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py', 'ci/patch_rc9_original_tolerance_budget.py', 'ci/test_rc9_original_tolerance_budget.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -43,6 +43,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
           python ci/patch_rc9_repair_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict repair fail-closed patch failed' }
+          python ci/patch_rc9_original_tolerance_budget.py
+          if ($LASTEXITCODE -ne 0) { throw 'Original STEP tolerance budget patch failed' }
+          python -m py_compile dscompare_rc9_manual/dsac29/brep_safety.py dscompare_rc9_manual/dsac29/native_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Original tolerance proof syntax failed' }
           python ci/patch_rc9_active_world_capture.py
           if ($LASTEXITCODE -ne 0) { throw 'Native crash evidence patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/native_guard.py
@@ -80,6 +84,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Common immediate failure regression failed' }
           python ../ci/test_rc9_repair_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Rejected repair fail-closed regression failed' }
+          python ../ci/test_rc9_original_tolerance_budget.py
+          if ($LASTEXITCODE -ne 0) { throw 'Original STEP tolerance budget regression failed' }
           python ../ci/test_rc9_active_world_capture.py
           if ($LASTEXITCODE -ne 0) { throw 'Native crash evidence regression failed' }
           python -m pytest -vv -s ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
@@ -137,6 +143,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
           python ci/patch_rc9_repair_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict repair fail-closed patch failed' }
+          python ci/patch_rc9_original_tolerance_budget.py
+          if ($LASTEXITCODE -ne 0) { throw 'Original STEP tolerance budget patch failed' }
+          python -m py_compile dscompare_rc9_manual/dsac29/brep_safety.py dscompare_rc9_manual/dsac29/native_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Original tolerance proof syntax failed' }
           python ci/patch_rc9_active_world_capture.py
           if ($LASTEXITCODE -ne 0) { throw 'Native crash evidence patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/native_guard.py
