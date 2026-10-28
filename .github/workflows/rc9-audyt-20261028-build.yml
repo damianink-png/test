@@ -35,6 +35,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Failed to apply diagnostic handle fix' }
           python ci/patch_rc9_native_proof.py
           if ($LASTEXITCODE -ne 0) { throw 'Native B-Rep proof patch failed' }
+          python ci/patch_rc9_common_failfast.py
+          if ($LASTEXITCODE -ne 0) { throw 'Common diagnostic patch failed' }
       - name: Install dependencies and run regressions
         shell: pwsh
         working-directory: dscompare_rc9_manual
@@ -45,8 +47,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'pytest installation failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'Regressions failed' }
-          python -m pytest -q ../ci/test_rc9_native_repair_budget.py
-          if ($LASTEXITCODE -ne 0) { throw 'Native proof budget regression failed' }
+          python -m pytest -q ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native proof and Common regressions failed' }
           node ci/test_preview_controls.cjs dsac29/preview_template.html
           if ($LASTEXITCODE -ne 0) { throw 'Preview tests failed' }
       - name: Compile Windows application
