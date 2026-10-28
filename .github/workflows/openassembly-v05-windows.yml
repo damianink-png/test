@@ -1,0 +1,108 @@
+name: OpenAssembly v0.5 - Windows build and large STEP regression
+on:
+  push:
+    branches: ['feature/openassembly-v05-inspection']
+    paths:
+      - 'OpenAssemblyCompare_sources.tar.xz.b64'
+      - '.github/workflows/openassembly-v05-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract independent v0.5 sources
+        shell: pwsh
+        run: |
+          $z=(Get-Content -Raw OpenAssemblyCompare_sources.tar.xz.b64).Trim()
+          [IO.File]::WriteAllBytes('source.tar.xz',[Convert]::FromBase64String($z))
+          python -c "import tarfile;tarfile.open('source.tar.xz','r:xz').extractall('source/OpenAssemblyCompare',filter='data')"
+          if (-not (Test-Path source/OpenAssemblyCompare/pyproject.toml)) {throw 'Missing pyproject'}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install dependencies and regression suite
+        working-directory: source/OpenAssemblyCompare
+        shell: pwsh
+        run: |
+          python -m pip install -e '.[test,package]' psutil
+          if ($LASTEXITCODE -ne 0) {throw 'Dependency installation failed'}
+          python -m pytest tests -q -ra
+          if ($LASTEXITCODE -ne 0) {throw 'Regression suite failed'}
+      - name: Compile GUI EXE
+        working-directory: source/OpenAssemblyCompare
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name OpenAssemblyCompare --collect-all OCP --hidden-import openassembly.boolean_ops launch_gui.py
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path dist/OpenAssemblyCompare/OpenAssemblyCompare.exe)) {throw 'GUI compile failed'}
+      - name: Compile CLI EXE
+        working-directory: source/OpenAssemblyCompare
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --console --name OpenAssemblyCompareCLI --collect-all OCP --hidden-import openassembly.boolean_ops launch_cli.py
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path dist/OpenAssemblyCompareCLI/OpenAssemblyCompareCLI.exe)) {throw 'CLI compile failed'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenAssemblyCompare-v05-Windows-GUI
+          path: source/OpenAssemblyCompare/dist/OpenAssemblyCompare/**
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenAssemblyCompare-v05-Windows-CLI
+          path: source/OpenAssemblyCompare/dist/OpenAssemblyCompareCLI/**
+          retention-days: 30
+          if-no-files-found: error
+  large-cad:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [voron2, trident]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract exact tested source
+        shell: pwsh
+        run: |
+          $z=(Get-Content -Raw OpenAssemblyCompare_sources.tar.xz.b64).Trim()
+          [IO.File]::WriteAllBytes('source.tar.xz',[Convert]::FromBase64String($z))
+          python -c "import tarfile;tarfile.open('source.tar.xz','r:xz').extractall('source/OpenAssemblyCompare',filter='data')"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install test CAD dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -e 'source/OpenAssemblyCompare[test]' psutil
+          if ($LASTEXITCODE -ne 0) {throw 'Dependencies failed'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: OpenAssemblyCompare-v05-Windows-CLI
+          path: app
+      - name: Run previously problematic global-shift benchmark
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          PYTHONFAULTHANDLER: '1'
+        run: |
+          python source/OpenAssemblyCompare/benchmarks/public_voron.py --model ${{ matrix.model }} --scenario shift --output evidence/${{ matrix.model }}-shift --executable app/OpenAssemblyCompareCLI.exe --timeout 3000
+          if ($LASTEXITCODE -ne 0) {throw 'CAD regression failed'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: OpenAssembly-v05-evidence-${{ matrix.model }}-shift
+          path: |
+            evidence/**/RESULT.json
+            evidence/**/worker.log
+            evidence/**/comparison/comparison.json
+            evidence/**/comparison/BOM_ZMIANY.csv
+            evidence/**/comparison/CZASY_ANALIZY.json
+          retention-days: 30
+          if-no-files-found: warn
