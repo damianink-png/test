@@ -25,5 +25,8 @@ jobs:
             rc9-snapshot/**/*.ps1
             rc9-snapshot/**/*.yml
             rc9-snapshot/**/*.toml
+            rc9-snapshot/**/*.html
+            rc9-snapshot/**/*.js
+            rc9-snapshot/**/*.json
           if-no-files-found: error
           retention-days: 3
