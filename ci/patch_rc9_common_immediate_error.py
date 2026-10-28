@@ -13,6 +13,7 @@ old="""        report('common_operate')
         common = operate(BRepAlgoAPI_Common,a_shape,b_shape,float(req['tolerance']))
         report('common_write')"""
 new="""        report('common_operate')
+        os.environ['DSCOMPARE_COMMON_FAILFAST_REPLY']=str(result_path)
         try:
             common = operate(BRepAlgoAPI_Common,a_shape,b_shape,float(req['tolerance']))
         except Exception as exc:
@@ -44,3 +45,29 @@ s=s.replace(old2,new2)
 ast.parse(s)
 p.write_text(s,encoding='utf-8')
 print('RC9 isolated Common fail-fast exit installed; errors remain incomplete')
+
+# A malformed OCCT result can hang while unwinding its C++ objects BEFORE
+# the outer worker exception handler is entered. Exit at the negative-volume
+# detection site, only when the isolated Common worker supplied a reply path.
+material=root/'dsac29'/'material_deltas.py'
+m=material.read_text(encoding='utf-8')
+old_negative="""        if not math.isfinite(signed) or signed < -max(1e-5,float(tolerance)**3):
+            raise RuntimeError(f'OCCT Common returned impossible signed volume {signed:.9g} mm3; no valid material intersection')"""
+new_negative="""        if not math.isfinite(signed) or signed < -max(1e-5,float(tolerance)**3):
+            error=f'OCCT Common returned impossible signed volume {signed:.9g} mm3; no valid material intersection'
+            from os import environ, _exit
+            from pathlib import Path
+            import json
+            reply_path=environ.get('DSCOMPARE_COMMON_FAILFAST_REPLY')
+            if reply_path:
+                # Explicit negative verdict, never a fabricated empty Common.
+                destination=Path(reply_path)
+                destination.write_text(json.dumps(dict(ok=False,error=error)),encoding='utf-8')
+                destination.with_suffix('.phase').write_text('common_rejected',encoding='utf-8')
+                _exit(70)
+            raise RuntimeError(error)"""
+if m.count(old_negative)!=1:raise SystemExit(f'Negative Common anchor count {m.count(old_negative)}')
+m=m.replace(old_negative,new_negative)
+ast.parse(m)
+material.write_text(m,encoding='utf-8')
+print('RC9 negative Common exits before unsafe OCCT object teardown in isolated child')
