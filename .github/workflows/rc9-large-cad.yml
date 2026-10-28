@@ -37,10 +37,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Common diagnostic patch failed' }
           python ci/patch_rc9_invalid_pair_fastpath.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
-          Copy-Item patches/rc9/robust_translation.py dscompare_rc9_manual/dsac29/robust_translation.py -Force
-          python patches/rc9/integrate_deferred_translation.py dscompare_rc9_manual/dsac29/deferred_alignment.py
-          if ($LASTEXITCODE -ne 0) { throw 'Virtual translation candidate integration failed' }
-          python -m py_compile dscompare_rc9_manual/dsac29/robust_translation.py dscompare_rc9_manual/dsac29/deferred_alignment.py
+          python ci/patch_rc9_virtual_alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Two-stage virtual alignment patch failed' }
+          python -m py_compile dscompare_rc9_manual/dsac29/deferred_alignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Virtual alignment syntax failed' }
       - name: Build current patched RC9 source for each large test
         shell: pwsh
@@ -102,10 +101,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Common diagnostic patch failed' }
           python ci/patch_rc9_invalid_pair_fastpath.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
-          Copy-Item patches/rc9/robust_translation.py dscompare_rc9_manual/dsac29/robust_translation.py -Force
-          python patches/rc9/integrate_deferred_translation.py dscompare_rc9_manual/dsac29/deferred_alignment.py
-          if ($LASTEXITCODE -ne 0) { throw 'Virtual translation candidate integration failed' }
-          python -m py_compile dscompare_rc9_manual/dsac29/robust_translation.py dscompare_rc9_manual/dsac29/deferred_alignment.py
+          python ci/patch_rc9_virtual_alignment.py
+          if ($LASTEXITCODE -ne 0) { throw 'Two-stage virtual alignment patch failed' }
+          python -m py_compile dscompare_rc9_manual/dsac29/deferred_alignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Virtual alignment syntax failed' }
       - uses: actions/download-artifact@v4
         with:
