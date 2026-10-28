@@ -1,0 +1,68 @@
+name: DS Compare RC9 audit build
+on:
+  push:
+    branches: [build/rc9-audyt-20261028]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: dscompare-rc9-audit-build-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unpack original RC9 audit sources
+        shell: pwsh
+        run: |
+          if (-not (Test-Path DSCompare_RC9_AUDYT_20261028_ZRODLA.zip)) { throw 'Missing source ZIP' }
+          Expand-Archive -LiteralPath DSCompare_RC9_AUDYT_20261028_ZRODLA.zip -DestinationPath . -Force
+          if (-not (Test-Path dscompare_rc9_manual/BUDUJ_WINDOWS.ps1)) { throw 'Missing build script' }
+      - name: Install dependencies and run regressions
+        shell: pwsh
+        working-directory: dscompare_rc9_manual
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+          python -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { throw 'pytest installation failed' }
+          python ci/run_manual_regressions.py
+          if ($LASTEXITCODE -ne 0) { throw 'Regressions failed' }
+          node ci/test_preview_controls.cjs dsac29/preview_template.html
+          if ($LASTEXITCODE -ne 0) { throw 'Preview tests failed' }
+      - name: Compile Windows application
+        shell: pwsh
+        working-directory: dscompare_rc9_manual
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          if (-not (Test-Path dist/DSCompare/DSCompare.exe)) { throw 'EXE not produced' }
+      - name: Save test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-audit-regression-results
+          path: |
+            dscompare_rc9_manual/integration.xml
+            dscompare_rc9_manual/full-regressions.xml
+          if-no-files-found: warn
+      - name: Save Windows build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-audit-Windows-x64
+          path: dscompare_rc9_manual/dist/DSCompare/**
+          if-no-files-found: error
