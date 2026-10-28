@@ -2,7 +2,7 @@ name: DS Compare RC9 large real CAD assemblies
 on:
   push:
     branches: [fix/rc9-virtual-offset-20261028]
-    paths: ['.github/workflows/rc9-large-cad.yml']
+    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -63,7 +63,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
           python ../ci/test_rc9_common_immediate_error.py
           if ($LASTEXITCODE -ne 0) { throw 'Common immediate failure regression failed' }
-          python -m pytest -q ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
+          python -m pytest -vv -s ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Native proof and Common regression failed' }
           ./BUDUJ_WINDOWS.ps1 -NoInstall
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
