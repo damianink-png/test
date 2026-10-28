@@ -47,6 +47,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Interleaved verification patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/deferred_alignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Virtual alignment syntax failed' }
+      - name: Upload patched Python sources for deterministic failure analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-patched-source-snapshot
+          path: |
+            dscompare_rc9_manual/dsac29/*.py
+            dscompare_rc9_manual/ci/*.py
+          if-no-files-found: error
+          retention-days: 14
       - name: Build current patched RC9 source for each large test
         shell: pwsh
         working-directory: dscompare_rc9_manual
