@@ -2,7 +2,7 @@ name: DS Compare RC9 large real CAD assemblies
 on:
   push:
     branches: [fix/rc9-virtual-offset-20261028]
-    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py']
+    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -41,6 +41,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native Common source syntax failed' }
           python ci/patch_rc9_invalid_pair_fastpath.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
+          python ci/patch_rc9_repair_failfast.py
+          if ($LASTEXITCODE -ne 0) { throw 'Strict repair fail-closed patch failed' }
+          python -m py_compile dscompare_rc9_manual/dsac29/native_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Repair fail-closed syntax failed' }
           python ci/patch_rc9_virtual_alignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Two-stage virtual alignment patch failed' }
           python ci/patch_rc9_interleaved_verification.py
@@ -72,6 +76,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
           python ../ci/test_rc9_common_immediate_error.py
           if ($LASTEXITCODE -ne 0) { throw 'Common immediate failure regression failed' }
+          python ../ci/test_rc9_repair_failfast.py
+          if ($LASTEXITCODE -ne 0) { throw 'Rejected repair fail-closed regression failed' }
           python -m pytest -vv -s ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Native proof and Common regression failed' }
           ./BUDUJ_WINDOWS.ps1 -NoInstall
@@ -124,6 +130,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native Common source syntax failed' }
           python ci/patch_rc9_invalid_pair_fastpath.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict invalid-pair proof patch failed' }
+          python ci/patch_rc9_repair_failfast.py
+          if ($LASTEXITCODE -ne 0) { throw 'Strict repair fail-closed patch failed' }
+          python -m py_compile dscompare_rc9_manual/dsac29/native_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Repair fail-closed syntax failed' }
           python ci/patch_rc9_virtual_alignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Two-stage virtual alignment patch failed' }
           python ci/patch_rc9_interleaved_verification.py
