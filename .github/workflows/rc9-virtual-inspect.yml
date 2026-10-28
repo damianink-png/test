@@ -35,4 +35,11 @@ jobs:
                           lo=max(0,i-3);hi=min(len(lines),i+5)
                           print('CONTEXT',fn,lo+1,hi)
                           for j in range(lo,hi):print(f'{j+1:04d}: {lines[j]}')
+          print('===== ALIGNMENT SOURCE DETAILS =====')
+          for fn,lo,hi in [('deferred_alignment.py',1,145),('registration_gate.py',1,260),('compare.py',1,100)]:
+              p=root/fn
+              if not p.exists():continue
+              lines=p.read_text(encoding='utf-8').splitlines()
+              print('DETAIL FILE',fn)
+              for i in range(lo-1,min(hi,len(lines))):print(f'{i+1:04d}: {lines[i]}')
           PY
