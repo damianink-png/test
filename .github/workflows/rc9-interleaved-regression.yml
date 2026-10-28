@@ -2,7 +2,7 @@ name: RC9 interleaved proof regression and Windows build
 on:
   push:
     branches: [fix/rc9-virtual-offset-20261028]
-    paths: ['.github/workflows/rc9-interleaved-regression.yml']
+    paths: ['.github/workflows/rc9-interleaved-regression.yml', 'ci/test_rc9_interleaved.py', 'ci/patch_rc9_interleaved_verification.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -48,6 +48,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'dependencies failed' }
           python -m pip install pytest
           if ($LASTEXITCODE -ne 0) { throw 'pytest failed' }
+          python ../ci/test_rc9_interleaved.py
+          if ($LASTEXITCODE -ne 0) { throw 'virtual alignment synthetic regression failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'regressions failed' }
           node ci/test_preview_controls.cjs dsac29/preview_template.html
