@@ -38,6 +38,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Source patch failed' }
           python ci/patch_large_cad_diagnostics.py
           if ($LASTEXITCODE -ne 0) { throw 'Large CAD diagnostic patch failed' }
+          python ci/patch_rc9_native_proof.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native B-Rep proof patch failed' }
       - name: Build current patched RC9 source for each large test
         shell: pwsh
         working-directory: dscompare_rc9_manual
@@ -48,6 +50,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'pytest installation failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
+          python -m pytest -q ../ci/test_rc9_native_repair_budget.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native proof budget regression failed' }
           ./BUDUJ_WINDOWS.ps1 -NoInstall
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           if (-not (Test-Path dist/DSCompare/DSCompare.exe)) { throw 'Missing executable' }
@@ -114,6 +118,8 @@ jobs:
           path: |
             evidence/**
             diagnostics/**
+            dscompare_rc9_manual/ci/EXE_STDOUT.log
+            dscompare_rc9_manual/ci/EXE_STDERR.log
             dscompare_rc9_manual/ci/evidence/**
             dscompare_rc9_manual/ci/models/**/comparison/**
           if-no-files-found: warn
