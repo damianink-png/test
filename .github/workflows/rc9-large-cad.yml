@@ -44,6 +44,8 @@ jobs:
         run: |
           ./BUDUJ_WINDOWS.ps1 -InstallOnly
           if ($LASTEXITCODE -ne 0) { throw 'Install failed' }
+          python -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { throw 'pytest installation failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
           ./BUDUJ_WINDOWS.ps1 -NoInstall
