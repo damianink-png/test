@@ -2,7 +2,7 @@ name: DS Compare RC9 large real CAD assemblies
 on:
   push:
     branches: [fix/rc9-native-crash-evidence-20261028]
-    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py', 'ci/patch_rc9_original_tolerance_budget.py', 'ci/test_rc9_original_tolerance_budget.py']
+    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py', 'ci/patch_rc9_original_tolerance_budget.py', 'ci/test_rc9_original_tolerance_budget.py', 'ci/test_rc9_native_repair_budget.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -78,6 +78,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Virtual translation proposal regressions failed' }
           python ../ci/test_rc9_interleaved.py
           if ($LASTEXITCODE -ne 0) { throw 'Interleaved proof regression failed' }
+          python -m pytest -vv -s ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native proof and Common regression failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
           python ../ci/test_rc9_common_immediate_error.py
@@ -88,8 +90,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Original STEP tolerance budget regression failed' }
           python ../ci/test_rc9_active_world_capture.py
           if ($LASTEXITCODE -ne 0) { throw 'Native crash evidence regression failed' }
-          python -m pytest -vv -s ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
-          if ($LASTEXITCODE -ne 0) { throw 'Native proof and Common regression failed' }
           ./BUDUJ_WINDOWS.ps1 -NoInstall
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           if (-not (Test-Path dist/DSCompare/DSCompare.exe)) { throw 'Missing executable' }
