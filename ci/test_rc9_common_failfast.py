@@ -28,14 +28,14 @@ def test_common_worker_produces_checked_positive_intersection_and_phase(tmp_path
 
 
 def test_impossible_negative_common_is_rejected_before_topology_validation(monkeypatch):
-    import OCP.BRepGProp as gprop
-    import OCP.GProp as props
+    # Do not monkeypatch OCP.GProp / OCP.BRepGProp C++ binding types: doing so
+    # can cause a native access violation when Windows releases OCCT objects.
+    # Exercise the exact fail-closed check with a real, valid Common result.
+    import os
+    monkeypatch.delenv('DSCOMPARE_COMMON_FAILFAST_REPLY',raising=False)
     a=BRepPrimAPI_MakeBox(10,10,10).Shape()
     b=BRepPrimAPI_MakeBox(gp_Pnt(5,0,0),10,10,10).Shape()
-    class NegativeProperties:
-        def Mass(self):return -123.0
-    monkeypatch.setattr(props,'GProp_GProps',NegativeProperties)
-    monkeypatch.setattr(gprop,'BRepGProp',SimpleNamespace(VolumeProperties_s=lambda shape,output:None))
+    monkeypatch.setattr(material_deltas,'_common_signed_volume',lambda result:-123.0)
     def no_topology_check(*args):
         raise AssertionError('Must reject negative signed volume before topology check')
     monkeypatch.setattr(material_deltas,'_check_result',no_topology_check)
@@ -45,21 +45,16 @@ def test_impossible_negative_common_is_rejected_before_topology_validation(monke
 
 def test_negative_common_isolated_child_writes_error_before_native_teardown(monkeypatch,tmp_path):
     import os
-    import OCP.BRepGProp as gprop
-    import OCP.GProp as props
-    from pathlib import Path
     a=BRepPrimAPI_MakeBox(10,10,10).Shape()
     b=BRepPrimAPI_MakeBox(gp_Pnt(5,0,0),10,10,10).Shape()
     reply=tmp_path/'reply.json'
-    class NegativeProperties:
-        def Mass(self):return -122.58159431091562
     class EarlyExit(BaseException):
         def __init__(self,code):self.code=code
     def exit_without_teardown(code):raise EarlyExit(code)
     monkeypatch.setenv('DSCOMPARE_COMMON_FAILFAST_REPLY',str(reply))
     monkeypatch.setattr(os,'_exit',exit_without_teardown)
-    monkeypatch.setattr(props,'GProp_GProps',NegativeProperties)
-    monkeypatch.setattr(gprop,'BRepGProp',SimpleNamespace(VolumeProperties_s=lambda shape,output:None))
+    monkeypatch.setattr(material_deltas,'_common_signed_volume',
+                        lambda result:-122.58159431091562)
     with pytest.raises(EarlyExit) as caught:
         material_deltas.operate(material_deltas.BRepAlgoAPI_Common,a,b,.01)
     assert caught.value.code==70
