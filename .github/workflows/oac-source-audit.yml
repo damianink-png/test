@@ -1,0 +1,38 @@
+name: DS Compare OAC — extract source for review
+on:
+  push:
+    branches: ['feature/openassembly-dscompare-rc9-ui']
+    paths: ['.github/workflows/oac-source-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Extract RC9 source and OAC integration
+        run: |
+          python - <<'PY'
+          import zipfile, tarfile, base64, io, pathlib
+          root=pathlib.Path('source')
+          with zipfile.ZipFile('DSCompare_RC9_AUDYT_20261028_ZRODLA.zip') as z:
+              z.extractall(root)
+          p=pathlib.Path('dscompare_oac/integration_overlay.b64')
+          with tarfile.open(fileobj=io.BytesIO(base64.b64decode(p.read_text()))) as z:
+              z.extractall(root/'dscompare_rc9_manual', filter='data')
+          for f in sorted((root/'dscompare_rc9_manual').rglob('*.py')):
+              print(f, f.stat().st_size)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-RC9-OAC-sources
+          path: |
+            source/dscompare_rc9_manual/**/*.py
+            source/dscompare_rc9_manual/**/*.ps1
+            source/dscompare_rc9_manual/**/*.spec
+          if-no-files-found: error
+          retention-days: 3
