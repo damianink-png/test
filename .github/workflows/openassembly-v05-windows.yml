@@ -40,10 +40,7 @@ jobs:
               - 'openassembly_ci/apply_roundtrip_recovery.py'
               - 'openassembly_optimizations/apply_xcaf_geometry_cache.py'
               - 'openassembly_ci/apply_world_faces_recovery.py'
-              - 'openassembly_ci/test_world_faces_recovery.py'
               - 'openassembly_ci/apply_bbox_roundtrip_fix.py'
-              - 'openassembly_ci/test_roundtrip_recovery.py'
-              - 'openassembly_ci/test_bbox_roundtrip.py'
               - 'openassembly_ci/public_revision.py'
   build:
     runs-on: windows-2022
