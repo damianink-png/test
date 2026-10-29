@@ -17,7 +17,7 @@ replacement = '''    # Necessary, never sufficient, perfect-matching conditions.
     # missing/empty right-face coverage means matching is impossible.
     if any(not candidates for candidates in options):
         return None
-    if len(set().union(*(set(candidates) for candidates in options))) < len(options):
+    if len(set().union(*options)) < len(options):
         return None
     owner, reverse = {}, {}
     for first in sorted(range(len(options)), key=lambda i: len(options[i])):'''
