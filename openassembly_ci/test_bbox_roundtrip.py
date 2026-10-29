@@ -5,10 +5,10 @@ def make(uid,center,extent,fp=("same",)):
                 centroid=center,fingerprint=fp,pose=(1,0,0,0,1,0,0,0,1),
                 extents=extent)
 
-def test_same_geometry_same_placement_ignores_bbox_roundtrip_noise():
+def test_missing_geometry_must_not_bypass_bbox_check():
     a=make("a",(0,0,0),(10,10,10))
     b=make("b",(0,0,0),(10,10,10.0737))
-    assert _same_placement(a,b,.01)
+    assert not _same_placement(a,b,.01)
 
 def test_real_translation_remains_moved():
     a=make("a",(0,0,0),(10,10,10))
