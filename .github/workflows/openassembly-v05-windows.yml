@@ -178,6 +178,7 @@ jobs:
             evidence/source-commit.txt
             evidence/source-sha256.txt
             evidence/**/RESULT.json
+            evidence/**/CLASSIFICATION_DIAGNOSTICS.json
             evidence/**/worker.log
             evidence/**/comparison/comparison.json
             evidence/**/comparison/BOM_ZMIANY.csv
