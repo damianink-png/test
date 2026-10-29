@@ -44,6 +44,9 @@ def child(folder, variant):
     a, b = read('A.brep'), read('B.brep')
     valid_inputs = [bool(BRepCheck_Analyzer(s).IsValid()) for s in (a, b)]
     source_volumes = [signed_volume(s) for s in (a, b)]
+    # Keep input defects separate from defects created by Common.
+    input_null = [bool(s.IsNull()) for s in (a, b)]
+    input_volume_positive = [math.isfinite(v) and v > 0 for v in source_volumes]
     if variant == 'swapped':
         a, b = b, a
     arguments, tools = TopTools_ListOfShape(), TopTools_ListOfShape()
@@ -62,6 +65,8 @@ def child(folder, variant):
     op.Build()
     result = {'variant': variant, 'input_valid': valid_inputs,
               'source_signed_volumes_mm3': source_volumes,
+              'input_null': input_null,
+              'input_volume_positive': input_volume_positive,
               'seconds': round(time.monotonic() - started, 3),
               'is_done': bool(op.IsDone())}
     if op.IsDone():
