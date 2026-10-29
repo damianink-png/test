@@ -22,9 +22,6 @@ replacement = '''    # Verify the best-ranked candidate immediately. Once a full
     # checks on each of 16 weak hypotheses before starting any full proof.
     winners=[];evaluated=[]
     identity=np.eye(3)
-    # Reuse transformed representations only within this one alignment call.
-    # Never retain OCCT objects across independent analyses.
-    relocated_by_offset={}
     for coarse,offset in sorted(ranked,key=lambda v:-v[0]):
         if any(np.linalg.norm(offset-old)<=tolerance for old in evaluated):continue
         if len(evaluated)>=16:break
@@ -34,11 +31,9 @@ replacement = '''    # Verify the best-ranked candidate immediately. Once a full
             if coarse<best-margin:continue
         evaluated.append(offset)
         check_cancel()
-        offset_key=tuple(float(x) for x in offset)
-        shifted=relocated_by_offset.get(offset_key)
-        if shifted is None:
-            shifted=[_relocate(p,identity,offset) for p in b]
-            relocated_by_offset[offset_key]=shifted
+        # Each unique offset is evaluated once; retaining all shifted OCCT
+        # shapes provides no cache hits and unnecessarily increases peak RAM.
+        shifted=[_relocate(p,identity,offset) for p in b]
         preliminary=frame_support(a,shifted,tolerance,proofs=24,
                                   progress=progress,cancelled=cancelled)
         checked=preliminary['checked'];confirmed=preliminary['proofs']
