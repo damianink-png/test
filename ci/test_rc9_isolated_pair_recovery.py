@@ -9,6 +9,6 @@ assert 'except NativeGeometryFailure as exc:' in a
 assert 'failed_a.add(i);failed_b.add(j)' in a
 assert "'UNCERTAIN' if i in failed_a" in a
 assert "'UNCERTAIN' if j in failed_b" in a
-assert "stat['invalid_boolean']+=1" in b
-assert 'continue\n            score=_score(common' in b
+assert 'except NativeGeometryFailure:' in b
+assert 'raise' in b
 print('PASS: conservative native proof failure classification')
