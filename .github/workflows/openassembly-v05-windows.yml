@@ -7,6 +7,7 @@ on:
       - '.github/workflows/openassembly-v05-windows.yml'
       - 'openassembly_ci/apply_roundtrip_recovery.py'
       - 'openassembly_ci/apply_gui_step_button.py'
+      - 'openassembly_ci/apply_bom_browser.py'
       - 'openassembly_ci/test_roundtrip_recovery.py'
       - 'openassembly_ci/public_revision.py'
   workflow_dispatch:
@@ -26,6 +27,7 @@ jobs:
           python -c "import tarfile;tarfile.open('source.tar.xz','r:xz').extractall('source/OpenAssemblyCompare',filter='data')"
           python openassembly_ci/apply_roundtrip_recovery.py source/OpenAssemblyCompare
           python openassembly_ci/apply_gui_step_button.py source/OpenAssemblyCompare
+          python openassembly_ci/apply_bom_browser.py source/OpenAssemblyCompare
           if ($LASTEXITCODE -ne 0) {throw 'OpenAssembly source patch failed'}
           Copy-Item openassembly_ci/test_roundtrip_recovery.py source/OpenAssemblyCompare/tests/test_roundtrip_recovery.py
           if (-not (Test-Path source/OpenAssemblyCompare/pyproject.toml)) {throw 'Missing pyproject'}
@@ -134,6 +136,7 @@ jobs:
           python -c "import tarfile;tarfile.open('source.tar.xz','r:xz').extractall('source/OpenAssemblyCompare',filter='data')"
           python openassembly_ci/apply_roundtrip_recovery.py source/OpenAssemblyCompare
           python openassembly_ci/apply_gui_step_button.py source/OpenAssemblyCompare
+          python openassembly_ci/apply_bom_browser.py source/OpenAssemblyCompare
           if ($LASTEXITCODE -ne 0) {throw 'OpenAssembly source patch failed'}
           Copy-Item openassembly_ci/test_roundtrip_recovery.py source/OpenAssemblyCompare/tests/test_roundtrip_recovery.py
       - uses: actions/setup-python@v5
@@ -188,6 +191,7 @@ jobs:
             evidence/**/comparison/CZASY_ANALIZY.json
             evidence/**/comparison/RAPORT_3D.html
             evidence/**/comparison/BOM_ROZNICE.csv
+            evidence/**/comparison/BOM_PRZEGLAD.html
           retention-days: 30
           if-no-files-found: warn
 # v0.6 inspection regression: pytest + original Voron/Trident identical and shift scenarios
