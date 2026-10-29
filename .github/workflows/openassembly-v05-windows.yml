@@ -36,6 +36,9 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          # Compare each push with its direct predecessor, not the default branch.
+          # Otherwise every feature-branch push unnecessarily launches six large CAD jobs.
+          base: ${{ github.event.before || github.ref }}
           filters: |
             cad:
               - 'OpenAssemblyCompare_sources.tar.xz.b64'
