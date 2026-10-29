@@ -18,7 +18,7 @@ new="""        direct_same=False
             # location, topology, trims and geometric definitions. No
             # bbox, mass or volume heuristic and no tolerance relaxation.
             from .exact_brep_identity import identical_serialized_brep
-            if identical_serialized_brep(req['a'],req['b']):
+            if identical_serialized_brep(Path(req['a']),Path(req['b'])):
                 report('exact_invalid_world_brep_proven')
                 direct_same=True
         if not valid_a and not valid_b and not direct_same:
@@ -33,6 +33,7 @@ from pathlib import Path
 
 def identical_serialized_brep(a,b):
     a,b=Path(a),Path(b)
+    if not a.is_file() or not b.is_file():return False
     if a.stat().st_size!=b.stat().st_size:return False
     # Compare actual bytes, not merely a hash digest.
     with a.open('rb') as left,b.open('rb') as right:
