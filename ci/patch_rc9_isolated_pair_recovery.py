@@ -33,15 +33,22 @@ from pathlib import Path
 
 def identical_serialized_brep(a,b):
     a,b=Path(a),Path(b)
-    if not a.is_file() or not b.is_file():return False
-    if a.stat().st_size!=b.stat().st_size:return False
+    try:
+        if not a.is_file() or not b.is_file():return False
+        size=a.stat().st_size
+        if size==0 or size!=b.stat().st_size:return False
+    except OSError:
+        return False
     # Compare actual bytes, not merely a hash digest.
-    with a.open('rb') as left,b.open('rb') as right:
-        while True:
-            x=left.read(1024*1024)
-            y=right.read(1024*1024)
-            if x!=y:return False
-            if not x:return True
+    try:
+        with a.open('rb') as left,b.open('rb') as right:
+            while True:
+                x=left.read(1024*1024)
+                y=right.read(1024*1024)
+                if x!=y:return False
+                if not x:return True
+    except OSError:
+        return False
 ''',encoding='utf-8')
 ast.parse(helper.read_text(encoding='utf-8'))
 p.write_text(s,encoding='utf-8')
