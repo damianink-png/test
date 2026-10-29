@@ -16,6 +16,7 @@ on:
       - 'openassembly_ci/test_bbox_roundtrip.py'
       - 'openassembly_ci/test_xcaf_cache.py'
       - 'openassembly_ci/test_fast_centroid.py'
+      - 'openassembly_ci/test_xcaf_cache_endtoend.py'
       - 'openassembly_ci/public_revision.py'
   workflow_dispatch:
     inputs:
@@ -75,6 +76,7 @@ jobs:
           Copy-Item openassembly_ci/test_bbox_roundtrip.py source/OpenAssemblyCompare/tests/test_bbox_roundtrip.py
           Copy-Item openassembly_ci/test_xcaf_cache.py source/OpenAssemblyCompare/tests/test_xcaf_cache.py
           Copy-Item openassembly_ci/test_fast_centroid.py source/OpenAssemblyCompare/tests/test_fast_centroid.py
+          Copy-Item openassembly_ci/test_xcaf_cache_endtoend.py source/OpenAssemblyCompare/tests/test_xcaf_cache_endtoend.py
           if (-not (Test-Path source/OpenAssemblyCompare/pyproject.toml)) {throw 'Missing pyproject'}
       - name: Publish extracted OpenAssembly source snapshot for revision-test development
         uses: actions/upload-artifact@v4
@@ -197,6 +199,7 @@ jobs:
           Copy-Item openassembly_ci/test_bbox_roundtrip.py source/OpenAssemblyCompare/tests/test_bbox_roundtrip.py
           Copy-Item openassembly_ci/test_xcaf_cache.py source/OpenAssemblyCompare/tests/test_xcaf_cache.py
           Copy-Item openassembly_ci/test_fast_centroid.py source/OpenAssemblyCompare/tests/test_fast_centroid.py
+          Copy-Item openassembly_ci/test_xcaf_cache_endtoend.py source/OpenAssemblyCompare/tests/test_xcaf_cache_endtoend.py
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
