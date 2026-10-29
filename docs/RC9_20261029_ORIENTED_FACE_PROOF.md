@@ -31,3 +31,9 @@ The old recursive perfect-face matching could spend over 90 seconds on this impo
 4. Full six-case Windows EXE, STEP/HTML/BOM audits are mandatory before declaring success.
 
 Current patch branch: `fix/rc9-oriented-trim-budget-20261029`. User tolerance remains **0.01 mm** and all fail-closed classifications remain enforced.
+
+## CI regression compatibility (2026-10-29)
+
+Run [40810157568](https://github.com/damianink-png/test/actions/runs/40810157568) passed 208 of 209 existing regressions. The remaining R20 test intentionally monkeypatches the original `prove(*args)` function and rejects descriptor-only SAME. The first patch supplied a new keyword argument and caused a `TypeError` in that test, before EXE compilation. This was an integration error, not a geometry PASS.
+
+The corrected patch retains the original positional `prove()` entry point, keeps the original strict proof as the first attempt, and enables the half-budget fallback only for `allow_boolean=False` world-reexport comparisons, never the ordinary Boolean-enabled R20 path or repair-only path. A new negative regression reproduces the R20 monkeypatch. Local synthetic and captured B-Rep tests PASS. Full Windows CI and six real scenarios remain pending.
