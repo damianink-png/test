@@ -13,22 +13,7 @@ changes={
                         if progress:progress(f'Niezweryfikowana para B-Rep {i}/{j}: {exc}')
                         continue
                     except Exception as exc:
-                        failed_a.add(i);failed_b.add(j)""")],
- 'revision_overlap.py': [(
-"""            except NativeGeometryFailure:
-                raise
-            except Exception as exc:
-                raise NativeGeometryFailure('Niekompletna analiza wspólnego materiału: '+str(exc)) from exc
-            score=_score(common,ref,b[j],_name_eq(ref,b[j]))""",
-"""            except NativeGeometryFailure as exc:
-                stat['invalid_boolean']+=1
-                if progress:progress(f'Common A[{i}] / B[{j}] niezweryfikowany: {exc}')
-                continue
-            except Exception as exc:
-                stat['invalid_boolean']+=1
-                if progress:progress(f'Common A[{i}] / B[{j}] błąd: {exc}')
-                continue
-            score=_score(common,ref,b[j],_name_eq(ref,b[j]))""")]
+                        failed_a.add(i);failed_b.add(j)""")]
 }
 for name,edits in changes.items():
  p=root/name;s=p.read_text(encoding='utf-8')
