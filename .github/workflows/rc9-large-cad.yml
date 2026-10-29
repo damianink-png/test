@@ -2,7 +2,7 @@ name: DS Compare RC9 large real CAD assemblies
 on:
   push:
     branches: [fix/rc9-native-crash-evidence-20261028, fix/rc9-oriented-trim-budget-20261029]
-    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py', 'ci/patch_rc9_original_tolerance_budget.py', 'ci/test_rc9_original_tolerance_budget.py', 'ci/test_rc9_native_repair_budget.py', 'ci/rc9_common_probe.py', 'ci/patch_rc9_fast_bounds.py', 'ci/test_rc9_fast_bounds.py', 'ci/patch_rc9_oriented_trim_budget.py', 'ci/test_rc9_oriented_trim_budget.py', 'ci/patch_rc9_face_matching.py', 'ci/test_rc9_face_matching.py']
+    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py', 'ci/patch_rc9_original_tolerance_budget.py', 'ci/test_rc9_original_tolerance_budget.py', 'ci/test_rc9_native_repair_budget.py', 'ci/rc9_common_probe.py', 'ci/patch_rc9_fast_bounds.py', 'ci/test_rc9_fast_bounds.py', 'ci/patch_rc9_oriented_trim_budget.py', 'ci/test_rc9_oriented_trim_budget.py', 'ci/patch_rc9_face_matching.py', 'ci/test_rc9_face_matching.py', 'ci/patch_rc9_conservative_face_bounds.py', 'ci/test_rc9_conservative_face_bounds.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -63,6 +63,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Oriented trim proof patch failed' }
           python ci/patch_rc9_face_matching.py
           if ($LASTEXITCODE -ne 0) { throw 'Iterative face matching patch failed' }
+          python ci/patch_rc9_conservative_face_bounds.py
+          if ($LASTEXITCODE -ne 0) { throw 'Conservative analytic-face candidate patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/brep_safety.py dscompare_rc9_manual/dsac29/step_reexport_tolerance.py dscompare_rc9_manual/dsac29/parametric_identity.py
           if ($LASTEXITCODE -ne 0) { throw 'Fast bounds syntax failed' }
       - name: Upload patched Python sources for deterministic failure analysis
@@ -94,6 +96,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Oriented trim strict proof regression failed' }
           python ../ci/test_rc9_face_matching.py
           if ($LASTEXITCODE -ne 0) { throw 'Iterative face matching regression failed' }
+          python ../ci/test_rc9_conservative_face_bounds.py
+          if ($LASTEXITCODE -ne 0) { throw 'Conservative analytic-face candidate regression failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
           python ../ci/test_rc9_common_immediate_error.py
@@ -177,6 +181,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Oriented trim proof patch failed' }
           python ci/patch_rc9_face_matching.py
           if ($LASTEXITCODE -ne 0) { throw 'Iterative face matching patch failed' }
+          python ci/patch_rc9_conservative_face_bounds.py
+          if ($LASTEXITCODE -ne 0) { throw 'Conservative analytic-face candidate patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/brep_safety.py dscompare_rc9_manual/dsac29/step_reexport_tolerance.py dscompare_rc9_manual/dsac29/parametric_identity.py
           if ($LASTEXITCODE -ne 0) { throw 'Fast bounds syntax failed' }
       - uses: actions/download-artifact@v4
