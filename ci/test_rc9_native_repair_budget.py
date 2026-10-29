@@ -28,7 +28,7 @@ def test_repaired_copies_are_used_with_conserved_budget(tmp_path,monkeypatch):
     assert native_guard.worker(str(req),str(out))==0
     assert json.loads(out.read_text())=={'ok':True,'match':True}
     assert calls[0][0]=='prove' and calls[0][3]==0.01
-    assert calls[0][4]['_repair_boundary_only'] is True
+    assert calls[0][4]['_original_boundary_only'] is True
     assert [x[2] for x in calls[1:3]]==[0.005,0.005]
     assert [x[3] for x in calls[1:3]]==[0.01,0.01]
     assert calls[3][1] is repaired_a and calls[3][2] is repaired_b
@@ -58,7 +58,7 @@ def test_identical_invalid_boundaries_skip_repairs(tmp_path,monkeypatch):
     assert len(proofs)==1 and proofs[0][0] is first and proofs[0][1] is second
     assert proofs[0][2]==0.01
     assert proofs[0][3]['allow_boolean'] is False
-    assert proofs[0][3]['_repair_boundary_only'] is True
+    assert proofs[0][3]['_original_boundary_only'] is True
 
 
 def test_one_invalid_shape_never_uses_direct_fastpath(tmp_path,monkeypatch):
