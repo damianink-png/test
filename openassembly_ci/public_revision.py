@@ -59,6 +59,23 @@ def verify(result, job, n, selected, env, timeout):
     expected = {'unchanged':n-3,'moved':1,'removed':1,'new':1,'revised_old':1,'revised_new':1}
     result['expected_summary'] = expected
     result['actual_summary'] = data.get('summary')
+    if data['summary'] != expected:
+        # Preserve per-part evidence for the next targeted repair; do not
+        # relax the expected classification or silently accept false moves.
+        moved = [x for x in data.get('items',[]) if x.get('status') == 'moved']
+        result['unexpected_moved'] = moved
+        result['classification_diagnostics'] = {
+            'expected': expected,
+            'actual': data['summary'],
+            'moved_parts': moved,
+            'alignment': data.get('alignment'),
+            'revisions': data.get('revisions'),
+        }
+        (job.parent/'CLASSIFICATION_DIAGNOSTICS.json').write_text(
+            json.dumps(result['classification_diagnostics'],ensure_ascii=False,indent=2),
+            encoding='utf-8')
+        print('[PUBLIC REVISION] false-move diagnostics:',
+              json.dumps(result['classification_diagnostics'],ensure_ascii=False)[:12000],flush=True)
     assert data['summary'] == expected, ('Wrong classification',data['summary'],expected)
     assert not data['alignment']['applied'], ('Spurious global shift',data['alignment'])
     assert len(data['revisions']) == 1, data['revisions']
