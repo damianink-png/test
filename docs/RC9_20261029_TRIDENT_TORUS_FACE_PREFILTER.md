@@ -13,4 +13,6 @@ The independent `parametric_identity.prove` still checks analytic surfaces and *
 
 Patch: `ci/patch_rc9_conservative_face_bounds.py`. This does not modify user tolerance **0.01 mm**, the physical geometry, SAME/MOVED rules, material Boolean validation, or export assertions. No face can be accepted by AABB or centroid alone.
 
+**Separate unresolved large pair:** the same Trident shift artifact also contains a roughly 5.4 MB/5.6 MB B-Rep pair (`world_negative_01` and `04`) with one reversed B-Spline face orientation (A: 173 forward/157 reversed; B: 172 forward/158 reversed). It is not covered by the torus fix and must not be declared SAME without an independent oriented material proof. Thus four successful small-pair replays do **not** imply that Trident shift as a whole will pass.
+
 The end-to-end Windows EXE run is still required: [workflow](https://github.com/damianink-png/test/actions/workflows/rc9-large-cad.yml). A positive local pair proof is not a six-case PASS. Trident revision's negative-volume Common remains a separate unresolved defect.
