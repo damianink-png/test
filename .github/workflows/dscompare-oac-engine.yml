@@ -1,0 +1,110 @@
+name: DS Compare RC9 - OpenAssembly engine, original STEP and HTML
+on:
+  push:
+    branches: ['feature/openassembly-dscompare-rc9-ui']
+    paths: ['dscompare_oac/**', '.github/workflows/dscompare-oac-engine.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  PYTHONUTF8: '1'
+  PYTHONFAULTHANDLER: '1'
+  QT_QPA_PLATFORM: offscreen
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Extract original RC9 and engine integration
+        shell: pwsh
+        run: |
+          python -c "import zipfile;zipfile.ZipFile('DSCompare_RC9_AUDYT_20261028_ZRODLA.zip').extractall('source')"
+          python -c "import tarfile,base64,io;tarfile.open(fileobj=io.BytesIO(base64.b64decode(open('dscompare_oac/integration_overlay.b64').read()))).extractall('source/dscompare_rc9_manual',filter='data')"
+      - name: Install CAD, GUI and test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install 'cadquery>=2.5,<3' 'PySide6==6.8.3' 'pyinstaller>=6.11,<7' pytest psutil
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+      - name: Test engine and RC9 output integration
+        working-directory: source/dscompare_rc9_manual
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          python -m pytest oac_tests integration/test_bridge.py -q --junitxml=integration-tests.xml
+          if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
+      - name: Build original DS Compare GUI with OpenAssembly engine
+        working-directory: source/dscompare_rc9_manual
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          Copy-Item OPENASSEMBLY_LICENSE dist/DSCompare/
+          Copy-Item OPENASSEMBLY_THIRD_PARTY.md dist/DSCompare/
+          $p=Start-Process dist/DSCompare/DSCompare.exe -ArgumentList '--smoke-test-ui','UI_CHECK' -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)) {throw 'Frozen GUI test failed'}
+      - name: Test frozen comparison and Boolean subprocess
+        working-directory: source/dscompare_rc9_manual
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          $env:DS_COMPARE_EXE=(Resolve-Path dist/DSCompare/DSCompare.exe).Path
+          python -m pytest integration/test_bridge.py::test_worker_entry -q --junitxml=frozen-tests.xml
+          if ($LASTEXITCODE -ne 0) {throw 'Frozen comparison failed'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DSCompare-RC9-OAC-test-evidence
+          path: |
+            source/dscompare_rc9_manual/integration-tests.xml
+            source/dscompare_rc9_manual/frozen-tests.xml
+            source/dscompare_rc9_manual/UI_CHECK/**
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-RC9-OpenAssembly-Windows
+          path: source/dscompare_rc9_manual/dist/DSCompare/**
+          if-no-files-found: error
+  public-cad:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [voron2, trident]
+        scenario: [identical, shift]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare tests
+        shell: pwsh
+        run: |
+          python -c "import tarfile,base64,io;tarfile.open(fileobj=io.BytesIO(base64.b64decode(open('dscompare_oac/integration_overlay.b64').read()))).extractall('source',filter='data')"
+          python -m pip install 'cadquery>=2.5,<3' psutil
+          if ($LASTEXITCODE -ne 0) {throw 'Dependency installation failed'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: DSCompare-RC9-OpenAssembly-Windows
+          path: app
+      - name: Test frozen DSCompare on public CAD assembly
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path source).Path
+          python source/integration/public_cad.py --model ${{ matrix.model }} --scenario ${{ matrix.scenario }} --output evidence --executable app/DSCompare.exe --timeout 4200
+          if ($LASTEXITCODE -ne 0) {throw 'Public CAD test failed'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DSCompare-OAC-${{ matrix.model }}-${{ matrix.scenario }}
+          path: |
+            evidence/RESULT.json
+            evidence/worker.log
+            evidence/comparison/*.json
+            evidence/comparison/*.txt
+            evidence/comparison/*.html
+          if-no-files-found: warn
