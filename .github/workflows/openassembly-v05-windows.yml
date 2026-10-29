@@ -11,9 +11,30 @@ on:
       - 'openassembly_ci/test_roundtrip_recovery.py'
       - 'openassembly_ci/public_revision.py'
   workflow_dispatch:
+    inputs:
+      full_cad:
+        description: 'Run all six large Voron/Trident CAD scenarios'
+        type: boolean
+        default: true
+        required: false
 permissions:
   contents: read
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      cad: ${{ steps.filter.outputs.cad }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            cad:
+              - 'OpenAssemblyCompare_sources.tar.xz.b64'
+              - 'openassembly_ci/apply_roundtrip_recovery.py'
+              - 'openassembly_ci/test_roundtrip_recovery.py'
+              - 'openassembly_ci/public_revision.py'
   build:
     runs-on: windows-2022
     timeout-minutes: 60
@@ -118,7 +139,8 @@ jobs:
           retention-days: 30
           if-no-files-found: error
   large-cad:
-    needs: build
+    needs: [changes, build]
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_cad) || (github.event_name == 'push' && needs.changes.outputs.cad == 'true') }}
     runs-on: windows-2022
     timeout-minutes: 100
     strategy:
