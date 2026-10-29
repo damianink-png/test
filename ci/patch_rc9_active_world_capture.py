@@ -17,13 +17,14 @@ _active_capture_lock=__import__('threading').Lock()
 def _capture_active_world(root,a,b,tolerance):
     """Durably keep the last two world-proof requests for native crash analysis.
 
-    Uses atomic slot updates and already-serialized B-Rep bytes. This is
+    Uses a complete-generation marker and already-serialized B-Rep bytes. This is
     evidence only; never returns a geometry verdict.
     """
     if os.getenv('DSCOMPARE_CAPTURE_ACTIVE_BREP','0')!='1':return
     from . import trace_r22 as trace
     if trace._path is None:return
     import shutil
+    import tempfile
     global _active_capture_counter
     # Keep both B-Rep files and their metadata as one synchronized snapshot.
     # Without this lock another thread could overwrite a slot midway and
@@ -35,22 +36,29 @@ def _capture_active_world(root,a,b,tolerance):
         destination = trace._path.parent / 'FAILED_BREP' / 'active_world'
         try:
             destination.mkdir(parents=True, exist_ok=True)
-            for name in ('A', 'B'):
-                temporary = destination / f'.slot{slot}_{name}_{count}.partial'
+            # Publish a complete generation directory only after both inputs
+            # and the metadata are durable. No reader can see mixed pairs.
+            generation = destination / f'capture_{os.getpid()}_{count}'
+            with tempfile.TemporaryDirectory(prefix='.capture_', dir=destination) as tmp:
+                staging = Path(tmp)
+                for name in ('A', 'B'):
+                    shutil.copyfile(Path(root) / (name + '.brep'), staging / (name + '.brep'))
+                metadata = {'sequence': count, 'pid': os.getpid(),
+                            'a_path': str(a.path), 'b_path': str(b.path),
+                            'tolerance_mm': float(tolerance)}
+                (staging / 'metadata.json').write_text(
+                    json.dumps(metadata, ensure_ascii=False), encoding='utf-8')
+                # TemporaryDirectory cannot be renamed while its context owns
+                # it on Windows; copy into a unique final generation instead.
+                generation.mkdir(exist_ok=False)
                 try:
-                    shutil.copyfile(Path(root) / (name + '.brep'), temporary)
-                    os.replace(temporary, destination / f'slot{slot}_{name}.brep')
-                finally:
-                    temporary.unlink(missing_ok=True)
-            metadata = {'sequence': count, 'slot': slot,
-                        'a_path': str(a.path), 'b_path': str(b.path),
-                        'tolerance_mm': float(tolerance)}
-            temporary = destination / f'.current_{count}.partial'
-            try:
-                temporary.write_text(json.dumps(metadata, ensure_ascii=False), encoding='utf-8')
-                os.replace(temporary, destination / 'current.json')
-            finally:
-                temporary.unlink(missing_ok=True)
+                    for name in ('A.brep', 'B.brep', 'metadata.json'):
+                        shutil.copyfile(staging / name, generation / name)
+                    (generation / 'COMPLETE').write_text('1', encoding='ascii')
+                except BaseException:
+                    shutil.rmtree(generation, ignore_errors=True)
+                    raise
+            # The marker is written last, so incomplete generations are ignored.
         except (OSError, ValueError, TypeError, AttributeError) as exc:
             trace.mark('native_world_capture', 'ERROR', reason=str(exc), sequence=count)
 '''
