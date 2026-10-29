@@ -6,8 +6,8 @@ analytic surface and all remaining oriented trims matched, but the internal
 0.00125 mm limit caused a false negative and a 90 s Common timeout.
 
 Every comparison FIRST tries the original tolerance/8 proof, including
-its original bounded micro-seam normalization. Only if that fails, normal
-STEP re-export identity may retry at tolerance/2 with NO micro-seam removal.
+its original bounded micro-seam normalization. Only if that fails, world re-export identity with Boolean disabled
+may retry at tolerance/2 with NO micro-seam removal.
 The other half is reserved for accumulated surface/trim error. Invalid-input
 B-Rep repairs never use this fallback and retain their original strict proof.
 
@@ -22,7 +22,7 @@ p = root / "parametric_identity.py"
 s = p.read_text(encoding="utf-8")
 changes = [
     ("def prove(a,b,owner,face_data,tolerance):",
-     "def prove(a,b,owner,face_data,tolerance,*,strict_repair=False):"),
+     "def prove(a,b,owner,face_data,tolerance,*,strict_repair=True):"),
     ("fa=items(a,TopAbs_FACE,TopoDS.Face_s);fb=items(b,TopAbs_FACE,TopoDS.Face_s);tol=tolerance/8",
      "fa=items(a,TopAbs_FACE,TopoDS.Face_s);fb=items(b,TopAbs_FACE,TopoDS.Face_s);tol=tolerance/(8 if strict_repair else 2)"),
     ("def tiny_edge_cleanup(edges):",
@@ -45,8 +45,8 @@ p.write_text(s, encoding="utf-8")
 q = root / "step_reexport_tolerance.py"
 s = q.read_text(encoding="utf-8")
 old = "prove(a.shape,b.shape,owner,fa,tolerance)"
-new = ("(prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=True) "
-       "or (not _repair_boundary_only and "
+new = ("(prove(a.shape,b.shape,owner,fa,tolerance) "
+       "or (not allow_boolean and not _repair_boundary_only and "
        "prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=False)))")
 if s.count(old) != 1:
     raise SystemExit(f"Unexpected STEP re-export proof call ({s.count(old)})")
