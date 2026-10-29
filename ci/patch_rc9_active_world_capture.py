@@ -12,6 +12,7 @@ anchor='\ndef _load_brep(path):\n'
 assert s.count(anchor)==1, 'Unexpected native_guard anchor'
 insert='''
 _active_capture_counter=0
+_active_capture_lock=__import__('threading').Lock()
 
 def _capture_active_world(root,a,b,tolerance):
     """Durably keep the last two world-proof requests for native crash analysis.
@@ -24,9 +25,11 @@ def _capture_active_world(root,a,b,tolerance):
     if trace._path is None:return
     import shutil
     global _active_capture_counter
-    _active_capture_counter+=1
-    count=_active_capture_counter
-    slot=count%2
+    # Per-process monotonically increasing slots; guard concurrent callers.
+    with _active_capture_lock:
+        _active_capture_counter+=1
+        count=_active_capture_counter
+        slot=count%2
     destination=trace._path.parent/'FAILED_BREP'/'active_world'
     try:
         destination.mkdir(parents=True,exist_ok=True)
@@ -39,7 +42,7 @@ def _capture_active_world(root,a,b,tolerance):
         temporary=destination/'.current.partial'
         temporary.write_text(json.dumps(metadata,ensure_ascii=False),encoding='utf-8')
         os.replace(temporary,destination/'current.json')
-    except OSError as exc:
+    except (OSError, ValueError, TypeError) as exc:
         trace.mark('native_world_capture','ERROR',reason=str(exc),sequence=count)
 '''
 s=s.replace(anchor,'\n'+insert+anchor)
