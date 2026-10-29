@@ -47,4 +47,17 @@ assert not edge_equal(line_a, line_bad, tolerance / 2)
 # A geometry change >0.01 mm must remain rejected.
 changed = describe(BRepPrimAPI_MakeBox(20.02, 30., 40.).Shape(), "changed", "changed")
 assert not proven(changed)
+# A mocked failed original proof must never be bypassed by the new fallback
+# in ordinary Boolean-enabled comparisons (existing R20 regression contract).
+from dsac29 import parametric_identity as identity
+from dsac29 import step_reexport_tolerance as step
+original_prove = identity.prove
+original_boolean = step._verified_difference_empty
+try:
+    identity.prove = lambda *args: False
+    step._verified_difference_empty = lambda *args: False
+    assert not step.reexport_equivalent_world(a, a, .01, allow_boolean=True)
+finally:
+    identity.prove = original_prove
+    step._verified_difference_empty = original_boolean
 print("PASS: half-budget re-export proof, repair strictness, negative geometry")
