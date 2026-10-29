@@ -13,7 +13,8 @@ source = (root / "dsac29" / "step_reexport_tolerance.py").read_text(encoding="ut
 assert "if dc>tolerance and db>tolerance:continue" in source
 assert "if db>tolerance and 'BSpline' not in typ:continue" not in source
 assert "if not _face_type_orientation_compatible(fa,fb):return False" in source
-assert "prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=True)" in source
+assert "prove(a.shape,b.shape,owner,fa,tolerance)" in source
+assert "not allow_boolean and not _repair_boundary_only and " in source
 assert "prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=False)" in source
 
 a = describe(BRepPrimAPI_MakeBox(10., 12., 15.).Shape(), "a", "a")
