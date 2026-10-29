@@ -119,6 +119,43 @@ jobs:
           ./BUDUJ_WINDOWS.ps1 -NoInstall
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           if (-not (Test-Path dist/DSCompare/DSCompare.exe)) { throw 'Missing executable' }
+      - name: Validate packaged Windows EXE and archive roundtrip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dist = 'dscompare_rc9_manual/dist/DSCompare'
+          $exe = Join-Path $dist 'DSCompare.exe'
+          if (-not (Test-Path $exe)) { throw 'Missing packaged EXE' }
+          $dlls = @(Get-ChildItem -Path $dist -Filter '*.dll' -Recurse -File)
+          if ($dlls.Count -eq 0) { throw 'No packaged native DLLs' }
+          $ocp = @(Get-ChildItem -Path $dist -Recurse -File | Where-Object { $_.FullName -match '[\\/]OCP[\\/]' -and $_.Extension -eq '.pyd' })
+          if ($ocp.Count -eq 0) { throw 'Missing OCP Python extension modules' }
+          $zip = Join-Path $env:RUNNER_TEMP 'DSCompare-RC9-verify.zip'
+          Compress-Archive -Path "$dist/*" -DestinationPath $zip -CompressionLevel Optimal -Force
+          Add-Type -AssemblyName System.IO.Compression
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+            foreach ($entry in $archive.Entries) {
+              if ($entry.Length -eq 0 -and $entry.Name -eq '') { continue }
+              $stream = $entry.Open()
+              try {
+                $buffer = New-Object byte[] 1048576
+                while ($stream.Read($buffer, 0, $buffer.Length) -gt 0) {}
+              } finally { $stream.Dispose() }
+            }
+          } finally { $archive.Dispose() }
+          $unpack = Join-Path $env:RUNNER_TEMP 'DSCompare-RC9-roundtrip'
+          Expand-Archive -Path $zip -DestinationPath $unpack -Force
+          $original = @(Get-ChildItem -Path $dist -Recurse -File)
+          foreach ($file in $original) {
+            $relative = $file.FullName.Substring((Resolve-Path $dist).Path.Length).TrimStart('\')
+            $copy = Join-Path $unpack $relative
+            if (-not (Test-Path $copy)) { throw "Archive missing $relative" }
+            if ((Get-FileHash $file.FullName -Algorithm SHA256).Hash -ne (Get-FileHash $copy -Algorithm SHA256).Hash) {
+              throw "Archive corrupted $relative"
+            }
+          }
+          Write-Host "PACKAGING_ROUNDTRIP_PASS files=$($original.Count) ocp_extensions=$($ocp.Count)"
       - name: Upload exact tested Windows EXE
         uses: actions/upload-artifact@v4
         with:
