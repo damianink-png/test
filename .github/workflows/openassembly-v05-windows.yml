@@ -42,6 +42,9 @@ jobs:
           base: ${{ github.event.before || github.ref }}
           filters: |
             cad:
+              # Changes to the workflow itself must exercise the full CAD matrix;
+              # otherwise a build may be green without any large-assembly coverage.
+              - '.github/workflows/openassembly-v05-windows.yml'
               - 'OpenAssemblyCompare_sources.tar.xz.b64'
               - 'openassembly_ci/apply_roundtrip_recovery.py'
               - 'openassembly_optimizations/apply_xcaf_geometry_cache.py'
