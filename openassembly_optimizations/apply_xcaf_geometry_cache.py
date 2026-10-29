@@ -20,17 +20,32 @@ def apply(root):
     stop2=s.index('    tf = world_shape.Location().Transformation()',start2)
     block2=s[start2:stop2]
     imports=s[s.index('    from OCP.BRepGProp import BRepGProp',s.index('def _measure(')):s.index('    if world_shape.IsNull()',s.index('def _measure('))]
-    local_func='def _local_measure(local_shape):\n'+imports+block+block2+'    return volume, area, key\n\n\n'
+    local_func=('def _local_measure(local_shape):\n'+imports+block+block2+\n        '    c = local_volume.CentreOfMass() if volume >= 1e-12 else area_prop.CentreOfMass()\n'+\n        '    return volume, area, key, (float(c.X()), float(c.Y()), float(c.Z()))\n\n\n')
     s=s[:s.index('def _measure(')]+local_func+s[s.index('def _measure('):]
     start=s.index('    local_volume = GProp_GProps()',s.index('def _measure('))
     stop=s.index('    world_prop = GProp_GProps()',start)
     s=s[:start]+'''    if local_data is None:
         local_data = _local_measure(local_shape)
-    volume, area, key = local_data
+    volume, area, key, local_center = local_data
 '''+s[stop:]
-    start=s.index('    mat = local_volume.MatrixOfInertia()',s.index('def _measure('))
+    start=s.index('    world_prop = GProp_GProps()',s.index('def _measure('))
     stop=s.index('    tf = world_shape.Location().Transformation()',start)
-    s=s[:start]+s[stop:]
+    s=s[:start]+'''    # Safe fast path: identical TShape and orientation, differing only by TopLoc.
+    # Otherwise keep the exact OCCT world-integral fallback.
+    if (world_shape.IsPartner(local_shape)
+            and world_shape.Orientation() == local_shape.Orientation()):
+        from OCP.gp import gp_Pnt
+        relative = (world_shape.Location().Transformation().Multiplied(
+            local_shape.Location().Transformation().Inverted()))
+        c = gp_Pnt(*local_center).Transformed(relative)
+    else:
+        world_prop = GProp_GProps()
+        BRepGProp.VolumeProperties_s(world_shape, world_prop)
+        if volume < 1e-12:
+            BRepGProp.SurfaceProperties_s(world_shape, world_prop)
+        c = world_prop.CentreOfMass()
+    center = (float(c.X()), float(c.Y()), float(c.Z()))
+'''+s[stop:]
     anchor='    out = []\n    while exp.More():'
     assert s.count(anchor)==1
     s=s.replace(anchor,'    out = []\n    definition_cache = {}\n    cache_hits = 0\n    while exp.More():',1)
