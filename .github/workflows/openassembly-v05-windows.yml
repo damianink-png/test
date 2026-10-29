@@ -21,6 +21,13 @@ jobs:
           [IO.File]::WriteAllBytes('source.tar.xz',[Convert]::FromBase64String($z))
           python -c "import tarfile;tarfile.open('source.tar.xz','r:xz').extractall('source/OpenAssemblyCompare',filter='data')"
           if (-not (Test-Path source/OpenAssemblyCompare/pyproject.toml)) {throw 'Missing pyproject'}
+      - name: Publish extracted OpenAssembly source snapshot for revision-test development
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenAssembly-v06-source-snapshot
+          path: source/OpenAssemblyCompare/**
+          retention-days: 30
+          if-no-files-found: error
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
