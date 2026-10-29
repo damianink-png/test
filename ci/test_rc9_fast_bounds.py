@@ -19,8 +19,8 @@ assert reexport_equivalent_world(a, describe(identical, "b", "b"), .01, allow_bo
 assert not reexport_equivalent_world(a, describe(shifted, "b", "b"), .01, allow_boolean=False)
 assert not reexport_equivalent_world(a, describe(changed, "b", "b"), .01, allow_boolean=False)
 source = (root / "dsac29" / "step_reexport_tolerance.py").read_text(encoding="utf-8")
-assert "prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=True)" in source
-assert "not _repair_boundary_only and " in source
+assert "prove(a.shape,b.shape,owner,fa,tolerance)" in source
+assert "not allow_boolean and not _repair_boundary_only and " in source
 assert "prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=False)" in source
 assert "BRepBndLib.AddOptimal_s(" not in source
 print("PASS: faster prefilters preserve strict geometric SAME proof")
