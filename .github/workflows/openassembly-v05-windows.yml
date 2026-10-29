@@ -6,6 +6,7 @@ on:
       - 'OpenAssemblyCompare_sources.tar.xz.b64'
       - '.github/workflows/openassembly-v05-windows.yml'
       - 'openassembly_ci/apply_roundtrip_recovery.py'
+      - 'openassembly_ci/apply_bbox_roundtrip_fix.py'
       - 'openassembly_ci/apply_gui_step_button.py'
       - 'openassembly_ci/apply_bom_browser.py'
       - 'openassembly_ci/test_roundtrip_recovery.py'
@@ -33,6 +34,7 @@ jobs:
             cad:
               - 'OpenAssemblyCompare_sources.tar.xz.b64'
               - 'openassembly_ci/apply_roundtrip_recovery.py'
+              - 'openassembly_ci/apply_bbox_roundtrip_fix.py'
               - 'openassembly_ci/test_roundtrip_recovery.py'
               - 'openassembly_ci/public_revision.py'
   build:
@@ -47,6 +49,9 @@ jobs:
           [IO.File]::WriteAllBytes('source.tar.xz',[Convert]::FromBase64String($z))
           python -c "import tarfile;tarfile.open('source.tar.xz','r:xz').extractall('source/OpenAssemblyCompare',filter='data')"
           python openassembly_ci/apply_roundtrip_recovery.py source/OpenAssemblyCompare
+          if ($LASTEXITCODE -ne 0) {throw 'Roundtrip patch failed'}
+          python openassembly_ci/apply_bbox_roundtrip_fix.py source/OpenAssemblyCompare
+          if ($LASTEXITCODE -ne 0) {throw 'Bounding box patch failed'}
           python openassembly_ci/apply_gui_step_button.py source/OpenAssemblyCompare
           python openassembly_ci/apply_bom_browser.py source/OpenAssemblyCompare
           if ($LASTEXITCODE -ne 0) {throw 'OpenAssembly source patch failed'}
@@ -157,6 +162,9 @@ jobs:
           [IO.File]::WriteAllBytes('source.tar.xz',[Convert]::FromBase64String($z))
           python -c "import tarfile;tarfile.open('source.tar.xz','r:xz').extractall('source/OpenAssemblyCompare',filter='data')"
           python openassembly_ci/apply_roundtrip_recovery.py source/OpenAssemblyCompare
+          if ($LASTEXITCODE -ne 0) {throw 'Roundtrip patch failed'}
+          python openassembly_ci/apply_bbox_roundtrip_fix.py source/OpenAssemblyCompare
+          if ($LASTEXITCODE -ne 0) {throw 'Bounding box patch failed'}
           python openassembly_ci/apply_gui_step_button.py source/OpenAssemblyCompare
           python openassembly_ci/apply_bom_browser.py source/OpenAssemblyCompare
           if ($LASTEXITCODE -ne 0) {throw 'OpenAssembly source patch failed'}
