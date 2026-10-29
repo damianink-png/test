@@ -22,6 +22,8 @@ jobs:
           name: rc9-stage1-shift-fixture
           path: |
             dscompare_rc9_manual/tests/test_r14_stage1_shift.py
+            dscompare_rc9_manual/tests/test_r14_sparse_shift.py
+            dscompare_rc9_manual/tests/test_r7_alignment_preview.py
             dscompare_rc9_manual/TESTUJ.py
           if-no-files-found: error
           retention-days: 7
