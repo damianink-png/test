@@ -114,6 +114,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Original STEP tolerance budget regression failed' }
           python ../ci/test_rc9_isolated_pair_recovery.py
           if ($LASTEXITCODE -ne 0) { throw 'Pair-local recovery regression failed' }
+          python -m pytest -q ../ci/test_rc9_exact_brep_identity.py
+          if ($LASTEXITCODE -ne 0) { throw 'Exact BRep identity regression failed' }
           python ../ci/test_rc9_active_world_capture.py
           if ($LASTEXITCODE -ne 0) { throw 'Native crash evidence regression failed' }
           ./BUDUJ_WINDOWS.ps1 -NoInstall
