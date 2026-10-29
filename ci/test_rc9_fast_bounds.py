@@ -22,5 +22,13 @@ source = (root / "dsac29" / "step_reexport_tolerance.py").read_text(encoding="ut
 assert "prove(a.shape,b.shape,owner,fa,tolerance)" in source
 assert "not allow_boolean and not _repair_boundary_only and " in source
 assert "prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=False)" in source
-assert "BRepBndLib.AddOptimal_s(" not in source
+# Optimal analytic bounds are allowed only for the three candidate-gating
+# calculations installed by patch_rc9_optimal_analytic_bounds.py.
+# Bounds are never sufficient to declare SAME: the strict proof anchors above
+# and positive/negative geometry fixtures must continue to pass.
+assert source.count("BRepBndLib.AddOptimal_s(") == 3
+assert "BRepBndLib.AddOptimal_s(f,bound,False,False)" in source
+assert "BRepBndLib.AddOptimal_s(a.shape,exact_a,False,False)" in source
+assert "BRepBndLib.AddOptimal_s(b.shape,exact_b,False,False)" in source
+assert "surface_and_trim_proof" in source
 print("PASS: faster prefilters preserve strict geometric SAME proof")
