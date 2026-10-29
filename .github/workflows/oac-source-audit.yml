@@ -34,5 +34,11 @@ jobs:
             source/dscompare_rc9_manual/**/*.py
             source/dscompare_rc9_manual/**/*.ps1
             source/dscompare_rc9_manual/**/*.spec
+            source/dscompare_rc9_manual/**/*.html
+            source/dscompare_rc9_manual/**/*.json
+            source/dscompare_rc9_manual/**/*.svg
+            source/dscompare_rc9_manual/**/*.ico
+            source/dscompare_rc9_manual/**/*.png
+            source/dscompare_rc9_manual/**/*.md
           if-no-files-found: error
           retention-days: 3
