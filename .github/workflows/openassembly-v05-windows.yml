@@ -10,6 +10,7 @@ on:
       - 'openassembly_ci/apply_gui_step_button.py'
       - 'openassembly_ci/apply_bom_browser.py'
       - 'openassembly_ci/test_roundtrip_recovery.py'
+      - 'openassembly_ci/test_bbox_roundtrip.py'
       - 'openassembly_ci/public_revision.py'
   workflow_dispatch:
     inputs:
@@ -36,6 +37,7 @@ jobs:
               - 'openassembly_ci/apply_roundtrip_recovery.py'
               - 'openassembly_ci/apply_bbox_roundtrip_fix.py'
               - 'openassembly_ci/test_roundtrip_recovery.py'
+              - 'openassembly_ci/test_bbox_roundtrip.py'
               - 'openassembly_ci/public_revision.py'
   build:
     runs-on: windows-2022
@@ -56,6 +58,7 @@ jobs:
           python openassembly_ci/apply_bom_browser.py source/OpenAssemblyCompare
           if ($LASTEXITCODE -ne 0) {throw 'OpenAssembly source patch failed'}
           Copy-Item openassembly_ci/test_roundtrip_recovery.py source/OpenAssemblyCompare/tests/test_roundtrip_recovery.py
+          Copy-Item openassembly_ci/test_bbox_roundtrip.py source/OpenAssemblyCompare/tests/test_bbox_roundtrip.py
           if (-not (Test-Path source/OpenAssemblyCompare/pyproject.toml)) {throw 'Missing pyproject'}
       - name: Publish extracted OpenAssembly source snapshot for revision-test development
         uses: actions/upload-artifact@v4
@@ -169,6 +172,7 @@ jobs:
           python openassembly_ci/apply_bom_browser.py source/OpenAssemblyCompare
           if ($LASTEXITCODE -ne 0) {throw 'OpenAssembly source patch failed'}
           Copy-Item openassembly_ci/test_roundtrip_recovery.py source/OpenAssemblyCompare/tests/test_roundtrip_recovery.py
+          Copy-Item openassembly_ci/test_bbox_roundtrip.py source/OpenAssemblyCompare/tests/test_bbox_roundtrip.py
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
