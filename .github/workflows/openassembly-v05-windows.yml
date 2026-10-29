@@ -14,6 +14,7 @@ on:
       - 'openassembly_ci/apply_bom_browser.py'
       - 'openassembly_ci/test_roundtrip_recovery.py'
       - 'openassembly_ci/test_bbox_roundtrip.py'
+      - 'openassembly_ci/test_xcaf_cache.py'
       - 'openassembly_ci/public_revision.py'
   workflow_dispatch:
     inputs:
@@ -68,6 +69,7 @@ jobs:
           Copy-Item openassembly_ci/test_roundtrip_recovery.py source/OpenAssemblyCompare/tests/test_roundtrip_recovery.py
           Copy-Item openassembly_ci/test_world_faces_recovery.py source/OpenAssemblyCompare/tests/test_world_faces_recovery.py
           Copy-Item openassembly_ci/test_bbox_roundtrip.py source/OpenAssemblyCompare/tests/test_bbox_roundtrip.py
+          Copy-Item openassembly_ci/test_xcaf_cache.py source/OpenAssemblyCompare/tests/test_xcaf_cache.py
           if (-not (Test-Path source/OpenAssemblyCompare/pyproject.toml)) {throw 'Missing pyproject'}
       - name: Publish extracted OpenAssembly source snapshot for revision-test development
         uses: actions/upload-artifact@v4
@@ -188,6 +190,7 @@ jobs:
           Copy-Item openassembly_ci/test_roundtrip_recovery.py source/OpenAssemblyCompare/tests/test_roundtrip_recovery.py
           Copy-Item openassembly_ci/test_world_faces_recovery.py source/OpenAssemblyCompare/tests/test_world_faces_recovery.py
           Copy-Item openassembly_ci/test_bbox_roundtrip.py source/OpenAssemblyCompare/tests/test_bbox_roundtrip.py
+          Copy-Item openassembly_ci/test_xcaf_cache.py source/OpenAssemblyCompare/tests/test_xcaf_cache.py
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
