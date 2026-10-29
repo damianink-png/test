@@ -5,6 +5,7 @@ on:
     paths:
       - 'OpenAssemblyCompare_sources.tar.xz.b64'
       - '.github/workflows/openassembly-v05-windows.yml'
+      - 'openassembly_ci/public_revision.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -80,7 +81,7 @@ jobs:
       fail-fast: false
       matrix:
         model: [voron2, trident]
-        scenario: [identical, shift]
+        scenario: [identical, shift, revision]
     steps:
       - uses: actions/checkout@v4
       - name: Extract exact tested source
@@ -109,6 +110,7 @@ jobs:
           git rev-parse HEAD | Out-File -Encoding utf8 evidence/source-commit.txt
           Get-FileHash OpenAssemblyCompare_sources.tar.xz.b64 -Algorithm SHA256 | Format-List | Out-File -Encoding utf8 evidence/source-sha256.txt
       - name: Run real public assembly regression (identical or shifted)
+        if: matrix.scenario != 'revision'
         shell: pwsh
         env:
           PYTHONUTF8: '1'
@@ -116,6 +118,15 @@ jobs:
         run: |
           python source/OpenAssemblyCompare/benchmarks/public_voron.py --model ${{ matrix.model }} --scenario ${{ matrix.scenario }} --output evidence/${{ matrix.model }}-${{ matrix.scenario }} --executable app/OpenAssemblyCompareCLI.exe --timeout 3000
           if ($LASTEXITCODE -ne 0) {throw 'CAD regression failed'}
+      - name: Run controlled revision regression on original public CAD assembly
+        if: matrix.scenario == 'revision'
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+          PYTHONFAULTHANDLER: '1'
+        run: |
+          python openassembly_ci/public_revision.py --model ${{ matrix.model }} --output evidence/${{ matrix.model }}-revision --executable app/OpenAssemblyCompareCLI.exe --timeout 3000
+          if ($LASTEXITCODE -ne 0) {throw 'Controlled revision regression failed'}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -128,6 +139,8 @@ jobs:
             evidence/**/comparison/comparison.json
             evidence/**/comparison/BOM_ZMIANY.csv
             evidence/**/comparison/CZASY_ANALIZY.json
+            evidence/**/comparison/RAPORT_3D.html
+            evidence/**/comparison/BOM_ROZNICE.csv
           retention-days: 30
           if-no-files-found: warn
 # v0.6 inspection regression: pytest + original Voron/Trident identical and shift scenarios
