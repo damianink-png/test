@@ -38,7 +38,12 @@ def apply(root):
     assert s.count(anchor)==1
     s=s.replace(anchor,'''            # Canonical reference label, never the part name or approximate mass.
             ref = node.RefLabel
-            key_label = str(ref.EntryDumpToString()) if not ref.IsNull() else None
+            from OCP.TDF import TDF_Tool
+            from OCP.TCollection import TCollection_AsciiString
+            entry = TCollection_AsciiString()
+            if not ref.IsNull():
+                TDF_Tool.Entry_s(ref, entry)
+            key_label = entry.ToCString() if not ref.IsNull() else None
             if key_label is None:
                 local_data = None
             elif key_label in definition_cache:
