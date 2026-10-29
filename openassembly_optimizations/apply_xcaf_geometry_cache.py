@@ -20,7 +20,9 @@ def apply(root):
     stop2=s.index('    tf = world_shape.Location().Transformation()',start2)
     block2=s[start2:stop2]
     imports=s[s.index('    from OCP.BRepGProp import BRepGProp',s.index('def _measure(')):s.index('    if world_shape.IsNull()',s.index('def _measure('))]
-    local_func=('def _local_measure(local_shape):\n'+imports+block+block2+\n        '    c = local_volume.CentreOfMass() if volume >= 1e-12 else area_prop.CentreOfMass()\n'+\n        '    return volume, area, key, (float(c.X()), float(c.Y()), float(c.Z()))\n\n\n')
+    local_func=('def _local_measure(local_shape):\n'+imports+block+block2+
+        '    c = local_volume.CentreOfMass() if volume >= 1e-12 else area_prop.CentreOfMass()\n'+
+        '    return volume, area, key, (float(c.X()), float(c.Y()), float(c.Z()))\n\n\n')
     s=s[:s.index('def _measure(')]+local_func+s[s.index('def _measure('):]
     start=s.index('    local_volume = GProp_GProps()',s.index('def _measure('))
     stop=s.index('    world_prop = GProp_GProps()',start)
