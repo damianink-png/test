@@ -35,7 +35,10 @@ new="""            if original_invalid:
                     # This is an INCOMPLETE proof, never a negative match.
                     error=f'UnprovenRepair: {exc}'
                     report('repair_rejected')
-                    Path(result_path).write_text(json.dumps(dict(ok=False,error=error)),encoding='utf-8')
+                    try:
+                        Path(result_path).write_text(json.dumps(dict(ok=False,error=error)),encoding='utf-8')
+                    except OSError:
+                        pass  # Native failure remains authoritative even if diagnostic disk I/O fails.
                     sys.stderr.write(error+'\\n')
                     sys.stderr.flush()
                     os._exit(70)
