@@ -25,25 +25,34 @@ def _capture_active_world(root,a,b,tolerance):
     if trace._path is None:return
     import shutil
     global _active_capture_counter
-    # Per-process monotonically increasing slots; guard concurrent callers.
+    # Keep both B-Rep files and their metadata as one synchronized snapshot.
+    # Without this lock another thread could overwrite a slot midway and
+    # leave a mismatched A/B pair in the crash evidence.
     with _active_capture_lock:
-        _active_capture_counter+=1
-        count=_active_capture_counter
-        slot=count%2
-    destination=trace._path.parent/'FAILED_BREP'/'active_world'
-    try:
-        destination.mkdir(parents=True,exist_ok=True)
-        for name in ('A','B'):
-            temporary=destination/f'.slot{slot}_{name}_{count}.partial'
-            shutil.copyfile(Path(root)/(name+'.brep'),temporary)
-            os.replace(temporary,destination/f'slot{slot}_{name}.brep')
-        metadata={'sequence':count,'slot':slot,'a_path':str(a.path),
-                  'b_path':str(b.path),'tolerance_mm':float(tolerance)}
-        temporary=destination/f'.current_{count}.partial'
-        temporary.write_text(json.dumps(metadata,ensure_ascii=False),encoding='utf-8')
-        os.replace(temporary,destination/'current.json')
-    except (OSError, ValueError, TypeError) as exc:
-        trace.mark('native_world_capture','ERROR',reason=str(exc),sequence=count)
+        _active_capture_counter += 1
+        count = _active_capture_counter
+        slot = count % 2
+        destination = trace._path.parent / 'FAILED_BREP' / 'active_world'
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+            for name in ('A', 'B'):
+                temporary = destination / f'.slot{slot}_{name}_{count}.partial'
+                try:
+                    shutil.copyfile(Path(root) / (name + '.brep'), temporary)
+                    os.replace(temporary, destination / f'slot{slot}_{name}.brep')
+                finally:
+                    temporary.unlink(missing_ok=True)
+            metadata = {'sequence': count, 'slot': slot,
+                        'a_path': str(a.path), 'b_path': str(b.path),
+                        'tolerance_mm': float(tolerance)}
+            temporary = destination / f'.current_{count}.partial'
+            try:
+                temporary.write_text(json.dumps(metadata, ensure_ascii=False), encoding='utf-8')
+                os.replace(temporary, destination / 'current.json')
+            finally:
+                temporary.unlink(missing_ok=True)
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            trace.mark('native_world_capture', 'ERROR', reason=str(exc), sequence=count)
 '''
 s=s.replace(anchor,'\n'+insert+anchor)
 anchor2="""        argv = process_args or (
