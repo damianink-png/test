@@ -21,6 +21,7 @@ replacement = '''    # Verify the best-ranked candidate immediately. Once a full
     # sampling further candidates. This avoids spending 24 expensive native
     # checks on each of 16 weak hypotheses before starting any full proof.
     winners=[];evaluated=[]
+    identity=np.eye(3)
     for coarse,offset in sorted(ranked,key=lambda v:-v[0]):
         if any(np.linalg.norm(offset-old)<=tolerance for old in evaluated):continue
         if len(evaluated)>=16:break
@@ -30,7 +31,7 @@ replacement = '''    # Verify the best-ranked candidate immediately. Once a full
             if coarse<best-margin:continue
         evaluated.append(offset)
         check_cancel()
-        shifted=[_relocate(p,np.eye(3),offset) for p in b]
+        shifted=[_relocate(p,identity,offset) for p in b]
         preliminary=frame_support(a,shifted,tolerance,proofs=24,
                                   progress=progress,cancelled=cancelled)
         checked=preliminary['checked'];confirmed=preliminary['proofs']
