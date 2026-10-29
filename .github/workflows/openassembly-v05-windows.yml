@@ -66,6 +66,41 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm --clean --onedir --console --name OpenAssemblyCompareCLI --collect-all OCP --hidden-import openassembly.boolean_ops launch_cli.py
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path dist/OpenAssemblyCompareCLI/OpenAssemblyCompareCLI.exe)) {throw 'CLI compile failed'}
+      - name: Capture actual Windows GUI screenshot (diagnostic)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          @'
+          import subprocess, time, pathlib, os
+          from PIL import ImageGrab
+          exe = pathlib.Path('source/OpenAssemblyCompare/dist/OpenAssemblyCompare/OpenAssemblyCompare.exe').resolve()
+          out = pathlib.Path('evidence/gui-actual.png')
+          out.parent.mkdir(parents=True, exist_ok=True)
+          p = subprocess.Popen([str(exe)], cwd=str(exe.parent))
+          try:
+              time.sleep(12)
+              if p.poll() is not None:
+                  raise RuntimeError(f'GUI exited before screenshot: {p.returncode}')
+              image = ImageGrab.grab(all_screens=True)
+              if image.getbbox() is None:
+                  raise RuntimeError('Empty desktop capture')
+              image.save(out)
+              print('Captured real GUI desktop:', out, image.size)
+          finally:
+              p.terminate()
+              try: p.wait(timeout=5)
+              except subprocess.TimeoutExpired: p.kill()
+          '@ | Set-Content -Encoding utf8 capture_gui.py
+          python -m pip install Pillow
+          python capture_gui.py
+          if ($LASTEXITCODE -ne 0) {throw 'Actual GUI capture unavailable on CI runner'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: OpenAssembly-v06-actual-GUI-screenshot
+          path: evidence/gui-actual.png
+          retention-days: 30
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: OpenAssemblyCompare-v06-Windows-GUI
