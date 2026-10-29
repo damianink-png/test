@@ -1,0 +1,27 @@
+name: RC9 stage1 shift fixture diagnostic
+on:
+  push:
+    branches: [feature/rc9-old-engine-proof-cache-20261029]
+    paths: ['.github/workflows/rc9-stage1-shift-diagnostic.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract audited RC9 source and capture exact regression
+        run: |
+          unzip -q -o DSCompare_RC9_AUDYT_20261028_ZRODLA.zip
+          test -f dscompare_rc9_manual/tests/test_r14_stage1_shift.py
+          test -f dscompare_rc9_manual/TESTUJ.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc9-stage1-shift-fixture
+          path: |
+            dscompare_rc9_manual/tests/test_r14_stage1_shift.py
+            dscompare_rc9_manual/TESTUJ.py
+          if-no-files-found: error
+          retention-days: 7
