@@ -26,6 +26,10 @@ replace_one("def merge_material_revisions(a,b,records,tolerance=0.01,progress=No
         return False
     if sa.Orientation() != ca.Orientation() or sb.Orientation() != cb.Orientation():
         return False
+    # Do not collapse coincident/duplicate occurrences: every candidate in
+    # a one-to-many ambiguity must remain independently observable.
+    if np.max(np.abs(a.center-saved_a.center)) <= 1.e-9:
+        return False
     for new, old in ((sa, ca), (sb, cb)):
         tn = new.Location().Transformation()
         to = old.Location().Transformation()
