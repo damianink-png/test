@@ -131,6 +131,9 @@ jobs:
       matrix:
         model: [v2, trident]
         case: [revision, shift, revision_shift]
+        include:
+          - model: v2
+            case: revision_repeat
     env:
       PYTHONUTF8: '1'
       PYTHONUNBUFFERED: '1'
@@ -240,7 +243,34 @@ jobs:
             }
           }
           try {
-            if ($case -eq 'revision') {
+            if ($case -eq 'revision_repeat') {
+              # Reproduce first-pass success followed by failure on the SAME
+              # runner, same EXE and same workspace, without clearing caches.
+              # Each invocation is a fresh process; in-process UI reuse is
+              # a separate regression scenario.
+              $results = @()
+              foreach ($iteration in 1..2) {
+                Write-Host "REPEAT_BEGIN iteration=$iteration commit=$env:GITHUB_SHA"
+                python dscompare_rc9_manual/ci/real_revision_without_shift.py dscompare_rc9_manual/dist/DSCompare/DSCompare.exe $model
+                $rc = $LASTEXITCODE
+                $results += $rc
+                $iterationDir = "evidence/repeat-$iteration"
+                New-Item -ItemType Directory -Path $iterationDir -Force | Out-Null
+                foreach ($log in @('EXE_STDOUT.log','EXE_STDERR.log')) {
+                  $logPath = "dscompare_rc9_manual/ci/$log"
+                  if (Test-Path $logPath) { Copy-Item $logPath "$iterationDir/$log" -Force }
+                }
+                Get-ChildItem -Path 'dscompare_rc9_manual/ci' -Filter '*.json' -ErrorAction SilentlyContinue |
+                  Copy-Item -Destination $iterationDir -Force -ErrorAction SilentlyContinue
+                Write-Host "REPEAT_END iteration=$iteration exit_code=$rc"
+              }
+              $results | ConvertTo-Json | Set-Content evidence/repeat-exit-codes.json
+              if ($results[0] -ne $results[1]) {
+                Write-Host "::error::NONDETERMINISTIC repeat results: $($results -join ',')"
+              }
+              if (($results | Where-Object { $_ -ne 0 }).Count -gt 0) { $global:LASTEXITCODE = 1 }
+              else { $global:LASTEXITCODE = 0 }
+            } elseif ($case -eq 'revision') {
               python dscompare_rc9_manual/ci/real_revision_without_shift.py dscompare_rc9_manual/dist/DSCompare/DSCompare.exe $model
             } else {
               python dscompare_rc9_manual/ci/large_exe.py dscompare_rc9_manual/dist/DSCompare/DSCompare.exe $model $case
@@ -278,6 +308,7 @@ jobs:
           python ci/rc9_failure_summary.py evidence '${{ matrix.model }}' '${{ matrix.case }}'
           if ($LASTEXITCODE -ne 0) { Write-Warning 'Diagnostic summary failed; preserve original CAD failure' }
       - name: Audit STEP HTML and BOM artifacts
+        if: matrix.case != 'revision_repeat'
         shell: pwsh
         run: |
           python dscompare_rc9_manual/ci/audit_artifacts.py evidence '${{ matrix.case }}'
