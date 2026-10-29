@@ -5,11 +5,11 @@ Voron V2 STEP re-export had a 0.002788 mm trim-edge displacement: the exact
 analytic surface and all remaining oriented trims matched, but the internal
 0.00125 mm limit caused a false negative and a 90 s Common timeout.
 
-Only normal re-export identity uses tolerance/2 for its independent
-surface/trim proof. The other half is reserved for accumulated surface/trim
-error. Repair of invalid input B-Reps retains the original tolerance/8
-boundary proof. Micro-seam deletion caps stay fixed at tolerance/4 per edge
-and tolerance/2 total, independent of the matching budget.
+Every comparison FIRST tries the original tolerance/8 proof, including
+its original bounded micro-seam normalization. Only if that fails, normal
+STEP re-export identity may retry at tolerance/2 with NO micro-seam removal.
+The other half is reserved for accumulated surface/trim error. Invalid-input
+B-Rep repairs never use this fallback and retain their original strict proof.
 
 This does not change user tolerance, allow Boolean-free material changes,
 or bypass any original face, orientation, wire, or edge assertions.
@@ -25,7 +25,7 @@ changes = [
      "def prove(a,b,owner,face_data,tolerance,*,strict_repair=False):"),
     ("fa=items(a,TopAbs_FACE,TopoDS.Face_s);fb=items(b,TopAbs_FACE,TopoDS.Face_s);tol=tolerance/8",
      "fa=items(a,TopAbs_FACE,TopoDS.Face_s);fb=items(b,TopAbs_FACE,TopoDS.Face_s);tol=tolerance/(8 if strict_repair else 2)"),
-    ("tiny=[k for k,span in enumerate(spans) if span<=tol*2]",
+    ("def tiny_edge_cleanup(edges):",\n     "def tiny_edge_cleanup(edges):\\n   if not strict_repair:return edges  # Half-budget proof cannot discard micro-seams"),\n    ("tiny=[k for k,span in enumerate(spans) if span<=tol*2]",
      "tiny=[k for k,span in enumerate(spans) if span<=tolerance/4]"),
     ("if not tiny or len(tiny)>8 or sum(spans[k] for k in tiny)>tol*4:return edges",
      "if not tiny or len(tiny)>8 or sum(spans[k] for k in tiny)>tolerance/2:return edges"),
@@ -43,7 +43,9 @@ p.write_text(s, encoding="utf-8")
 q = root / "step_reexport_tolerance.py"
 s = q.read_text(encoding="utf-8")
 old = "prove(a.shape,b.shape,owner,fa,tolerance)"
-new = "prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=_repair_boundary_only)"
+new = ("(prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=True) "
+       "or (not _repair_boundary_only and "
+       "prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=False)))")
 if s.count(old) != 1:
     raise SystemExit(f"Unexpected STEP re-export proof call ({s.count(old)})")
 s = s.replace(old, new)
