@@ -23,7 +23,10 @@ new="""        report('common_operate')
             # Boolean results; the coordinator still raises failure.
             error=f'{type(exc).__name__}: {exc}'
             report('common_rejected')
-            Path(result_path).write_text(json.dumps(dict(ok=False,error=error)),encoding='utf-8')
+            try:
+                Path(result_path).write_text(json.dumps(dict(ok=False,error=error)),encoding='utf-8')
+            except OSError:
+                pass
             sys.stderr.write(error+'\\n')
             sys.stderr.flush()
             os._exit(70)
@@ -62,8 +65,11 @@ new_negative="""        if not math.isfinite(signed) or signed < -max(1e-5,float
             if reply_path:
                 # Explicit negative verdict, never a fabricated empty Common.
                 destination=Path(reply_path)
-                destination.write_text(json.dumps(dict(ok=False,error=error)),encoding='utf-8')
-                destination.with_suffix('.phase').write_text('common_rejected',encoding='utf-8')
+                try:
+                    destination.write_text(json.dumps(dict(ok=False,error=error)),encoding='utf-8')
+                    destination.with_suffix('.phase').write_text('common_rejected',encoding='utf-8')
+                except OSError:
+                    pass  # Do not mask the native geometry failure with a logging failure.
                 _exit(70)
             raise RuntimeError(error)"""
 if m.count(old_negative)!=1:raise SystemExit(f'Negative Common anchor count {m.count(old_negative)}')
