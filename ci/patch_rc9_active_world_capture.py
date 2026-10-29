@@ -34,12 +34,12 @@ def _capture_active_world(root,a,b,tolerance):
     try:
         destination.mkdir(parents=True,exist_ok=True)
         for name in ('A','B'):
-            temporary=destination/f'.slot{slot}_{name}.partial'
+            temporary=destination/f'.slot{slot}_{name}_{count}.partial'
             shutil.copyfile(Path(root)/(name+'.brep'),temporary)
             os.replace(temporary,destination/f'slot{slot}_{name}.brep')
         metadata={'sequence':count,'slot':slot,'a_path':str(a.path),
                   'b_path':str(b.path),'tolerance_mm':float(tolerance)}
-        temporary=destination/'.current.partial'
+        temporary=destination/f'.current_{count}.partial'
         temporary.write_text(json.dumps(metadata,ensure_ascii=False),encoding='utf-8')
         os.replace(temporary,destination/'current.json')
     except (OSError, ValueError, TypeError) as exc:
