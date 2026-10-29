@@ -25,6 +25,7 @@ jobs:
           python -c "import zipfile;zipfile.ZipFile('DSCompare_RC9_AUDYT_20261028_ZRODLA.zip').extractall('source')"
           python -c "import tarfile,base64,io;tarfile.open(fileobj=io.BytesIO(base64.b64decode(open('dscompare_oac/integration_overlay.b64').read()))).extractall('source/dscompare_rc9_manual',filter='data')"
           python dscompare_oac/apply_reuse_identical_imports.py source/dscompare_rc9_manual
+          python dscompare_oac/apply_orientation_proof.py source/dscompare_rc9_manual
       - name: Install CAD, GUI and test dependencies
         shell: pwsh
         run: |
