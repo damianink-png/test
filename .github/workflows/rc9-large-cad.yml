@@ -2,7 +2,7 @@ name: DS Compare RC9 large real CAD assemblies
 on:
   push:
     branches: [fix/rc9-native-crash-evidence-20261028]
-    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py', 'ci/patch_rc9_original_tolerance_budget.py', 'ci/test_rc9_original_tolerance_budget.py', 'ci/test_rc9_native_repair_budget.py', 'ci/rc9_common_probe.py']
+    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py', 'ci/patch_rc9_original_tolerance_budget.py', 'ci/test_rc9_original_tolerance_budget.py', 'ci/test_rc9_native_repair_budget.py', 'ci/rc9_common_probe.py', 'ci/patch_rc9_fast_bounds.py', 'ci/test_rc9_fast_bounds.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -57,6 +57,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Interleaved verification patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/deferred_alignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Virtual alignment syntax failed' }
+          python ci/patch_rc9_fast_bounds.py
+          if ($LASTEXITCODE -ne 0) { throw 'Fast conservative bounds patch failed' }
+          python -m py_compile dscompare_rc9_manual/dsac29/brep_safety.py dscompare_rc9_manual/dsac29/step_reexport_tolerance.py dscompare_rc9_manual/dsac29/parametric_identity.py
+          if ($LASTEXITCODE -ne 0) { throw 'Fast bounds syntax failed' }
       - name: Upload patched Python sources for deterministic failure analysis
         uses: actions/upload-artifact@v4
         with:
@@ -80,6 +84,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Interleaved proof regression failed' }
           python -m pytest -vv -s ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
           if ($LASTEXITCODE -ne 0) { throw 'Native proof and Common regression failed' }
+          python ../ci/test_rc9_fast_bounds.py
+          if ($LASTEXITCODE -ne 0) { throw 'Fast bounds strict proof regression failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
           python ../ci/test_rc9_common_immediate_error.py
@@ -157,6 +163,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Interleaved verification patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/deferred_alignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Virtual alignment syntax failed' }
+          python ci/patch_rc9_fast_bounds.py
+          if ($LASTEXITCODE -ne 0) { throw 'Fast conservative bounds patch failed' }
+          python -m py_compile dscompare_rc9_manual/dsac29/brep_safety.py dscompare_rc9_manual/dsac29/step_reexport_tolerance.py dscompare_rc9_manual/dsac29/parametric_identity.py
+          if ($LASTEXITCODE -ne 0) { throw 'Fast bounds syntax failed' }
       - uses: actions/download-artifact@v4
         with:
           name: RC9-large-current-Windows-x64
