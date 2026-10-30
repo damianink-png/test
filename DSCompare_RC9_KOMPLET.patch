@@ -1,3 +1,26 @@
+--- a/dsac29/alignment_notice.py
++++ b/dsac29/alignment_notice.py
+@@ -0,0 +1,20 @@
++"""Explain frame normalization separately from actual component movement."""
++import math
++
++def alignment_notice(info):
++    vector=info.get('translation_B_to_A_mm')
++    valid=isinstance(vector,(list,tuple)) and len(vector)==3
++    if valid:
++        try:valid=all(math.isfinite(float(v)) for v in vector)
++        except (TypeError,ValueError):valid=False
++    if valid and any(abs(float(v))>1e-8 for v in vector):
++        axes='; '.join(f'Δ{axis} = {float(v):+.4f} mm' for axis,v in zip('XYZ',vector))
++        if info.get('applied'):
++            return ('Wykryto globalne przesunięcie. Wyrównanie B → A: '+axes+
++                    '. Statusy części opisują różnice po wyrównaniu.')
++        if info.get('status')=='original_by_user':
++            return ('Wykryto możliwe przesunięcie B → A: '+axes+
++                    '. Zachowano oryginalne położenie zgodnie z Twoją decyzją.')
++    if str(info.get('status','')).startswith('unresolved'):
++        return str(info.get('reason') or 'Nie udało się jednoznacznie potwierdzić przesunięcia. Zachowano oryginalne położenie.')
++    return ''
 --- a/dsac29/analytic_bore_delta.py
 +++ b/dsac29/analytic_bore_delta.py
 @@ -0,0 +1,212 @@
@@ -256,6 +279,65 @@
                      raise UnprovenRepair('Repair increases stored '+kind+' tolerance')
              if not is_valid(candidate):raise UnprovenRepair('Repaired topology still invalid')
              if not _strict_original_boundary_proof(shape,candidate,tolerance):
+--- a/dsac29/cli.py
++++ b/dsac29/cli.py
+@@ -175,7 +175,8 @@
+                 except AlignmentUnavailable as exc:
+                     decision=alignment_approval({'status':'unresolved','reason':str(exc),'search_failed':True})
+             if decision=='original':
+-                alignment.update(status='original_by_user',reason='Użytkownik wybrał oryginalne położenie.')
++                alignment.update(**{**proposal,'status':'original_by_user','applied':False,
++                                    'reason':'Użytkownik wybrał oryginalne położenie.'})
+             elif decision=='align' and proposal.get('status') in ('registered','already_aligned'):
+                 rotation=np.asarray(proposal.get('rotation_B_to_A',np.eye(3)))
+                 offset=np.asarray(proposal.get('translation_B_to_A_mm',[0,0,0]))
+--- a/dsac29/compare.py
++++ b/dsac29/compare.py
+@@ -122,7 +122,7 @@
+         # exact proof, not a probabilistic fingerprint of a CAD shape.
+         if progress:progress(f'R11: {len(a)} identycznych wystąpień; bez testów B-Rep.')
+         return [Record(i,i,'SAME','Ten sam źródłowy STEP (SHA-256); niezmieniona geometria, nazwy i położenia',confidence='Identyczna zawartość STEP') for i in range(len(a))]
+-    from .step_reexport_tolerance import coarse_candidate,reexport_equivalent_world,search_radius
++    from .step_reexport_tolerance import coarse_candidate,reexport_equivalent_world,search_radius,world_candidate
+     free_a=set(range(len(a))); free_b=set(range(len(b)))
+     norm_a=[_normalized_name(p.name) for p in a]
+     norm_b=[_normalized_name(p.name) for p in b]
+@@ -164,19 +164,22 @@
+     if progress:progress('Etap 1/3: sprawdzanie identycznych brył w tym samym miejscu')
+     # Repeated occurrences matched 1:1, prioritizing the same name at same world position.
+     started = perf_counter()
+-    cells = _spatial_index(b, free_b, tolerance)
++    broad_world_lookup=len(a)>=600
++    lookup_radius=search_radius(tolerance) if broad_world_lookup else tolerance
++    cells = _spatial_index(b, free_b, lookup_radius)
+     # Match exact names first GLOBALLY: repeated and overlapping occurrences
+     # must not consume a counterpart that has an exact-name match elsewhere.
+     for names_equal in (True, False):
+         for i, s in enumerate(a):
+             if i not in free_a: continue
+             if cancelled and cancelled(): raise Cancelled('Przerwano analizę')
+-            js = [j for j in _nearby(cells, s, tolerance)
++            js = [j for j in _nearby(cells, s, lookup_radius)
+                   if j in free_b
+                   and (norm_a[i] == norm_b[j]) == names_equal
+-                  and dist(s, b[j]) <= tolerance and
++                  and dist(s, b[j]) <= lookup_radius and
+                   (candidate(s,b[j],tolerance) or
+-                   coarse_candidate(s,b[j],tolerance))]
++                   coarse_candidate(s,b[j],tolerance) or
++                   (broad_world_lookup and world_candidate(s,b[j],tolerance)))]
+             js.sort(key=lambda j:(dist(s,b[j]),abs(s.volume-b[j].volume),j))
+             for j in js:
+                 gs, gt = group_a[i], group_b[j]
+@@ -209,7 +212,7 @@
+                             same=trace.brep_call('registered_world_guarded',i,j,
+                                 guarded_world_reexport,s,b[j],tolerance)
+                         elif step_reexport_tolerance or not candidate(s,b[j],tolerance):
+-                            same=trace.brep_call('reexport_world',i,j,(guarded_world_reexport if len(a)>=600 and step_reexport_tolerance else reexport_equivalent_world),s,b[j],tolerance)
++                            same=trace.brep_call('reexport_world',i,j,(guarded_world_reexport if len(a)>=600 else reexport_equivalent_world),s,b[j],tolerance)
+                         else:
+                             same=trace.brep_call('equivalent_world',i,j,equivalent_world,s,b[j],tolerance)
+                             if not same and coarse_candidate(s,b[j],tolerance):
 --- a/dsac29/deferred_alignment.py
 +++ b/dsac29/deferred_alignment.py
 @@ -10,7 +10,7 @@
@@ -307,7 +389,7 @@
 +        if (preliminary['count']>=minimum
 +                and preliminary['count']>baseline
 +                and checked>=min(8,preliminary['count'])
-+                and confirmed>=max(4,ceil(.65*checked))):
++                and confirmed>=min(preliminary['count'],max(4,ceil(.65*checked)))):
 +            # All accepted pairs must still be independently B-Rep proven.
 +            support=frame_support(a,shifted,tolerance,verify_all=True,
 +                                  progress=progress,cancelled=cancelled,proof_cache=proof_cache)
@@ -437,18 +519,75 @@
   def start(self,kind):
 --- a/dsac29/gui_modern.py
 +++ b/dsac29/gui_modern.py
-@@ -9,8 +9,8 @@
- from PySide6.QtCore import Qt, QTimer, QSize, QRectF, QPointF
+@@ -6,11 +6,11 @@
+ from __future__ import annotations
+ import json, os, sys, math, time
+ from pathlib import Path
+-from PySide6.QtCore import Qt, QTimer, QSize, QRectF, QPointF
++from PySide6.QtCore import Qt, QTimer, QSize, QRectF, QPointF, QEvent
  from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QGuiApplication
  from PySide6.QtWidgets import (QWidget,QDialog,QVBoxLayout,QHBoxLayout,QGridLayout,QFormLayout,
 -    QFrame,QLabel,QPushButton,QSizePolicy,QTableWidget,QProgressBar,QCheckBox,QComboBox,
 -    QAbstractItemView,QMessageBox,QScrollArea)
 +    QFrame,QLabel,QPushButton,QSizePolicy,QTableWidget,QTableWidgetItem,QProgressBar,QCheckBox,QComboBox,
-+    QAbstractItemView,QMessageBox,QScrollArea,QHeaderView)
++    QAbstractItemView,QMessageBox,QScrollArea,QHeaderView,QToolButton,QAbstractSpinBox)
  from .icons_r119 import vector_icon,set_action
  from .gui46 import Window as PreviousWindow
  
-@@ -361,7 +361,7 @@
+@@ -81,6 +81,11 @@
+  QPushButton#mass-clear:pressed{background:SOFT;color:INK;border-color:ACCENT;}
+  QLineEdit,QDoubleSpinBox,QSpinBox,QComboBox{border:1px solid LINE;border-radius:8px;background:FIELD;color:INK;padding:6px 9px;min-height:26px;selection-background-color:ACCENT;}
+  QLineEdit:focus,QComboBox:focus,QDoubleSpinBox:focus{border-color:ACCENT;}
++ QFrame#numeric-control{border:1px solid LINE;border-radius:8px;background:FIELD;}
++ QToolButton#numeric-step{border:0;border-radius:6px;background:transparent;color:INK;font-size:19px;font-weight:600;padding:0;}
++ QToolButton#numeric-step:hover{background:HOVER;color:ACCENT;}
++ QToolButton#numeric-step:pressed{background:SOFT;}
++ QToolButton#numeric-step:disabled{color:MUTED;}
+  QComboBox QAbstractItemView{background:SURFACE;color:INK;border:1px solid LINE;outline:0;selection-background-color:SOFT;selection-color:INK;}
+  QComboBox::drop-down{border:0;background:transparent;min-width:21px;}
+  QComboBox QAbstractItemView::item{min-height:27px;padding:5px 8px;}
+@@ -222,15 +227,39 @@
+    event.accept()
+   else:super().mousePressEvent(event)
+ 
++class NumberControl(QFrame):
++ """Explicit +/- buttons avoid native spin subcontrol painting on Windows."""
++ def __init__(self,spin,label):
++  super().__init__();self.setObjectName('numeric-control');self.spin=spin
++  row=QHBoxLayout(self);row.setContentsMargins(5,3,5,3);row.setSpacing(4)
++  self.minus=QToolButton(self);self.plus=QToolButton(self)
++  for button,text,verb,slot in ((self.minus,'−','Zmniejsz',spin.stepDown),(self.plus,'+','Zwiększ',spin.stepUp)):
++   button.setObjectName('numeric-step');button.setText(text);button.setFixedSize(30,30)
++   button.setAccessibleName(verb+': '+label);button.setToolTip(verb+' wartość')
++   button.setAutoRepeat(True);button.clicked.connect(slot)
++  spin.setButtonSymbols(QAbstractSpinBox.NoButtons);spin.setMinimumWidth(70)
++  spin.setStyleSheet('QAbstractSpinBox{border:0;background:transparent;padding:0;min-height:26px;} QLineEdit{border:0;background:transparent;padding:0;min-width:50px;}')
++  spin.setAccessibleName(label);spin.setAlignment(Qt.AlignCenter)
++  row.addWidget(self.minus);row.addWidget(spin,1);row.addWidget(self.plus)
++  self.setFocusProxy(spin);spin.valueChanged.connect(self._sync)
++  spin.installEventFilter(self);self._sync()
++ def _sync(self,*args):
++  enabled=self.spin.isEnabled() and not self.spin.isReadOnly()
++  self.minus.setEnabled(enabled and self.spin.value()>self.spin.minimum())
++  self.plus.setEnabled(enabled and self.spin.value()<self.spin.maximum())
++ def eventFilter(self,obj,event):
++  if event.type() in (QEvent.EnabledChange,QEvent.ReadOnlyChange):self._sync()
++  return super().eventFilter(obj,event)
++
+ class ModernWindow(PreviousWindow):
+  populate_legacy_mass_table=False
+  def __init__(self,a='',b=''):
+   super().__init__(a,b)
+   self.setWindowTitle('DS Compare — porównywanie geometrii CAD')
+   self.setMinimumSize(740,540)
++  self._install_deferred_settings_signals()
+   self._modern_topbar();self._modern_compare();self._modern_mass();self._modern_settings()
+   self._center_form_fields()
+-  self._install_deferred_settings_signals()
+   self._scroll_page('compare')
+   self._init_adaptive_window()
+   self.theme.setCurrentText(str(self.store.value('theme46','Ciemny')) if str(self.store.value('theme46','Ciemny')) in ('Ciemny','Jasny') else 'Ciemny')
+@@ -361,7 +390,7 @@
    filename.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Preferred)
    filename.setToolTip('Przeciągnij plik STEP / STP / Z3')
    textcol.addWidget(filename);row.addLayout(textcol,1)
@@ -457,7 +596,7 @@
    choose.setMinimumWidth(88);choose.setMaximumWidth(112)
    choose.setObjectName('text-button')
    row.addWidget(choose,0,Qt.AlignVCenter)
-@@ -377,6 +377,7 @@
+@@ -377,6 +406,7 @@
     filename.setObjectName('chosen-file' if present else 'muted')
     filename.setToolTip(path or 'Przeciągnij plik STEP / STP / Z3')
     choose.setText('Zmień' if present else 'Wybierz')
@@ -465,7 +604,7 @@
     clear.setVisible(present)
     tile.setProperty('hasFile',present)
     tile.style().unpolish(tile);tile.style().polish(tile)
-@@ -455,26 +456,29 @@
+@@ -455,26 +485,29 @@
      holder=self.mass_input_list.itemWidget(self.mass_input_list.item(index))
      if holder is not None:
       for control in holder.findChildren(QPushButton):control.setEnabled(not busy)
@@ -499,7 +638,7 @@
    if hasattr(self,'_settings_save_button'):
     dirty=self._settings_dirty()
     self._settings_save_button.setEnabled(dirty and self.process is None)
-@@ -492,6 +496,9 @@
+@@ -492,6 +525,9 @@
     self.cache_import.setChecked(saved['cache_import'])
     self.bom_mode.setCurrentIndex(saved['bom_mode'])
     self.output.setText(saved['output'])
@@ -509,7 +648,7 @@
    finally:self._settings_restoring=False
    self._settings_changed()
   def navigate(self,key):
-@@ -506,7 +513,9 @@
+@@ -506,7 +542,9 @@
     if self.process is not None:save.setEnabled(False)
     prompt.setDefaultButton(stay);prompt.exec()
     clicked=prompt.clickedButton()
@@ -520,7 +659,7 @@
     elif clicked is discard:self._settings_revert()
     else:return
    return super().navigate(key)
-@@ -521,8 +530,10 @@
+@@ -521,8 +559,10 @@
        ('bom_mode',self.bom_mode.currentData()),
        ('bom_csv',self.bom_csv.isChecked()),
        ('output',self.output.text().strip()),
@@ -532,7 +671,13 @@
    self.store.sync()
    if self.store.status()!=self.store.Status.NoError:
     QMessageBox.warning(self,'Ustawienia','Nie udało się zapisać ustawień. Sprawdź uprawnienia do zapisu.')
-@@ -593,8 +604,8 @@
+@@ -590,11 +630,14 @@
+   self._summary_stats=QLabel('')
+   self._summary_stats.setWordWrap(True);self._summary_stats.setObjectName('result-figure')
+   content.addWidget(self._summary_stats)
++  self._alignment_notice=QLabel('');self._alignment_notice.setWordWrap(True)
++  self._alignment_notice.setObjectName('muted');content.addWidget(self._alignment_notice)
++  self._alignment_notice.hide()
    lay.addWidget(self._success);self._success.hide()
    self._actions=QFrame();self._actions.setObjectName('surface')
    actions=QGridLayout(self._actions);actions.setContentsMargins(12,10,12,10);actions.setSpacing(9)
@@ -543,7 +688,7 @@
    actions.setColumnStretch(0,1);actions.setColumnStretch(1,1)
    lay.addWidget(self._actions);self._actions.hide()
    self.reset_button.setText('Nowe porównanie');self.reset_button.setObjectName('text-button')
-@@ -606,12 +617,13 @@
+@@ -606,12 +649,13 @@
    self._details_toggle=QPushButton('Pokaż szczegółową listę zmian')
    self._details_toggle.setObjectName('text-button')
    self._details_toggle.clicked.connect(self._toggle_details)
@@ -559,7 +704,7 @@
    lay.addStretch(1)
    self._source_stacked=False;self._metric_columns=6
  
-@@ -623,6 +635,8 @@
+@@ -623,6 +667,8 @@
    self._success.setVisible(done)
    self._actions.setVisible(done)
    self.reset_button.setVisible(done)
@@ -568,7 +713,7 @@
    if done:
     self.progress.hide();self.report_progress.hide();self._bom_label.hide()
    else:
-@@ -645,7 +659,41 @@
+@@ -645,7 +691,41 @@
    for btn in self.compare_open.values():btn.setEnabled(False)
    for metric in self.metrics:metric.setText('—')
    self.log.clear();self._set_compare_result_state(False);self.navigate('compare')
@@ -610,7 +755,16 @@
    visible=not self._details.isVisible();self._details.setVisible(visible)
    self._details_toggle.setText('Ukryj szczegółową listę zmian' if visible else 'Pokaż szczegółową listę zmian')
   def _modern_mass(self):
-@@ -753,8 +801,7 @@
+@@ -716,7 +796,7 @@
+    title.setAlignment(Qt.AlignRight|Qt.AlignVCenter)
+    title.setMinimumHeight(42);title.setMinimumWidth(150)
+    widget.setMinimumHeight(42)
+-   material_form.addRow(title,widget)
++   material_form.addRow(title,NumberControl(widget,'Gęstość') if widget is self.density else widget)
+   form_root.addWidget(self._mass_materials_panel)
+   self._mass_material_actions=QWidget()
+   more=QHBoxLayout(self._mass_material_actions)
+@@ -753,8 +833,7 @@
    result_layout.addWidget(self.mass_summary)
    lay.addWidget(self._mass_result_card)
    self._mass_result_card.hide()
@@ -620,7 +774,7 @@
    self._mass_details=QFrame();self._mass_details.setObjectName('details')
    md=QVBoxLayout(self._mass_details);md.setContentsMargins(0,0,0,0)
    self.mass_table.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
-@@ -776,11 +823,11 @@
+@@ -776,11 +855,11 @@
    self._mass_toggle=QPushButton('Pokaż listę części')
    self._mass_toggle.setObjectName('text-button')
    self._mass_toggle.clicked.connect(self._toggle_mass)
@@ -634,7 +788,7 @@
     b=self.mass_open[key];b.setMinimumWidth(0);actions.addWidget(b,1)
    lay.addWidget(self.mass_actions);self.mass_actions.hide()
    self.mass_new_button=QPushButton('Nowe obliczenia')
-@@ -798,6 +845,8 @@
+@@ -798,6 +877,8 @@
    self._mass_result_card.setVisible(done)
    self.mass_actions.setVisible(done)
    self.mass_new_button.setVisible(done)
@@ -643,7 +797,7 @@
    if done:self.mass_progress.hide()
  
   def _update_mass_file_visual(self):
-@@ -981,6 +1030,8 @@
+@@ -981,6 +1062,8 @@
    self.mass_input_list.setEnabled(not busy)
    self.mass_remove_selected.setEnabled(not busy and bool(self.mass_input_list.selectedItems()))
   def _toggle_mass(self):
@@ -652,19 +806,35 @@
    active=not self._mass_details.isVisible();self._mass_details.setVisible(active)
    self._mass_toggle.setText('Ukryj listę części' if active else 'Pokaż listę części')
   def _center_form_fields(self):
-@@ -991,6 +1042,7 @@
+@@ -991,6 +1074,7 @@
    for field in self.findChildren(QLineEdit):
     if field not in excluded:field.setAlignment(Qt.AlignCenter)
    for spin in self.findChildren(QAbstractSpinBox):
-+   spin.setButtonSymbols(QAbstractSpinBox.UpDownArrows)
++   spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
     spin.setAlignment(Qt.AlignCenter)
    for choice in (self.schema,self.verify_mode,self.bom_mode,self._theme_select):
     choice.setEditable(True)
-@@ -1050,10 +1102,12 @@
+@@ -1025,12 +1109,12 @@
+   lay.addWidget(title)
+   grid=QGridLayout();grid.setSpacing(14)
+   compare,cp=self._settings_card('Porównanie i import')
+-  cp.addRow('Tolerancja geometrii',self.tolerance)
+-  cp.addRow('Limit brył / plik',self.solid_limit)
++  cp.addRow('Tolerancja geometrii',NumberControl(self.tolerance,'Tolerancja geometrii'))
++  cp.addRow('Limit brył / plik',NumberControl(self.solid_limit,'Limit brył na plik'))
+   # Alignment is automatic for all comparisons; no manual setting.
+   self.align.setChecked(False)
+   self.align.hide()
+-  info=QLabel('Po imporcie program sam sprawdza położenie modeli. Jeśli potrzeba wyrównania, zapyta o zgodę.')
++  info=QLabel('Program sprawdza przesunięcie modeli. Jednoznaczne wyrównanie zastosuje automatycznie i pokaże w wyniku; w pozostałych przypadkach zapyta o decyzję.')
+   info.setObjectName('muted');info.setWordWrap(True);cp.addRow(info)
+   self.full_bom.setText('Twórz pełny BOM A i B')
+   self.cache_import.setText('Przyspiesz ponowny import')
+@@ -1050,10 +1134,12 @@
    self.output_button.setMinimumWidth(104);folder_line.addWidget(self.output_button,0)
    rp.addRow('Folder wyników',folder)
    rp.addRow('Kolory modeli',self.color_editor)
-+  rp.addRow('Przezroczystość wersji A',self.opacity)
++  rp.addRow('Przezroczystość wersji A',NumberControl(self.opacity,'Przezroczystość wersji A'))
 +  self.opacity.show()
 +  self.opacity.setToolTip('0%: pełny kolor; 90%: prawie przezroczysta. Wygląd STEP zależy od importera CAD.')
    rp.addRow(self.bom_csv)
@@ -674,7 +844,7 @@
    rp.addRow(self.preview_html)
  
    # Keep internal compatibility controls, but do not expose old settings.
-@@ -1162,6 +1216,7 @@
+@@ -1162,6 +1248,7 @@
     self._compare_step_announced=False
    if self.process is not None:self._set_busy_ui(True)
    if kind=='mass' and self.process is not None:
@@ -682,7 +852,7 @@
     self._mass_running_controls(True)
     self.mass_summary.setText(f'Trwa obliczanie masy {len(self.mass_inputs)} modeli…')
    if self.process is not None:
-@@ -1225,9 +1280,9 @@
+@@ -1225,9 +1312,9 @@
      self.reset_button.setVisible(True)
      self.reset_button.setEnabled(True)
      self.reset_button.setToolTip('Wyczyść oba modele i rozpocznij nowe porównanie.')
@@ -694,15 +864,19 @@
    self._refresh_outputs()
   def load_result(self,kind,folder):
    super().load_result(kind,folder)
-@@ -1237,6 +1292,7 @@
+@@ -1237,7 +1324,11 @@
      a=s.get('solids_A',0),b=s.get('solids_B',0),
      same=c.get('SAME',0)+c.get('RENAMED',0),
      new=c.get('ADDED',0),old=c.get('REMOVED',0),move=c.get('MOVED',0)))
 +   self._summary_stats.setText(self._summary_stats.text()+f'\nZmieniona geometria: {c.get("CHANGED",0)}')
     if c.get('UNCERTAIN'):self._summary_stats.setText(self._summary_stats.text()+f'\nDo sprawdzenia: {c["UNCERTAIN"]}')
++   from .alignment_notice import alignment_notice
++   note=alignment_notice(s.get('alignment',{}))
++   self._alignment_notice.setText(note);self._alignment_notice.setVisible(bool(note))
     self._step_export_failed=bool(s.get('step_export_error'))
     self._refresh_outputs();self._details.hide()
-@@ -1267,7 +1323,7 @@
+   else:
+@@ -1267,7 +1358,7 @@
     self.mass_summary.setText(detail)
    except (OSError,ValueError,KeyError,TypeError):pass
   def _refresh_outputs(self):
@@ -1483,7 +1657,18 @@
          legend+=f'<p>Przezroczystość starej wersji: {round((1-old_alpha)*100)}%. Przesunięte i zmienione pary: stara A jest jaśniejsza i przezroczysta, nowa B ma pełny kolor. Przezroczystość zależy od importera ZW3D. {structure_note}</p>'
      htmltxt=f'''<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
  <title>DS Compare — raport porównania modeli</title>
-@@ -490,6 +494,9 @@
+@@ -423,6 +427,10 @@
+     # final write, rather than reopening and rewriting the whole HTML 1-3x.
+     context_info=report_context or {}
+     notices=[]
++    from .alignment_notice import alignment_notice
++    registration_note=alignment_notice(context_info.get('alignment',{}))
++    if registration_note:
++        notices.append('<div class="panel" role="note"><strong>Położenie modeli</strong><p>'+html.escape(registration_note)+'</p></div>')
+     omitted=sum(int(v.get('faces_outside_solids',0))
+                 for v in context_info.get('import',{}).values())
+     if omitted:
+@@ -490,6 +498,9 @@
                              ' par: w STEP zachowano pełne części A i B zamiast zgadywać kolory.')
      if late_notices:
          htmltxt=htmltxt.replace('<body>','<body>'+''.join('<p role="alert">'+html.escape(message)+'</p>' for message in late_notices),1)
@@ -1637,7 +1822,7 @@
      guarded_large = True  # every unresolved Common is isolated, including small assemblies
      guarded_started=perf_counter()
      guarded_budget_s=240.0
-@@ -86,17 +123,27 @@
+@@ -86,17 +123,42 @@
          for _,j in candidates:
              if stat['boolean_checks']>=MAX_CHECKS:
                  stat['budget_exceeded']=True;break
@@ -1648,6 +1833,8 @@
 +            cached=next((entry for entry in common_cache
 +                         if _reuse_common_volume(ref,b[j],entry[0],entry[1])),None)
 +            shape=None
++            evidence=None
++            recovered_regions=None
 +            if cached is not None:
 +                common=cached[2]
 +                stat['common_proof_reuse']+=1
@@ -1666,22 +1853,35 @@
                      shape=trace.brep_call('revision_common',i,j,operate,BRepAlgoAPI_Common,ref.shape,b[j].shape,tolerance)
 -                common=volume(shape)
 +                if cached is None:
++                    try:
++                        evidence=bind_common(shape,ref.shape,b[j].shape,tolerance)
++                    except (RuntimeError,ValueError) as exc:
++                        # The optional Common cache is not a material verdict.
++                        # Serialization may invalidate OCCT topology even when
++                        # the child validated it. Recompute all three regions
++                        # independently; never use the invalid shape or its volume.
++                        stat['invalid_boolean']+=1
++                        trace.mark('revision_common_cache','RECOMPUTE',a_index=i,b_index=j,error=str(exc))
++                        if progress:progress(f'Zmiany materiału: ponowne obliczenie podziału A[{i}] ↔ B[{j}] po odrzuceniu pomocniczego Common')
++                        recovered_regions=calculate(ref,b[j],tolerance)
++                        bind_regions(recovered_regions,ref,b[j],tolerance)
++                        shape=recovered_regions.common
 +                    common=volume(shape)
 +                    if len(common_cache)<128:
 +                        common_cache.append((ref,b[j],common))
              except NativeGeometryFailure:
                  raise
              except Exception as exc:
-@@ -107,7 +154,7 @@
+@@ -107,7 +169,7 @@
                  if i not in best_common or score>best_common[i][0]:
                      if i not in best_common and len(best_common)>=64:
                          best_common.pop(next(iter(best_common)))
 -                    best_common[i]=(score,j,bind_common(shape,ref.shape,b[j].shape,tolerance))
-+                    best_common[i]=(score,j,bind_common(shape,ref.shape,b[j].shape,tolerance)) if shape is not None else (score,j,None)
++                    best_common[i]=(score,j,evidence,recovered_regions)
          if stat['budget_exceeded']:raise NativeGeometryFailure('Limit liczby testów materiału — analiza niekompletna')
          if progress and idx and idx%50==0:
              progress(f'R17: geometria rewizji {idx}/{len(old_ids)}; B-Rep {stat["boolean_checks"]}')
-@@ -123,15 +170,24 @@
+@@ -123,15 +185,26 @@
              (len(new_edges)>1 and score-new_edges[1][0]<MIN_MARGIN)):
              stat['ambiguous']+=1;continue
          chosen.append((i,j))
@@ -1699,7 +1899,9 @@
 -            reg=trace.brep_call('revision_material_regions',i,j,calculate,a[i],b[j],tolerance,common_shape=cached[2] if cached and cached[1]==j else None)
 +            reuse=next((entry for entry in region_cache
 +                        if _reuse_common_volume(a[i],b[j],entry[0],entry[1])),None)
-+            if reuse is not None:
++            if cached is not None and cached[1]==j and cached[3] is not None:
++                reg=cached[3]
++            elif reuse is not None:
 +                reg=_translated_regions(reuse[2],a[i].center-reuse[0].center)
 +                stat['region_proof_reuse']+=1
 +            else:
@@ -1709,6 +1911,26 @@
              if _score(reg.common_mm3,a[i],b[j],_name_eq(a[i],b[j])) is None:
                  raise ValueError('Niewystarczający wspólny materiał')
              if reg.added_mm3+reg.removed_mm3<=max(1e-3,max(a[i].volume,b[j].volume)*1e-7):
+--- a/dsac29/revision_rules.py
++++ b/dsac29/revision_rules.py
+@@ -46,13 +46,14 @@
+ 
+     def same_population(a_part,b_part):
+         name=canonical(a_part.name)
+-        if not name or name!=canonical(b_part.name):return False
++        if not geometry_first and (not name or name!=canonical(b_part.name)):return False
++        if geometry_first:name=None  # STEP-generated labels are not part identity.
+         key=(name,id(handles[id(a_part)]),id(handles[id(b_part)]))
+         if key in populations:return populations[key]
+         # Reject mismatched candidate counts *before* any expensive Booleans.
+         # A candidate is only a cheap filter, never accepted as shape proof.
+-        ca=[p for p in by_a[name] if candidate(a_part,p,tolerance)]
+-        cb=[p for p in by_b[name] if candidate(a_part,p,tolerance)]
++        ca=[p for p in (old if geometry_first else by_a[name]) if candidate(a_part,p,tolerance)]
++        cb=[p for p in (new if geometry_first else by_b[name]) if candidate(a_part,p,tolerance)]
+         if len(ca)!=len(cb) or not ca:
+             populations[key]=False;return False
+         # Native identical instances are common in assemblies. No extra B-Rep
 --- a/dsac29/single_mass.py
 +++ b/dsac29/single_mass.py
 @@ -47,6 +47,8 @@
@@ -1805,7 +2027,19 @@
  def coarse_candidate(a,b,tol):
      """Only a hypothesis prefilter, never proof of identity."""
      if min(a.volume,b.volume)<=0:return False
-@@ -58,7 +105,7 @@
+@@ -41,7 +88,10 @@
+ def search_radius(tolerance):
+     # Integrated centroids are not geometric bounds. This radius is only for
+     # candidate lookup; exact solid/face bounds retain the user's tolerance.
+-    return max(float(tolerance),.1)
++    # Captured folded STEP patches changed the integrated solid centroid by
++    # 0.199 mm while every original surface and trim still matched at 0.01 mm.
++    # This is a lookup radius only; no geometric proof budget is increased.
++    return max(float(tolerance),.5)
+ 
+ 
+ def _faces(part):
+@@ -58,7 +108,7 @@
      return result
  
  
@@ -1814,7 +2048,7 @@
      """Face prefilter followed by independent solid Boolean verification.
  
      Small STEP round-trip fluctuations are permitted only within the supplied
-@@ -66,19 +113,37 @@
+@@ -66,19 +116,37 @@
      or fails an original-face geometry requirement. A positive result does not
      mean byte-identical STEP files.
      """
@@ -1855,7 +2089,7 @@
      # Spatially indexed CAD face matching handles STEP face ordering changes.
      cell=max(.03,3*tolerance)
      buckets=defaultdict(list)
-@@ -89,51 +154,50 @@
+@@ -89,51 +157,50 @@
      from itertools import product
      offsets=tuple(product((-1,0,1),repeat=3))
      options=[]
@@ -1950,6 +2184,19 @@
          faulthandler.enable(file=_fault_log,all_threads=True)
          # A native hang may never raise Python exception; dump current stacks every 180s.
          faulthandler.dump_traceback_later(180,repeat=True,file=_fault_log)
+--- a/dsac29/worker_v37.py
++++ b/dsac29/worker_v37.py
+@@ -138,7 +138,9 @@
+             (folder/'DIAGNOSTYKA_BLEDU.txt').write_text(issue,encoding='utf8')
+         except OSError:pass
+         from .import_validation import InvalidStepSolid
+-        payload={'ok':False,'error':str(exc) if isinstance(exc,InvalidStepSolid) else issue}
++        from .native_guard import NativeGeometryFailure
++        payload={'ok':False,'error':str(exc) if isinstance(exc,(InvalidStepSolid,NativeGeometryFailure)) else issue,
++                 'diagnostic_file':str(folder/'DIAGNOSTYKA_BLEDU.txt')}
+     if ns.worker=='compare':
+         trace_r22.mark('worker','END' if payload.get('ok') else 'ERROR',ok=bool(payload.get('ok')))
+     result_file.write_text(json.dumps(payload,ensure_ascii=False,indent=2),encoding='utf-8')
 --- a/ci/check_source_bundle.py
 +++ b/ci/check_source_bundle.py
 @@ -0,0 +1,21 @@
@@ -1976,6 +2223,22 @@
 +if __name__=='__main__':check(sys.argv[1] if len(sys.argv)>1 else Path(__file__).resolve().parents[1])
 --- a/ci/large_exe.py
 +++ b/ci/large_exe.py
+@@ -1,5 +1,5 @@
+ """Windows CI: frozen DSCompare.exe on actual >600-solid public assemblies.
+-The deterministic test shift is (+1275, -395, +210) mm. On any failure the
++The deterministic test shift is (+507.4569, -249.1752, +524) mm. On any failure the
+ partial diagnostic journal is left intact for upload; never assert 'same'.
+ """
+ import argparse,hashlib,json,os,subprocess,time,traceback,urllib.request,zipfile,gc
+@@ -36,7 +36,7 @@
+  parts=load_step(str(file),max_solids=20000)
+  result['new_solids']=len(parts);save()
+  if len(parts)<=600:raise AssertionError('Input assembly is not >600 solids')
+- tr=gp_Trsf();tr.SetTranslation(gp_Vec(1275.,-395.,210.))
++ tr=gp_Trsf();tr.SetTranslation(gp_Vec(507.4569,-249.1752,524.))
+  loc=TopLoc_Location(tr)
+  writer=ColoredDocument(group_by_status=False,reuse_definitions=True)
+  for part in parts:writer.add(part.shape.Moved(loc),part.name,(.33,.57,.86),1.)
 @@ -52,7 +52,12 @@
   cmd=[str(Path(args.exe).resolve()),'--worker','compare','--a',str(old),'--b',str(moved),
        '--output',str(out),'--align-auto','--generate-step','--preview3d','--revision-style']
@@ -2003,6 +2266,15 @@
   if proc.returncode!=0:raise RuntimeError('EXE crashed/failed, exit='+str(proc.returncode))
   worker=json.loads((out/'_WYNIK_V37.json').read_text(encoding='utf-8'))
   if not worker['ok']:raise RuntimeError('Worker returned failure: '+repr(worker))
+@@ -78,7 +88,7 @@
+  if min(summary['solids_A'],summary['solids_B'])<=600:raise AssertionError('Insufficient solids')
+  if not summary.get('alignment',{}).get('applied'):raise AssertionError('No applied alignment')
+  offset=summary['alignment']['translation_B_to_A_mm']
+- if any(abs(x+y)>.05 for x,y in zip(offset,(1275,-395,210))):raise AssertionError('Wrong shift '+repr(offset))
++ if any(abs(x+y)>.01 for x,y in zip(offset,(507.4569,-249.1752,524))):raise AssertionError('Wrong shift '+repr(offset))
+  counts=summary['statuses']
+  if args.case=='shift':
+   same=counts.get('SAME',0)+counts.get('RENAMED',0)
 --- a/ci/package_sources.py
 +++ b/ci/package_sources.py
 @@ -0,0 +1,23 @@
@@ -2021,7 +2293,7 @@
 +            files.append(path)
 +workflow=root/'.github/workflows/rc9-corrected-real-cad.yml';files.append(workflow)
 +data={str(f.relative_to(root)).replace('\\','/'):f.read_bytes() for f in sorted(files)}
-+manifest={'release':'RC9 audit 2026-10-30','sha256':{k:hashlib.sha256(v).hexdigest() for k,v in data.items()}}
++manifest={'release':json.loads(data['build_info.json'])['revision'],'sha256':{k:hashlib.sha256(v).hexdigest() for k,v in data.items()}}
 +data['SOURCE_MANIFEST.json']=(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n').encode()
 +args.output.parent.mkdir(parents=True,exist_ok=True)
 +with zipfile.ZipFile(args.output,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
@@ -2062,8 +2334,8 @@
 +"""Apply the reviewed GUI/report/color update after all existing RC9 patches."""
 +from pathlib import Path
 +import hashlib,sys
-+BASE = {'gui46.py': 'fc57651d1c9fb23f14bf1c4e172da663367b89f961abd46081e9f01ed2b47944', 'gui_modern.py': 'a851e048ebeeec6386a25ca47cb5c961b163460841f90cc282747f476e8991a6', 'step_io.py': '45ab246acb9a9eb26d6612f41b702edd8abd3832df8260ee92836e42cbe6bd45', 'material_deltas.py': '7cc3312aa130970876ef917d93d732aa3f7c9d4ebdbb4cd76fc73ffd039c7950', 'report.py': 'e5600c4777ba8ca754fea69ecfb1dd81078cb14c96297d91d5072d2958b86f3a', 'icons_r119.py': '95fbf740883570ed3294692ab238926b24bb150712252c6aea256ec99978e666', 'single_mass.py': '7c78a4452d07ad9d8d079c1ed69f5d4eed0a4d2d3ae5e95fcf5bbc303703e611', 'mass_batch.py': 'd713c1e1111813b7a8a9c0477529232152ddc5b53bd32ddb4c0dcc7a7778d303', 'preview_template.html': 'd9d1a15d658e80ea009a7c78477924a1d838547ad020fd6b3e3caae23905f129', 'palette.py': None, 'report_view.py': None}
-+UPDATED = {'gui46.py': '5f88289d8acee08ba6c12319c24e2ca1c622e76168c1660d3a8bee0b117ecf07', 'gui_modern.py': '924fe59979410fed245b58c1d3cde35ff27f861e88a70770e90c550057a8bae0', 'step_io.py': 'd7c15039de2cb36ec73a46fb8edb725497d03f967e616459a10b65a65d7671d9', 'material_deltas.py': '46441ef2f679e3977603ab4c1474f211ec60be8c9dfeec5c886a4fd668a96fde', 'report.py': 'c653134e7a782550d0018365f1f48b36777cfcffef41881a522e256963905885', 'icons_r119.py': 'c18b21d7fe315f1eb15dfd430cef27cbd99f8e7c85ec2d60fd4395c0c9535462', 'single_mass.py': '6de343125ecd2bcc584b5555e55839c178f83cd4e5478a8175ab526c2aed1a45', 'mass_batch.py': '3cb4a8b5e66458ab09e9c12f414c1d08d7633f2ba93ba432a712c9d95a762b07', 'preview_template.html': '5c14c7f95d171caf9627a9e1f723d4e5b45e287a8c8aede81c691846c55a9fbc', 'palette.py': 'f36624a63f3d7b8ee5f868e1ffb0fab1d18287c803572ec42408641799e2bead', 'report_view.py': 'e734bcc06c70d534b01d51ce9f73cb2b1cf7e1b4e681778fd5e75e4781a65731'}
++BASE = {'gui46.py': 'fc57651d1c9fb23f14bf1c4e172da663367b89f961abd46081e9f01ed2b47944', 'gui_modern.py': 'a851e048ebeeec6386a25ca47cb5c961b163460841f90cc282747f476e8991a6', 'step_io.py': '45ab246acb9a9eb26d6612f41b702edd8abd3832df8260ee92836e42cbe6bd45', 'material_deltas.py': '7cc3312aa130970876ef917d93d732aa3f7c9d4ebdbb4cd76fc73ffd039c7950', 'report.py': 'e5600c4777ba8ca754fea69ecfb1dd81078cb14c96297d91d5072d2958b86f3a', 'icons_r119.py': '95fbf740883570ed3294692ab238926b24bb150712252c6aea256ec99978e666', 'single_mass.py': '7c78a4452d07ad9d8d079c1ed69f5d4eed0a4d2d3ae5e95fcf5bbc303703e611', 'mass_batch.py': 'd713c1e1111813b7a8a9c0477529232152ddc5b53bd32ddb4c0dcc7a7778d303', 'preview_template.html': 'd9d1a15d658e80ea009a7c78477924a1d838547ad020fd6b3e3caae23905f129', 'palette.py': None, 'report_view.py': None, 'alignment_notice.py': None}
++UPDATED = {'gui46.py': '5f88289d8acee08ba6c12319c24e2ca1c622e76168c1660d3a8bee0b117ecf07', 'gui_modern.py': 'ac752b31ff3e881156bc197b216abdfe2a57943128e3573c8f6190a704b0541e', 'step_io.py': 'd7c15039de2cb36ec73a46fb8edb725497d03f967e616459a10b65a65d7671d9', 'material_deltas.py': '46441ef2f679e3977603ab4c1474f211ec60be8c9dfeec5c886a4fd668a96fde', 'report.py': '8dd8e573a0985904bb13fa0a0323144a7f6fa364aba70245b4a3fa909550fd17', 'icons_r119.py': 'c18b21d7fe315f1eb15dfd430cef27cbd99f8e7c85ec2d60fd4395c0c9535462', 'single_mass.py': '6de343125ecd2bcc584b5555e55839c178f83cd4e5478a8175ab526c2aed1a45', 'mass_batch.py': '3cb4a8b5e66458ab09e9c12f414c1d08d7633f2ba93ba432a712c9d95a762b07', 'preview_template.html': '5c14c7f95d171caf9627a9e1f723d4e5b45e287a8c8aede81c691846c55a9fbc', 'palette.py': 'f36624a63f3d7b8ee5f868e1ffb0fab1d18287c803572ec42408641799e2bead', 'report_view.py': 'e734bcc06c70d534b01d51ce9f73cb2b1cf7e1b4e681778fd5e75e4781a65731', 'alignment_notice.py': '5cdac87b6b2f8e067f94b2dd2be7b8e4b2bf9dd05fe860e62a295726b75c8dc7'}
 +repository=Path(__file__).resolve().parents[1]
 +target=Path(sys.argv[1]) if len(sys.argv)>1 else repository/'dscompare_rc9_manual'
 +if not (target/'dsac29').is_dir():raise SystemExit('Missing extracted dsac29 source')
@@ -2382,13 +2654,15 @@
 +assert run.returncode==0 and data=={'ok':True,'match':args.expected=='true'},result
 --- a/ci/run_manual_regressions.py
 +++ b/ci/run_manual_regressions.py
-@@ -3,10 +3,14 @@
+@@ -3,10 +3,16 @@
  root=Path(__file__).resolve().parents[1];sys.path.insert(0,str(root))
  import TESTUJ
  os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 -small=['test_stability.py','test_efficient.py','test_robust_translation.py','test_face_candidates.py','test_safe_boolean_worker.py','test_occt_integration.py','test_manual_audit.py','test_manual_preview_audit.py']
 +small=['test_stability.py','test_efficient.py','test_robust_translation.py','test_face_candidates.py','test_safe_boolean_worker.py','test_occt_integration.py','test_manual_audit.py','test_manual_preview_audit.py',
-+       'test_ui_polish.py','test_output_palette.py','test_frame_proof_cache.py','test_step_boundary_proof.py']
++       'test_ui_polish.py','test_output_palette.py','test_frame_proof_cache.py','test_step_boundary_proof.py',
++       'test_revision_common_recovery.py','test_shift_user_results.py',
++       'test_registered_centroid_reexport.py']
  for names,report in [(small,'integration.xml'),(TESTUJ.tests,'full-regressions.xml')]:
   try:
    run=subprocess.run([sys.executable,'-m','pytest','-vv','--junitxml='+report,*[str(root/'tests'/n) for n in names]],cwd=root,timeout=1800)
@@ -3399,6 +3673,140 @@
 +        assert not w._settings_dirty()
 +    finally:
 +        w._settings_revert();w.close()
+--- a/tests/test_registered_centroid_reexport.py
++++ b/tests/test_registered_centroid_reexport.py
+@@ -0,0 +1,34 @@
++"""Captured CI pair: integrated centers must not block the full world proof."""
++from pathlib import Path
++import numpy as np
++import pytest
++from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
++from dsac29.native_guard import _load_brep,guarded_world_reexport,NativeGeometryFailure
++from dsac29.geometry import describe
++from dsac29.alignment import _relocate
++from dsac29.compare import compare
++from dsac29.brep_safety import is_valid
++
++def pair():
++    root=Path(__file__).parent/'fixtures/centroid_reexport'
++    return [describe(_load_brep(root/(r+'.brep')),r,r) for r in ('A','B')]
++
++@pytest.mark.parametrize('registered',[False,True])
++def test_registered_large_frame_does_not_send_equivalent_originals_to_common(registered):
++    a,b=pair()
++    assert np.linalg.norm(a.center-b.center)>.19
++    assert not is_valid(a.shape) and not is_valid(b.shape)
++    shared=describe(BRepPrimAPI_MakeBox(10.,12.,14.).Shape(),'same','same')
++    old=[shared]*600+[a];new=[shared]*600+[b]
++    records=compare(old,new,.01,revision_only=True,exact_serialization=True,
++                    certified_pairs=[(i,i) for i in range(600)] if registered else [])
++    assert len(records)==601 and all(r.status in ('SAME','RENAMED') for r in records)
++
++def test_lookup_radius_cannot_accept_a_real_shift_beyond_tolerance():
++    a,b=pair()
++    moved=_relocate(b,np.eye(3),np.array([.02,0.,0.]))
++    # This source is invalid and cannot be independently repaired. The offset
++    # defeats its original-boundary proof: an explicit incomplete proof is
++    # required, never SAME or a fabricated empty material difference.
++    with pytest.raises(NativeGeometryFailure):
++        guarded_world_reexport(a,moved,.01,timeout_s=20)
+--- a/tests/test_revision_common_recovery.py
++++ b/tests/test_revision_common_recovery.py
+@@ -0,0 +1,41 @@
++"""An unusable optional Common must trigger a full independent region proof."""
++import pytest
++from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
++from OCP.TopoDS import TopoDS_Shape
++from dsac29.geometry import describe
++from dsac29.compare import Record
++from dsac29 import native_guard,revision_overlap as revision
++from dsac29.material_deltas import _matching_regions,MaterialRegions
++
++def inputs():
++    a=[describe(BRepPrimAPI_MakeBox(10.,10.,10.).Shape(),'old','old')]
++    b=[describe(BRepPrimAPI_MakeBox(11.,10.,10.).Shape(),'new','new')]
++    return a,b,[Record(0,None,'REMOVED',''),Record(None,0,'ADDED','')]
++
++def test_unusable_transferred_common_is_recomputed_and_all_regions_verified(monkeypatch):
++    a,b,records=inputs()
++    monkeypatch.setattr(native_guard,'guarded_common',lambda *args:TopoDS_Shape())
++    result,precomputed,stat=revision.merge_material_revisions(a,b,records,.01)
++    assert [r.status for r in result]==['CHANGED']
++    assert stat['invalid_boolean']==1
++    assert _matching_regions(precomputed[0],a[0],b[0],.01)
++    reg=precomputed[0].regions
++    assert reg.common_mm3==pytest.approx(1000)
++    assert reg.added_mm3==pytest.approx(100)
++    assert reg.removed_mm3==pytest.approx(0)
++
++def test_failed_recomputation_never_becomes_a_revision_verdict(monkeypatch):
++    a,b,records=inputs()
++    monkeypatch.setattr(native_guard,'guarded_common',lambda *args:TopoDS_Shape())
++    def fail(*args,**kwargs):raise native_guard.NativeGeometryFailure('failed independent proof')
++    monkeypatch.setattr(revision,'calculate',fail)
++    with pytest.raises(native_guard.NativeGeometryFailure,match='independent proof'):
++        revision.merge_material_revisions(a,b,records,.01)
++
++def test_plausible_volumes_cannot_validate_invalid_recomputed_regions(monkeypatch):
++    a,b,records=inputs()
++    monkeypatch.setattr(native_guard,'guarded_common',lambda *args:TopoDS_Shape())
++    bad=MaterialRegions(TopoDS_Shape(),TopoDS_Shape(),TopoDS_Shape(),1000.,100.,0.)
++    monkeypatch.setattr(revision,'calculate',lambda *args,**kwargs:bad)
++    with pytest.raises(native_guard.NativeGeometryFailure,match='invalid or null topology'):
++        revision.merge_material_revisions(a,b,records,.01)
+--- a/tests/test_shift_user_results.py
++++ b/tests/test_shift_user_results.py
+@@ -0,0 +1,50 @@
++"""Actual STEP imports: distinguish frame shifts from individual part moves."""
++import json
++import numpy as np
++import pytest
++from OCP.BRep import BRep_Builder
++from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
++from OCP.STEPControl import STEPControl_Writer,STEPControl_AsIs
++from OCP.TopoDS import TopoDS_Compound
++from OCP.gp import gp_Trsf,gp_Vec
++from OCP.TopLoc import TopLoc_Location
++from dsac29.cli import process
++from dsac29.alignment_notice import alignment_notice
++
++def write(path,count,offset,local=False):
++    compound=TopoDS_Compound();builder=BRep_Builder();builder.MakeCompound(compound)
++    for i in range(count):
++        delta=np.asarray(offset) if not local or i==count-1 else np.zeros(3)
++        tr=gp_Trsf();tr.SetTranslation(gp_Vec(*(np.array([i*60.,i*i*10.,0.])+delta)))
++        builder.Add(compound,BRepPrimAPI_MakeBox(10.+i,12.+i*2,8.+i).Shape().Located(TopLoc_Location(tr)))
++    writer=STEPControl_Writer();writer.Transfer(compound,STEPControl_AsIs);writer.Write(str(path))
++
++@pytest.mark.parametrize('count',[2,6,20])
++@pytest.mark.parametrize('shift',[[1000.,-300.,50.],[507.4569,-249.1752,524.]])
++def test_global_shift_is_proven_and_visible_in_report(tmp_path,count,shift):
++    a=tmp_path/'A.step';b=tmp_path/'B.step'
++    write(a,count,[0.,0.,0.]);write(b,count,shift)
++    out=tmp_path/'out';out.mkdir()
++    process(a,b,out,step=False,diff_step=False,full_bom=False,auto_align=True,
++            revision_style=True,alignment_approval=lambda p:'align',progress=None)
++    summary=json.loads((out/'PODSUMOWANIE.json').read_text())
++    assert summary['alignment']['applied']
++    assert np.allclose(summary['alignment']['translation_B_to_A_mm'],-np.asarray(shift),atol=1e-6)
++    assert summary['statuses'].get('SAME',0)==count
++    notice=alignment_notice(summary['alignment'])
++    assert 'globalne przesunięcie' in notice and f'ΔX = {-shift[0]:+.4f} mm' in notice
++    assert 'globalne przesunięcie' in (out/'RAPORT.html').read_text()
++
++def test_one_moved_part_is_not_normalized_as_a_whole_assembly_shift(tmp_path):
++    a=tmp_path/'A.step';b=tmp_path/'B.step'
++    write(a,6,[0.,0.,0.]);write(b,6,[25.,-5.,0.],local=True)
++    out=tmp_path/'out';out.mkdir()
++    process(a,b,out,step=False,diff_step=False,full_bom=False,auto_align=True,
++            revision_style=True,alignment_approval=lambda p:'align',progress=None)
++    s=json.loads((out/'PODSUMOWANIE.json').read_text())
++    assert not s['alignment'].get('applied')
++    assert s['statuses'].get('MOVED')==1 and s['statuses'].get('SAME')==5
++
++def test_unknown_shift_is_never_described_as_no_displacement():
++    assert 'Nie udało' in alignment_notice({'status':'unresolved_no_hypothesis'})
++    assert alignment_notice({'applied':True,'translation_B_to_A_mm':[float('nan'),0,0]})==''
 --- a/tests/test_step_boundary_proof.py
 +++ b/tests/test_step_boundary_proof.py
 @@ -0,0 +1,68 @@
@@ -3472,7 +3880,7 @@
 +    assert not prove_faces(a,b,allow_original_micro_degenerate=True)
 --- a/tests/test_ui_polish.py
 +++ b/tests/test_ui_polish.py
-@@ -0,0 +1,138 @@
+@@ -0,0 +1,156 @@
 +"""Desktop actions and settings tested on real Qt widgets in offscreen mode."""
 +import os
 +from pathlib import Path
@@ -3527,6 +3935,24 @@
 +    assert not w.bom_mode.isEnabled() and not w.bom_csv.isEnabled()
 +    w.full_bom.setChecked(True)
 +    assert w.bom_mode.isEnabled() and w.bom_csv.isEnabled()
++
++def test_explicit_numeric_buttons_limits_typing_and_disabled_state(win):
++    from dsac29.gui_modern import NumberControl
++    from PySide6.QtWidgets import QAbstractSpinBox
++    w=win;w.navigate('settings');QApplication.processEvents()
++    for spin in (w.tolerance,w.solid_limit,w.opacity,w.density):
++        control=spin.parentWidget()
++        assert isinstance(control,NumberControl)
++        assert spin.buttonSymbols()==QAbstractSpinBox.NoButtons
++        spin.setValue(spin.minimum());assert not control.minus.isEnabled()
++        control.plus.click();assert spin.value()>spin.minimum()
++        spin.setValue(spin.maximum());assert not control.plus.isEnabled()
++        control.minus.click();assert spin.value()<spin.maximum()
++        spin.setDisabled(True)
++        assert not control.minus.isEnabled() and not control.plus.isEnabled()
++        spin.setEnabled(True)
++    w.opacity.lineEdit().setText('25 %');w.opacity.interpretText()
++    assert w.opacity.value()==25
 +
 +def test_navigation_stays_on_settings_when_save_fails(win,monkeypatch):
 +    w=win;w.navigate('settings');w.opacity.setValue(10)

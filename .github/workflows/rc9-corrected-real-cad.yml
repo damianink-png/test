@@ -112,13 +112,15 @@ jobs:
     timeout-minutes: 75
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 3
       matrix:
         include:
           - {model: v2, case: shift}
           - {model: v2, case: revision_shift}
           - {model: trident, case: shift}
           - {model: trident, case: revision_shift}
+          - {model: v2, case: revision}
+          - {model: trident, case: revision}
     env:
       PYTHONUTF8: '1'
       PYTHONUNBUFFERED: '1'
