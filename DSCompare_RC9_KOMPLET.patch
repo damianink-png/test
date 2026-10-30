@@ -1,4 +1,4 @@
---- a/dsac29/alignment_notice.py
+--- /dev/null
 +++ b/dsac29/alignment_notice.py
 @@ -0,0 +1,20 @@
 +"""Explain frame normalization separately from actual component movement."""
@@ -21,7 +21,7 @@
 +    if str(info.get('status','')).startswith('unresolved'):
 +        return str(info.get('reason') or 'Nie udało się jednoznacznie potwierdzić przesunięcia. Zachowano oryginalne położenie.')
 +    return ''
---- a/dsac29/analytic_bore_delta.py
+--- /dev/null
 +++ b/dsac29/analytic_bore_delta.py
 @@ -0,0 +1,212 @@
 +"""Fail-closed alternative for a concentric, chamfered through-bore revision.
@@ -247,7 +247,7 @@
          return np.asarray(bb.Get(),dtype=float)
      ba,bb=bounds(original),bounds(repaired)
      if not np.isfinite(ba).all() or not np.isfinite(bb).all():return False
-@@ -81,20 +81,28 @@
+@@ -81,20 +81,31 @@
          describe(repaired,'repaired','repair-copy'),
          tolerance/2.,allow_boolean=False,_repair_boundary_only=True))
  
@@ -267,7 +267,10 @@
 -    before=topology_tolerances(shape);failures=[]
 +    before=topology_tolerances(shape)
 +    if any(value>source_cap+1e-12 for value in before.values()):
-+        raise UnprovenRepair('Original STEP stored tolerance exceeds CAD budget')
++        labels={'vertex':'wierzchołki','edge':'krawędzie','face':'powierzchnie'}
++        details='; '.join(f'{labels[k]}: {v:.9g} mm' for k,v in before.items() if v>source_cap+1e-12)
++        trace.mark('brep_repair','REJECTED',reason='source_tolerance_budget',before=before,budget_mm=source_cap)
++        raise UnprovenRepair(f'Original STEP stored tolerance exceeds CAD budget ({details}; limit: {source_cap:.9g} mm)')
 +    failures=[]
      for method in (_shape_fix,_wire_fix):
          try:
@@ -281,6 +284,15 @@
              if not _strict_original_boundary_proof(shape,candidate,tolerance):
 --- a/dsac29/cli.py
 +++ b/dsac29/cli.py
+@@ -9,7 +9,7 @@
+ from . import trace_r22 as trace
+ 
+ 
+-def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress=print,cancelled=None,colors=None,diff_step=True,preview3d=False,align=False,direct_scene=False,manual_review=None,revision_style=False,old_alpha=0.4,thumbnails=False,max_solids=20000,full_bom=True,bom_fast=False,bom_csv=True,auto_align=False,alignment_approval=None,force_unrelated=False):
++def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress=print,cancelled=None,colors=None,diff_step=True,preview3d=False,align=False,direct_scene=False,manual_review=None,revision_style=False,old_alpha=0.4,thumbnails=False,max_solids=20000,full_bom=True,bom_fast=False,bom_csv=True,auto_align=False,alignment_approval=None,force_unrelated=False,material_approval=None):
+     ts=perf_counter()
+     trace.mark('fingerprints','BEGIN')
+     from .manual_pairs import fingerprint
 @@ -175,7 +175,8 @@
                  except AlignmentUnavailable as exc:
                      decision=alignment_approval({'status':'unresolved','reason':str(exc),'search_failed':True})
@@ -291,6 +303,15 @@
              elif decision=='align' and proposal.get('status') in ('registered','already_aligned'):
                  rotation=np.asarray(proposal.get('rotation_B_to_A',np.eye(3)))
                  offset=np.asarray(proposal.get('translation_B_to_A_mm',[0,0,0]))
+@@ -216,7 +217,7 @@
+         from .revision_rules import classify_revisions
+         rec=classify_revisions(a,b,rec,tolerance,progress=progress,geometry_context=geometry_context,geometry_first=True)
+         from .revision_overlap import merge_material_revisions
+-        rec,precomputed_regions,overlap_diagnostics=merge_material_revisions(a,b,rec,tolerance,progress,cancelled)
++        rec,precomputed_regions,overlap_diagnostics=merge_material_revisions(a,b,rec,tolerance,progress,cancelled,review_approval=material_approval)
+         trace.mark('revision_classification','END',pairs=len(rec),boolean_checks=(overlap_diagnostics or {}).get('boolean_checks'))
+         if progress:
+             same=sum(r.status in ("SAME","RENAMED") for r in rec)
 --- a/dsac29/compare.py
 +++ b/dsac29/compare.py
 @@ -122,7 +122,7 @@
@@ -404,7 +425,7 @@
      if not winners:return {'status':'unresolved','reason':'Hipotezy nie przeszły kontroli geometrii.'}
      winners.sort(key=lambda v:-v[0]);votes,offset,certified=winners[0]
      # Sparse revisions (e.g. 8/80 unchanged parts) require a convincing
---- a/dsac29/exact_brep_identity.py
+--- /dev/null
 +++ b/dsac29/exact_brep_identity.py
 @@ -0,0 +1,14 @@
 +"""Exact byte identity of two complete serialized world B-Reps."""
@@ -421,6 +442,47 @@
 +            y=right.read(1024*1024)
 +            if x!=y:return False
 +            if not x:return True
+--- a/dsac29/gui45.py
++++ b/dsac29/gui45.py
+@@ -278,7 +278,7 @@
+             if getattr(self,'zw3d_flat_output',None) is not None and self.zw3d_flat_output.isChecked():args+=['--flat-zw3d']
+             if getattr(self,'absr_test_output',None) is not None and self.absr_test_output.isChecked():args+=['--absr-test']
+             if hasattr(self,'preview_html') and self.preview_html.isChecked():args+=['--preview3d']
+-            args+=['--align-auto']  # every comparison checks coordinates before STEP/BOM
++            args+=['--align-auto','--allow-review-decision']  # review requires an explicit user choice
+             if getattr(self,'generate_thumbnails',False):args+=['--thumbnails']
+             if hasattr(self,'safe_export') and not self.safe_export.isChecked():args+=['--legacy-step-assemblies']
+             else:args+=['--safe-export']
+@@ -317,6 +317,19 @@
+         token=str(data.get('token',''))
+         if not token or token==getattr(self,'_last_coordinate_token',None):return
+         self._last_coordinate_token=token
++        if data.get('material_unverified'):
++            box=QMessageBox(self);box.setWindowTitle('Niepełna analiza geometrii')
++            box.setIcon(QMessageBox.Warning)
++            box.setText('Nie udało się wiarygodnie potwierdzić wszystkich różnic materiału.')
++            box.setInformativeText('Do sprawdzenia: '+str(data.get('unverified_A',0))+' elementów A i '+str(data.get('unverified_B',0))+' elementów B.\n'
++                'Raport częściowy zachowa potwierdzone wyniki, a pozostałe elementy oznaczy „do sprawdzenia”. Nie określi dla nich dodanego ani usuniętego materiału.')
++            box.setDetailedText(str(data.get('reason','')))
++            review=box.addButton('Utwórz raport częściowy',QMessageBox.ActionRole)
++            stop=box.addButton('Przerwij',QMessageBox.RejectRole);box.setDefaultButton(stop)
++            box.exec();selected='review' if box.clickedButton() is review else 'cancel'
++            if selected=='cancel':self.was_cancelled=True
++            self._reply_coordinate_prompt(token,selected)
++            return
+         delta=data.get('translation_mm',[0,0,0])
+         try:translation=', '.join(f'{float(x):+.2f}' for x in delta)
+         except (TypeError,ValueError):translation='nieznane'
+@@ -348,6 +361,9 @@
+                   'original' if clicked is original else
+                   'search' if search is not None and clicked is search else 'cancel')
+         if selected=='cancel':self.was_cancelled=True
++        self._reply_coordinate_prompt(token,selected)
++
++    def _reply_coordinate_prompt(self,token,selected):
+         response={'token':token,'decision':selected}
+         try:
+             dest=self.current_folder/'_WYROWNANIE_ODPOWIEDZ.json'
 --- a/dsac29/gui46.py
 +++ b/dsac29/gui46.py
 @@ -12,20 +12,7 @@
@@ -546,7 +608,22 @@
   QComboBox QAbstractItemView{background:SURFACE;color:INK;border:1px solid LINE;outline:0;selection-background-color:SOFT;selection-color:INK;}
   QComboBox::drop-down{border:0;background:transparent;min-width:21px;}
   QComboBox QAbstractItemView::item{min-height:27px;padding:5px 8px;}
-@@ -222,15 +227,39 @@
+@@ -171,7 +176,13 @@
+   self.logo=CompareLogo(self);content.addWidget(self.logo)
+   caption=QLabel('Porównywanie geometrii CAD');caption.setAlignment(Qt.AlignCenter)
+   caption.setWordWrap(True);caption.setObjectName('section');content.addWidget(caption)
+-  self.version_label=QLabel('Wersja 1.0');self.version_label.setAlignment(Qt.AlignCenter)
++  try:
++   base=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parents[1]))
++   build=json.loads((base/'build_info.json').read_text(encoding='utf8')).get('build_label','')
++  except (OSError,ValueError):build=''
++  self.version_label=QLabel('Wersja 1.0'+(' · '+str(build) if build else ''))
++  self.version_label.setTextFormat(Qt.PlainText);self.version_label.setWordWrap(True)
++  self.version_label.setAlignment(Qt.AlignCenter)
+   self.version_label.setObjectName('muted');content.addWidget(self.version_label)
+   details=QFrame();details.setObjectName('surface');grid=QVBoxLayout(details)
+   grid.setContentsMargins(18,16,18,16);grid.setSpacing(7)
+@@ -222,15 +233,39 @@
     event.accept()
    else:super().mousePressEvent(event)
  
@@ -587,7 +664,7 @@
    self._scroll_page('compare')
    self._init_adaptive_window()
    self.theme.setCurrentText(str(self.store.value('theme46','Ciemny')) if str(self.store.value('theme46','Ciemny')) in ('Ciemny','Jasny') else 'Ciemny')
-@@ -361,7 +390,7 @@
+@@ -361,7 +396,7 @@
    filename.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Preferred)
    filename.setToolTip('Przeciągnij plik STEP / STP / Z3')
    textcol.addWidget(filename);row.addLayout(textcol,1)
@@ -596,7 +673,7 @@
    choose.setMinimumWidth(88);choose.setMaximumWidth(112)
    choose.setObjectName('text-button')
    row.addWidget(choose,0,Qt.AlignVCenter)
-@@ -377,6 +406,7 @@
+@@ -377,6 +412,7 @@
     filename.setObjectName('chosen-file' if present else 'muted')
     filename.setToolTip(path or 'Przeciągnij plik STEP / STP / Z3')
     choose.setText('Zmień' if present else 'Wybierz')
@@ -604,7 +681,7 @@
     clear.setVisible(present)
     tile.setProperty('hasFile',present)
     tile.style().unpolish(tile);tile.style().polish(tile)
-@@ -455,26 +485,29 @@
+@@ -455,26 +491,29 @@
      holder=self.mass_input_list.itemWidget(self.mass_input_list.item(index))
      if holder is not None:
       for control in holder.findChildren(QPushButton):control.setEnabled(not busy)
@@ -638,7 +715,7 @@
    if hasattr(self,'_settings_save_button'):
     dirty=self._settings_dirty()
     self._settings_save_button.setEnabled(dirty and self.process is None)
-@@ -492,6 +525,9 @@
+@@ -492,6 +531,9 @@
     self.cache_import.setChecked(saved['cache_import'])
     self.bom_mode.setCurrentIndex(saved['bom_mode'])
     self.output.setText(saved['output'])
@@ -648,7 +725,7 @@
    finally:self._settings_restoring=False
    self._settings_changed()
   def navigate(self,key):
-@@ -506,7 +542,9 @@
+@@ -506,7 +548,9 @@
     if self.process is not None:save.setEnabled(False)
     prompt.setDefaultButton(stay);prompt.exec()
     clicked=prompt.clickedButton()
@@ -659,7 +736,7 @@
     elif clicked is discard:self._settings_revert()
     else:return
    return super().navigate(key)
-@@ -521,8 +559,10 @@
+@@ -521,8 +565,10 @@
        ('bom_mode',self.bom_mode.currentData()),
        ('bom_csv',self.bom_csv.isChecked()),
        ('output',self.output.text().strip()),
@@ -671,7 +748,7 @@
    self.store.sync()
    if self.store.status()!=self.store.Status.NoError:
     QMessageBox.warning(self,'Ustawienia','Nie udało się zapisać ustawień. Sprawdź uprawnienia do zapisu.')
-@@ -590,11 +630,14 @@
+@@ -590,11 +636,14 @@
    self._summary_stats=QLabel('')
    self._summary_stats.setWordWrap(True);self._summary_stats.setObjectName('result-figure')
    content.addWidget(self._summary_stats)
@@ -688,7 +765,7 @@
    actions.setColumnStretch(0,1);actions.setColumnStretch(1,1)
    lay.addWidget(self._actions);self._actions.hide()
    self.reset_button.setText('Nowe porównanie');self.reset_button.setObjectName('text-button')
-@@ -606,12 +649,13 @@
+@@ -606,12 +655,13 @@
    self._details_toggle=QPushButton('Pokaż szczegółową listę zmian')
    self._details_toggle.setObjectName('text-button')
    self._details_toggle.clicked.connect(self._toggle_details)
@@ -704,7 +781,7 @@
    lay.addStretch(1)
    self._source_stacked=False;self._metric_columns=6
  
-@@ -623,6 +667,8 @@
+@@ -623,6 +673,8 @@
    self._success.setVisible(done)
    self._actions.setVisible(done)
    self.reset_button.setVisible(done)
@@ -713,7 +790,7 @@
    if done:
     self.progress.hide();self.report_progress.hide();self._bom_label.hide()
    else:
-@@ -645,7 +691,41 @@
+@@ -645,7 +697,41 @@
    for btn in self.compare_open.values():btn.setEnabled(False)
    for metric in self.metrics:metric.setText('—')
    self.log.clear();self._set_compare_result_state(False);self.navigate('compare')
@@ -755,7 +832,7 @@
    visible=not self._details.isVisible();self._details.setVisible(visible)
    self._details_toggle.setText('Ukryj szczegółową listę zmian' if visible else 'Pokaż szczegółową listę zmian')
   def _modern_mass(self):
-@@ -716,7 +796,7 @@
+@@ -716,7 +802,7 @@
     title.setAlignment(Qt.AlignRight|Qt.AlignVCenter)
     title.setMinimumHeight(42);title.setMinimumWidth(150)
     widget.setMinimumHeight(42)
@@ -764,7 +841,7 @@
    form_root.addWidget(self._mass_materials_panel)
    self._mass_material_actions=QWidget()
    more=QHBoxLayout(self._mass_material_actions)
-@@ -753,8 +833,7 @@
+@@ -753,8 +839,7 @@
    result_layout.addWidget(self.mass_summary)
    lay.addWidget(self._mass_result_card)
    self._mass_result_card.hide()
@@ -774,7 +851,7 @@
    self._mass_details=QFrame();self._mass_details.setObjectName('details')
    md=QVBoxLayout(self._mass_details);md.setContentsMargins(0,0,0,0)
    self.mass_table.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
-@@ -776,11 +855,11 @@
+@@ -776,11 +861,11 @@
    self._mass_toggle=QPushButton('Pokaż listę części')
    self._mass_toggle.setObjectName('text-button')
    self._mass_toggle.clicked.connect(self._toggle_mass)
@@ -788,7 +865,7 @@
     b=self.mass_open[key];b.setMinimumWidth(0);actions.addWidget(b,1)
    lay.addWidget(self.mass_actions);self.mass_actions.hide()
    self.mass_new_button=QPushButton('Nowe obliczenia')
-@@ -798,6 +877,8 @@
+@@ -798,6 +883,8 @@
    self._mass_result_card.setVisible(done)
    self.mass_actions.setVisible(done)
    self.mass_new_button.setVisible(done)
@@ -797,7 +874,7 @@
    if done:self.mass_progress.hide()
  
   def _update_mass_file_visual(self):
-@@ -981,6 +1062,8 @@
+@@ -981,6 +1068,8 @@
    self.mass_input_list.setEnabled(not busy)
    self.mass_remove_selected.setEnabled(not busy and bool(self.mass_input_list.selectedItems()))
   def _toggle_mass(self):
@@ -806,7 +883,7 @@
    active=not self._mass_details.isVisible();self._mass_details.setVisible(active)
    self._mass_toggle.setText('Ukryj listę części' if active else 'Pokaż listę części')
   def _center_form_fields(self):
-@@ -991,6 +1074,7 @@
+@@ -991,6 +1080,7 @@
    for field in self.findChildren(QLineEdit):
     if field not in excluded:field.setAlignment(Qt.AlignCenter)
    for spin in self.findChildren(QAbstractSpinBox):
@@ -814,7 +891,7 @@
     spin.setAlignment(Qt.AlignCenter)
    for choice in (self.schema,self.verify_mode,self.bom_mode,self._theme_select):
     choice.setEditable(True)
-@@ -1025,12 +1109,12 @@
+@@ -1025,12 +1115,12 @@
    lay.addWidget(title)
    grid=QGridLayout();grid.setSpacing(14)
    compare,cp=self._settings_card('Porównanie i import')
@@ -830,7 +907,7 @@
    info.setObjectName('muted');info.setWordWrap(True);cp.addRow(info)
    self.full_bom.setText('Twórz pełny BOM A i B')
    self.cache_import.setText('Przyspiesz ponowny import')
-@@ -1050,10 +1134,12 @@
+@@ -1050,10 +1140,12 @@
    self.output_button.setMinimumWidth(104);folder_line.addWidget(self.output_button,0)
    rp.addRow('Folder wyników',folder)
    rp.addRow('Kolory modeli',self.color_editor)
@@ -844,7 +921,7 @@
    rp.addRow(self.preview_html)
  
    # Keep internal compatibility controls, but do not expose old settings.
-@@ -1162,6 +1248,7 @@
+@@ -1162,6 +1254,7 @@
     self._compare_step_announced=False
    if self.process is not None:self._set_busy_ui(True)
    if kind=='mass' and self.process is not None:
@@ -852,7 +929,7 @@
     self._mass_running_controls(True)
     self.mass_summary.setText(f'Trwa obliczanie masy {len(self.mass_inputs)} modeli…')
    if self.process is not None:
-@@ -1225,9 +1312,9 @@
+@@ -1225,19 +1318,24 @@
      self.reset_button.setVisible(True)
      self.reset_button.setEnabled(True)
      self.reset_button.setToolTip('Wyczyść oba modele i rozpocznij nowe porównanie.')
@@ -864,7 +941,10 @@
    self._refresh_outputs()
   def load_result(self,kind,folder):
    super().load_result(kind,folder)
-@@ -1237,7 +1324,11 @@
+   if kind=='compare':
+    s=json.loads((Path(folder)/'PODSUMOWANIE.json').read_text('utf8'));c=s['statuses']
++   self._success_title.setText('✓  Porównanie zakończone' if s.get('analysis_complete',True) else '⚠  Raport częściowy — wymaga sprawdzenia')
+    self._summary_stats.setText('A: {a} brył    →    B: {b} brył\nBez zmian: {same}    ·    Nowe: {new}    ·    Usunięte: {old}    ·    Przesunięte: {move}'.format(
      a=s.get('solids_A',0),b=s.get('solids_B',0),
      same=c.get('SAME',0)+c.get('RENAMED',0),
      new=c.get('ADDED',0),old=c.get('REMOVED',0),move=c.get('MOVED',0)))
@@ -876,7 +956,7 @@
     self._step_export_failed=bool(s.get('step_export_error'))
     self._refresh_outputs();self._details.hide()
    else:
-@@ -1267,7 +1358,7 @@
+@@ -1267,7 +1365,7 @@
     self.mass_summary.setText(detail)
    except (OSError,ValueError,KeyError,TypeError):pass
   def _refresh_outputs(self):
@@ -1238,7 +1318,7 @@
          try:
              data = json.loads(reply.read_text(encoding='utf-8'))
              if data.get('ok') is not True or type(data.get('match')) is not bool:
---- a/dsac29/palette.py
+--- /dev/null
 +++ b/dsac29/palette.py
 @@ -0,0 +1,24 @@
 +"""Shared semantic colors for STEP, reports, preview and desktop settings."""
@@ -1286,7 +1366,7 @@
   if 'BSpline' in kind:
    x=GeomConvert_BSplineSurfaceToBezierSurface(a.BSpline());y=GeomConvert_BSplineSurfaceToBezierSurface(b.BSpline())
    if (x.NbUPatches(),x.NbVPatches())!=(y.NbUPatches(),y.NbVPatches()):return False
-@@ -144,11 +151,55 @@
+@@ -144,11 +151,130 @@
    options.append([j for j in sorted(candidates) if edge_equal(d,right[j],tol)])
   return options
  
@@ -1333,18 +1413,93 @@
 + except Exception:return False
 +
 +
-+def prove(a,b,owner,face_data,tolerance,*,strict_repair=True,allow_original_micro_degenerate=False,allow_strip_orientation=False):
++def collapsed_cylinder_equal(f,g,tolerance):
++ """Uniform two-way bound for a micro-cylinder bounded by two full lines.
++
++ STEP can collapse its angular domain while retaining two axial line edges.
++ Each complete analytic patch is enclosed in either a full circle disk or
++ an arc ball, extruded over its entire V interval. Map every such point to
++ an actual line edge of the other face. Convexity bounds the axial mapping
++ by its endpoints; analytic arc bounds cover every U. No samples/areas.
++ """
++ try:
++  if not np.isfinite(tolerance) or tolerance<=0:return False
++  descriptions=[]
++  for face in (f,g):
++   surface=BRepAdaptor_Surface(face)
++   if 'Cylinder' not in str(surface.GetType()):return False
++   radius=float(surface.Cylinder().Radius())
++   if not 0<radius<=float(tolerance):return False
++   u0,u1,v0,v1=(float(surface.FirstUParameter()),float(surface.LastUParameter()),
++                 float(surface.FirstVParameter()),float(surface.LastVParameter()))
++   if not np.isfinite([u0,u1,v0,v1]).all() or not 0<=u1-u0<=2*np.pi+1e-12 or v1<=v0:return False
++   wires=items(face,TopAbs_WIRE,TopoDS.Wire_s)
++   if len(wires)!=1:return False
++   edges=items(wires[0],TopAbs_EDGE,TopoDS.Edge_s)
++   if not 2<=len(edges)<=4:return False
++   lines=[];geometry=[]
++   for edge in edges:
++    d=edge_data(edge)
++    if d[0]=='line':lines.append(d);geometry.append(d)
++    elif d[0]=='point' and BRep_Tool.Curve_s(edge,0.,0.) is None:
++     vertices=items(edge,TopAbs_VERTEX,TopoDS.Vertex_s)
++     if not vertices:return False
++     geometry.extend(('point',xyz(BRep_Tool.Pnt_s(v))) for v in vertices)
++    else:return False
++   if len(lines)!=2 or any(not np.isfinite(np.asarray(d[1:])).all() for d in geometry):return False
++   cylinder=surface.Cylinder();origin=xyz(cylinder.Location());axis=direction(cylinder.Axis())
++   p0=xyz(surface.Value((u0+u1)/2,v0));p1=xyz(surface.Value((u0+u1)/2,v1))
++   if not np.isfinite(np.asarray([origin,axis,p0,p1])).all():return False
++   # Project actual world-space evaluations onto the cylinder axis, rather
++   # than assuming V is unscaled world distance in a located CAD surface.
++   c0=origin+axis*np.dot(p0-origin,axis);c1=origin+axis*np.dot(p1-origin,axis)
++   balls=[(c0,c1,radius),
++          (p0,p1,
++           2*radius*np.sin(min(2*np.pi,u1-u0)/4))]
++   descriptions.append((balls,lines,geometry,surface,(u0,u1,v0,v1),radius))
++  magnitude=max(1.,*[float(np.abs(d[1:]).max()) for _,_,geometry,_,_,_ in descriptions for d in geometry])
++  roundoff=1e-10+128*np.finfo(float).eps*magnitude
++  def mapped_segment(p,q,x,y):
++   return min(max(np.linalg.norm(p-x),np.linalg.norm(q-y)),
++              max(np.linalg.norm(p-y),np.linalg.norm(q-x)))
++  def point_segment(p,x,y):
++   delta=y-x;length=float(np.dot(delta,delta))
++   t=float(np.clip(np.dot(p-x,delta)/length,0.,1.)) if length>0 else 0.
++   return float(np.linalg.norm(p-(x+t*delta)))
++  for source,target in (descriptions,descriptions[::-1]):
++   balls,lines,geometry,surface,(u0,u1,v0,v1),radius=source
++   targets=target[1]
++   # Entire surface patch -> an actual edge of the other face.
++   if min(mapped_segment(p,q,d[1],d[2])+r for p,q,r in balls for d in targets)+roundoff>tolerance:
++    # Certify a finite cover of the ENTIRE angular interval. Each cell has
++    # an analytic chord-radius bound; midpoint evaluation chooses its ball
++    # center and is not a sampled geometric equality test.
++    count=32;span=(u1-u0)/count;cell_radius=2*radius*np.sin(span/4.)
++    for cell in range(count):
++     u=u0+(cell+.5)*span;p=xyz(surface.Value(u,v0));q=xyz(surface.Value(u,v1))
++     if not np.isfinite(np.asarray([p,q])).all():return False
++     if min(mapped_segment(p,q,d[1],d[2])+cell_radius for d in targets)+roundoff>tolerance:return False
++   # Also cover every actual 3-D edge, even if a malformed STEP p-curve
++   # places it slightly off the nominal cylinder support.
++   for d in geometry:
++    points=d[1:]
++    if min(max(point_segment(p,e[1],e[2]) for p in points) for e in targets)+roundoff>tolerance:return False
++  return True
++ except Exception:return False
++
++
++def prove(a,b,owner,face_data,tolerance,*,strict_repair=True,allow_original_micro_degenerate=False,allow_strip_orientation=False,allow_micro_cylinders=False):
   """Only for already validated solids; require all surfaces and boundary wires."""
   try:
 -  fa=items(a,TopAbs_FACE,TopoDS.Face_s);fb=items(b,TopAbs_FACE,TopoDS.Face_s);tol=tolerance/8
 +  fa=items(a,TopAbs_FACE,TopoDS.Face_s);fb=items(b,TopAbs_FACE,TopoDS.Face_s);tol=tolerance/(8 if strict_repair else 2)
    if len(fa)!=len(fb) or len(owner)!=len(fa):return False
-+  if (strict_repair or not allow_strip_orientation) and any(
++  if (strict_repair or not (allow_strip_orientation or allow_micro_cylinders)) and any(
 +      int(fa[i].Orientation())!=int(fb[j].Orientation()) for j,i in owner.items()):return False
    cache={}
    def data(e):
     key=(hash(e),int(e.Orientation()))
-@@ -160,14 +211,19 @@
+@@ -160,14 +286,19 @@
    from OCP.Bnd import Bnd_Box
    from OCP.BRepBndLib import BRepBndLib
    def wire_bounds(w):
@@ -1365,7 +1520,7 @@
     if len(edges)<3:return edges
     spans=[]
     for edge in edges:
-@@ -176,16 +232,62 @@
+@@ -176,16 +307,64 @@
      coords=np.asarray(bounds.Get(),float)
      if not np.isfinite(coords).all():return edges
      spans.append(float(np.linalg.norm(coords[3:]-coords[:3])))
@@ -1427,6 +1582,8 @@
 +      return True
 +   return False
    for j,i in owner.items():
++   if not strict_repair and allow_micro_cylinders and collapsed_cylinder_equal(fa[i],fb[j],tolerance):
++    continue  # Complete patch AND both real line edges were uniformly bounded.
 +   if int(fa[i].Orientation())!=int(fb[j].Orientation()):
 +    if (strict_repair or not allow_strip_orientation or
 +        not collapsed_strip_orientation(fa[i],fb[j],tolerance)):return False
@@ -1657,10 +1814,18 @@
          legend+=f'<p>Przezroczystość starej wersji: {round((1-old_alpha)*100)}%. Przesunięte i zmienione pary: stara A jest jaśniejsza i przezroczysta, nowa B ma pełny kolor. Przezroczystość zależy od importera ZW3D. {structure_note}</p>'
      htmltxt=f'''<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
  <title>DS Compare — raport porównania modeli</title>
-@@ -423,6 +427,10 @@
+@@ -423,6 +427,18 @@
      # final write, rather than reopening and rewriting the whole HTML 1-3x.
      context_info=report_context or {}
      notices=[]
++    partial_material=bool((context_info.get('revision_overlap') or {}).get('incomplete'))
++    if partial_material:
++        reason=context_info['revision_overlap'].get('reason','')
++        message='Raport częściowy: nie potwierdzono wszystkich różnic materiału. Elementy wymagające sprawdzenia oznaczono osobno. Masy pochodzą z importowanych brył; część geometrii wymaga weryfikacji. '+str(reason)
++        notices.append('<div class="panel" role="alert"><strong>'+html.escape(message)+'</strong></div>')
++        (out/'ANALIZA_NIEKOMPLETNA.txt').write_text(message+'\n',encoding='utf8')
++    else:
++        (out/'ANALIZA_NIEKOMPLETNA.txt').unlink(missing_ok=True)
 +    from .alignment_notice import alignment_notice
 +    registration_note=alignment_notice(context_info.get('alignment',{}))
 +    if registration_note:
@@ -1668,7 +1833,7 @@
      omitted=sum(int(v.get('faces_outside_solids',0))
                  for v in context_info.get('import',{}).values())
      if omitted:
-@@ -490,6 +498,9 @@
+@@ -490,6 +506,9 @@
                              ' par: w STEP zachowano pełne części A i B zamiast zgadywać kolory.')
      if late_notices:
          htmltxt=htmltxt.replace('<body>','<body>'+''.join('<p role="alert">'+html.escape(message)+'</p>' for message in late_notices),1)
@@ -1678,7 +1843,16 @@
      draft.write_text(htmltxt,encoding='utf-8');draft.replace(final_report)
      stage.update(basic_report_ready=True,reports='finalizacja',report_percent=95)
      if progress:progress('Finalizowanie raportu i podsumowania...')
---- a/dsac29/report_view.py
+@@ -504,6 +523,8 @@
+                         'source_fingerprints':context_info.get('fingerprints',{}),
+                         'manual_pairs':context_info.get('manual_pairs',[]),
+                         'alignment':context_info.get('alignment',{}),
++                        'analysis_complete':not partial_material,'material_analysis_complete':not partial_material,
++                        'revision_overlap':context_info.get('revision_overlap',{}),
+                         'source_A':context_info.get('source_A',''),
+                         'source_B':context_info.get('source_B',''),
+                         'tolerance_mm':tolerance,
+--- /dev/null
 +++ b/dsac29/report_view.py
 @@ -0,0 +1,88 @@
 +"""Offline presentation layer; never changes comparison or BOM records."""
@@ -1771,10 +1945,11 @@
 +    return page.replace('</body>',script+'</body>',1)
 --- a/dsac29/revision_overlap.py
 +++ b/dsac29/revision_overlap.py
-@@ -47,6 +47,41 @@
+@@ -47,7 +47,69 @@
          return None
      return 0.65*iou+0.35*frac+(0.015 if same else 0.)
  
+-def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=None):
 +def _reuse_common_volume(a, b, saved_a, saved_b):
 +    """Exact native definition + same relative pose: valid translated proof."""
 +    sa, sb = a.shape, b.shape
@@ -1810,10 +1985,38 @@
 +                           regions.added_mm3, regions.removed_mm3)
 +
 +
- def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=None):
++def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=None,review_approval=None):
++    """Strict by default; an explicit review choice may preserve unknowns."""
++    records=list(records)
++    try:
++        return _merge_material_revisions_strict(a,b,records,tolerance,progress,cancelled)
++    except NativeGeometryFailure as exc:
++        if review_approval is None:raise
++        uncertain={'ADDED','REMOVED','CHANGED'}
++        old_ids={r.a_index for r in records if r.status in uncertain and r.a_index is not None}
++        new_ids={r.b_index for r in records if r.status in uncertain and r.b_index is not None}
++        proposal={'status':'material_unverified','reason':str(exc),
++                  'unverified_A':len(old_ids),'unverified_B':len(new_ids)}
++        if review_approval(proposal)!='review':
++            raise InterruptedError('Anulowano przygotowanie raportu częściowego.') from exc
++        from dataclasses import replace
++        reason='Niepotwierdzony wynik materiału w raporcie częściowym. Szczegóły: ANALIZA_NIEKOMPLETNA.txt.'
++        result=[replace(r,status='UNCERTAIN',note=reason,confidence='Raport częściowy — wymaga sprawdzenia',
++                        distance_mm=None,delta_x=None,delta_y=None,delta_z=None,
++                        volume_delta_mm3=None,rotation_deg=None)
++                if r.status in uncertain else r for r in records]
++        stat={'accepted':0,'incomplete':True,'reason':str(exc),
++              'unverified_A':len(old_ids),'unverified_B':len(new_ids)}
++        trace.mark('revision_overlap_guard','PARTIAL_REVIEW',**stat)
++        if progress:progress(f'Raport częściowy: do sprawdzenia {len(old_ids)} elementów A i {len(new_ids)} elementów B. Nie potwierdzono różnic materiału.')
++        return result,{},stat
++
++
++def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,cancelled=None):
      old_ids={r.a_index for r in records if r.status=='REMOVED' and r.a_index is not None and r.b_index is None}
      new_ids={r.b_index for r in records if r.status=='ADDED' and r.b_index is not None and r.a_index is None}
-@@ -61,6 +96,8 @@
+     stat=dict(candidate_pairs=0,boolean_checks=0,accepted=0,ambiguous=0,invalid_boolean=0,
+@@ -61,6 +123,8 @@
      xstarts=[x for x,j in sorted_b]
      edges={}
      best_common={}
@@ -1822,7 +2025,7 @@
      guarded_large = True  # every unresolved Common is isolated, including small assemblies
      guarded_started=perf_counter()
      guarded_budget_s=240.0
-@@ -86,17 +123,42 @@
+@@ -86,19 +150,44 @@
          for _,j in candidates:
              if stat['boolean_checks']>=MAX_CHECKS:
                  stat['budget_exceeded']=True;break
@@ -1852,6 +2055,8 @@
 +                elif cached is None:
                      shape=trace.brep_call('revision_common',i,j,operate,BRepAlgoAPI_Common,ref.shape,b[j].shape,tolerance)
 -                common=volume(shape)
+-            except NativeGeometryFailure:
+-                raise
 +                if cached is None:
 +                    try:
 +                        evidence=bind_common(shape,ref.shape,b[j].shape,tolerance)
@@ -1869,10 +2074,12 @@
 +                    common=volume(shape)
 +                    if len(common_cache)<128:
 +                        common_cache.append((ref,b[j],common))
-             except NativeGeometryFailure:
-                 raise
++            except NativeGeometryFailure as exc:
++                raise NativeGeometryFailure(f'Para A[{i}] „{ref.name}” / B[{j}] „{b[j].name}”: '+str(exc)) from exc
              except Exception as exc:
-@@ -107,7 +169,7 @@
+                 raise NativeGeometryFailure('Niekompletna analiza wspólnego materiału: '+str(exc)) from exc
+             score=_score(common,ref,b[j],_name_eq(ref,b[j]))
+@@ -107,7 +196,7 @@
                  if i not in best_common or score>best_common[i][0]:
                      if i not in best_common and len(best_common)>=64:
                          best_common.pop(next(iter(best_common)))
@@ -1881,7 +2088,7 @@
          if stat['budget_exceeded']:raise NativeGeometryFailure('Limit liczby testów materiału — analiza niekompletna')
          if progress and idx and idx%50==0:
              progress(f'R17: geometria rewizji {idx}/{len(old_ids)}; B-Rep {stat["boolean_checks"]}')
-@@ -123,15 +185,26 @@
+@@ -123,15 +212,26 @@
              (len(new_edges)>1 and score-new_edges[1][0]<MIN_MARGIN)):
              stat['ambiguous']+=1;continue
          chosen.append((i,j))
@@ -1956,6 +2163,15 @@
  
  # Distinct subassemblies can be hidden as a whole in CAD applications that
  # preserve the XCAF/STEP product assembly structure (including ZW3D on import).
+@@ -202,7 +199,7 @@
+     'MOVED': '03_PRZESUNIETE',
+     'ADDED': '04_NOWE',
+     'REMOVED': '05_USUNIETE',
+-    'UNCERTAIN': '06_DO_SPRAWDZENIA', # legacy only; new revision policy never emits it
++    'UNCERTAIN': '06_DO_SPRAWDZENIA', # explicitly unverified material/geometry review
+ }
+ 
+ def _single_solid_without_wrapper(shape):
 @@ -596,13 +593,7 @@
      return {'written':n>0,'solids':n,'changes':deltas,'errors':errors}
  
@@ -1971,6 +2187,15 @@
  
  def cad_product_name(name, number, status, role):
      """Conservative portable STEP PRODUCT name for third-party CAD importers.
+@@ -667,7 +658,7 @@
+                 else ('UNCERTAIN_OLD' if revision=='A' else 'UNCERTAIN_NEW') if r.status=='UNCERTAIN'
+                 else {'SAME':'SAME','OLD':'REMOVED','NEW':'ADDED'}[role]
+             )
+-            legacy_warning=' [DO_SPRAWDZENIA]' if r.status=='UNCERTAIN' else ''  # legacy direct-export API only
++            legacy_warning=' [DO_SPRAWDZENIA]' if r.status=='UNCERTAIN' else ''
+             status_pl={'SAME':'BEZ_ZMIAN','RENAMED':'ZMIANA_NAZWY','MOVED':'PRZESUNIETE','REMOVED':'USUNIETE','ADDED':'NOWE','CHANGED':'ZMIENIONE','UNCERTAIN':'DO_SPRAWDZENIA'}[r.status]
+             role_pl={'SAME':'BEZ_ZMIAN','OLD':'STARA','NEW':'NOWA'}[role]
+             # Names are actual PRODUCT definitions in STEP (not only the HTML report).
 --- a/dsac29/step_reexport_tolerance.py
 +++ b/dsac29/step_reexport_tolerance.py
 @@ -19,6 +19,53 @@
@@ -2027,7 +2252,23 @@
  def coarse_candidate(a,b,tol):
      """Only a hypothesis prefilter, never proof of identity."""
      if min(a.volume,b.volume)<=0:return False
-@@ -41,7 +88,10 @@
+@@ -32,16 +79,23 @@
+ 
+     STEP p-curve reconstruction changes integrated properties even when all
+     original 3-D surfaces and oriented trims agree within the requested tol.
+-    These margins only admit candidates for the full geometric proof below.
++    Volume differences cannot replace the full geometric proof. Area remains
++    a coarse proposal filter to avoid filling sparse-revision samples with
++    unrelated parts; it never establishes a positive geometric result.
+     """
+-    if min(a.volume,b.volume)<=0:return False
+-    return (abs(a.volume-b.volume)<=max(1.,.02*max(a.volume,b.volume))
++    # Integrated mass can drift by >3% on the captured 52-face STEP pair
++    # despite unchanged analytic supports and trims. It cannot reject the
++    # independent complete geometric proof. Spatial lookup remains bounded.
++    return (all(np.isfinite(v) and v>0 for v in (a.volume,b.volume,a.area,b.area))
+             and abs(a.area-b.area)<=max(1.,.02*max(a.area,b.area)))
+ 
  def search_radius(tolerance):
      # Integrated centroids are not geometric bounds. This radius is only for
      # candidate lookup; exact solid/face bounds retain the user's tolerance.
@@ -2039,7 +2280,7 @@
  
  
  def _faces(part):
-@@ -58,7 +108,7 @@
+@@ -58,7 +112,7 @@
      return result
  
  
@@ -2048,12 +2289,14 @@
      """Face prefilter followed by independent solid Boolean verification.
  
      Small STEP round-trip fluctuations are permitted only within the supplied
-@@ -66,19 +116,37 @@
+@@ -66,19 +120,40 @@
      or fails an original-face geometry requirement. A positive result does not
      mean byte-identical STEP files.
      """
 +    # Original-to-original proof spends no budget on repair displacement.
-+    # It retains EVERY edge and uses the existing half-budget curve proof.
++    # Ordinary faces retain the half-budget surface/curve proof. Collapsed
++    # micro-cylinders instead have a direct uniform bound for their complete
++    # patches and real line edges, with no repair displacement to budget.
 +    # Repair proof keeps its separate, stricter budget and policy.
 +    if _original_boundary_only and (allow_boolean or _repair_boundary_only):
 +        raise ValueError('Original boundary proof cannot repair or use Booleans')
@@ -2079,17 +2322,18 @@
      fa=_faces(a);fb=_faces(b)
      if len(fa)!=len(fb) or not fa:return False
 +    different_orientation=not _face_type_orientation_compatible(fa,fb)
++    allow_micro_cylinders=not allow_boolean and not _repair_boundary_only
 +    actual_a=actual_b=None
-+    if different_orientation:
++    if different_orientation or allow_micro_cylinders:
 +        from collections import Counter
 +        if Counter(f[0] for f in fa)!=Counter(f[0] for f in fb):return False
-+        from .parametric_identity import items,collapsed_strip_orientation
++        from .parametric_identity import items,collapsed_strip_orientation,collapsed_cylinder_equal
 +        actual_a=items(a.shape,TopAbs_FACE,TopoDS.Face_s)
 +        actual_b=items(b.shape,TopAbs_FACE,TopoDS.Face_s)
      # Spatially indexed CAD face matching handles STEP face ordering changes.
      cell=max(.03,3*tolerance)
      buckets=defaultdict(list)
-@@ -89,51 +157,50 @@
+@@ -89,51 +164,51 @@
      from itertools import product
      offsets=tuple(product((-1,0,1),repeat=3))
      options=[]
@@ -2101,7 +2345,7 @@
          for d in offsets:
              indices.update(buckets.get((typ,ori,*(index[k]+d[k] for k in range(3))),()))
              indices.update(box_buckets.get((typ,ori,*(box_index[k]+d[k] for k in range(3))),()))
-+            if different_orientation and 'BSpline' in typ:
++            if (different_orientation and 'BSpline' in typ) or (allow_micro_cylinders and 'Cylinder' in typ):
 +                indices.update(buckets.get((typ,1-ori,*(index[k]+d[k] for k in range(3))),()))
 +                indices.update(box_buckets.get((typ,1-ori,*(box_index[k]+d[k] for k in range(3))),()))
          available=[]
@@ -2109,13 +2353,14 @@
 -            _,_,area_b,cb,bb=fb[j]
 +            _,other_ori,area_b,cb,bb=fb[j]
 +            strip_candidate=bool(ori!=other_ori and collapsed_strip_orientation(actual_a[face_index],actual_b[j],tolerance))
-+            if ori!=other_ori and not strip_candidate:continue
++            micro_candidate=bool(allow_micro_cylinders and collapsed_cylinder_equal(actual_a[face_index],actual_b[j],tolerance))
++            if ori!=other_ori and not (strip_candidate or micro_candidate):continue
              dc=float(np.linalg.norm(c-cb))
              db=float(np.max(np.abs(box-bb)))
              # Both are lookup filters. The original strict face/wire proof
              # below remains mandatory and uses the original tolerance.
 -            if dc>tolerance and db>tolerance:continue
-+            if dc>tolerance and db>tolerance and not strip_candidate:continue
++            if dc>tolerance and db>tolerance and not (strip_candidate or micro_candidate):continue
              da=abs(area-area_b)
              area_lim=max(.1,2*tolerance*sqrt(max(1.,area,area_b)))
 -            if da>area_lim:continue
@@ -2158,8 +2403,8 @@
 -    if prove(a.shape,b.shape,owner,fa,tolerance):return True
 +    if _original_boundary_only:
 +        return bool(prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=False,
-+                          allow_original_micro_degenerate=True))
-+    if (prove(a.shape,b.shape,owner,fa,tolerance) or (not allow_boolean and not _repair_boundary_only and prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=False,allow_strip_orientation=True,allow_original_micro_degenerate=True))):return True
++                          allow_original_micro_degenerate=True,allow_micro_cylinders=True))
++    if (prove(a.shape,b.shape,owner,fa,tolerance) or (not allow_boolean and not _repair_boundary_only and prove(a.shape,b.shape,owner,fa,tolerance,strict_repair=False,allow_strip_orientation=True,allow_original_micro_degenerate=True,allow_micro_cylinders=True))):return True
      if _repair_boundary_only:return False  # No volume-based repair proof
      report('boolean_residual' if allow_boolean else 'inconclusive')
      return _verified_difference_empty(a.shape,b.shape,tolerance) if allow_boolean else False
@@ -2186,7 +2431,53 @@
          faulthandler.dump_traceback_later(180,repeat=True,file=_fault_log)
 --- a/dsac29/worker_v37.py
 +++ b/dsac29/worker_v37.py
-@@ -138,7 +138,9 @@
+@@ -32,6 +32,7 @@
+     p.add_argument('--diff-step',action='store_true')
+     p.add_argument('--align',action='store_true')
+     p.add_argument('--align-auto',action='store_true',help='Check common coordinates, ask approval if B needs moving')
++    p.add_argument('--allow-review-decision',action='store_true',help='Ask whether to create an explicitly incomplete report if material proof fails')
+     p.add_argument('--direct-scene',action='store_true')
+     p.add_argument('--palette',default='{}')
+     p.add_argument('--max-solids',type=int,default=20000)
+@@ -89,28 +90,33 @@
+                     'unrelated':proposal.get('status')=='unrelated',
+                     'reason':proposal.get('reason',''),
+                     'search_failed':proposal.get('search_failed',False),
++                    'material_unverified':proposal.get('status')=='material_unverified',
++                    'unverified_A':int(proposal.get('unverified_A',0)),
++                    'unverified_B':int(proposal.get('unverified_B',0)),
+                 }
+                 request.write_text(json.dumps(info,ensure_ascii=False),encoding='utf8')
+-                emit('Analiza wymaga decyzji użytkownika: '+('modele mogą być różne' if info['unrelated'] else 'wyrównanie modeli')+'…')
++                emit('Analiza wymaga decyzji użytkownika: '+('raport częściowy' if info['material_unverified'] else 'modele mogą być różne' if info['unrelated'] else 'wyrównanie modeli')+'…')
+                 deadline=time.monotonic()+600
+                 while time.monotonic()<deadline:
+                     if answer.exists():
+                         try:
+                             resp=json.loads(answer.read_text(encoding='utf8'))
+-                            if resp.get('token')==token and resp.get('decision') in ('align','original','search','cancel'):
++                            allowed=('review','cancel') if info['material_unverified'] else ('align','original','search','cancel')
++                            if resp.get('token')==token and resp.get('decision') in allowed:
+                                 return resp['decision']
+                         except (OSError,ValueError):pass
+                     time.sleep(.2)
+-                raise RuntimeError('Przekroczono czas oczekiwania na decyzję o wyrównaniu (10 minut).')
++                raise RuntimeError('Przekroczono czas oczekiwania na decyzję użytkownika (10 minut).')
+             palette=json.loads(ns.palette)
+             output,recs,err=process(ns.a,ns.b,ns.output,ns.tolerance,ns.density,
+                    full_bom=not ns.no_bom,bom_fast=ns.fast_bom,bom_csv=not ns.no_bom_csv,max_solids=ns.max_solids,step=ns.generate_step,diff_step=ns.diff_step,preview3d=ns.preview3d,
+-                   colors=palette,progress=emit,align=ns.align,auto_align=ns.align_auto,alignment_approval=approve_alignment if ns.align_auto else None,revision_style=ns.revision_style,thumbnails=ns.thumbnails,old_alpha=ns.old_alpha,direct_scene=ns.direct_scene,manual_review=json.loads(Path(ns.manual_review).read_text(encoding='utf-8')) if ns.manual_review else None)
++                   colors=palette,progress=emit,align=ns.align,auto_align=ns.align_auto,alignment_approval=approve_alignment if ns.align_auto else None,revision_style=ns.revision_style,thumbnails=ns.thumbnails,old_alpha=ns.old_alpha,direct_scene=ns.direct_scene,manual_review=json.loads(Path(ns.manual_review).read_text(encoding='utf-8')) if ns.manual_review else None,material_approval=approve_alignment if ns.allow_review_decision else None)
+             summary=json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
+             main_ready=bool(summary.get('step_ready',False))
+             payload={'ok':bool(not ns.generate_step or main_ready),
+                      'folder':str(output),'wyniki':len(recs),'blad_step':err,
+                      'step_ready':main_ready,
++                     'analysis_complete':summary.get('analysis_complete',True),
+                      'optional_diff_errors':summary.get('optional_diff_errors',[]),
+                      'alignment':summary.get('alignment',{})}
+         elif ns.worker=='detail':
+@@ -138,7 +144,9 @@
              (folder/'DIAGNOSTYKA_BLEDU.txt').write_text(issue,encoding='utf8')
          except OSError:pass
          from .import_validation import InvalidStepSolid
@@ -2197,7 +2488,54 @@
      if ns.worker=='compare':
          trace_r22.mark('worker','END' if payload.get('ok') else 'ERROR',ok=bool(payload.get('ok')))
      result_file.write_text(json.dumps(payload,ensure_ascii=False,indent=2),encoding='utf-8')
---- a/ci/check_source_bundle.py
+--- /dev/null
++++ b/ci/audit_partial_artifacts.py
+@@ -0,0 +1,23 @@
++"""A partial report is accepted only for the explicit OpenArm review scenario."""
++import json,sys
++from pathlib import Path
++from audit_preview import audit_preview
++root=Path(sys.argv[1]);out=root/'comparison'
++result=json.loads((root/'TEST_RESULT.json').read_text())
++assert result['scenario']=='openarm_explicit_partial_review' and result['expected_partial']
++assert result['result']=='PASS'
++s=json.loads((out/'PODSUMOWANIE.json').read_text())
++assert s['analysis_complete'] is False and s['material_analysis_complete'] is False
++assert s['statuses'].get('UNCERTAIN') and not set(s['statuses'])-{'SAME','RENAMED','MOVED','UNCERTAIN'}
++for role,key in [('A','a_index'),('B','b_index')]:
++    ids=[r[key] for r in s['records'] if r.get(key) is not None]
++    assert len(ids)==len(set(ids))==s['solids_'+role]
++    assert (out/('BOM_'+role+'.csv')).is_file()
++assert not s['material_regions'] and not s['material_errors']
++step=out/'POROWNANIE_KOLORY.step';assert step.is_file() and step.stat().st_size>1000
++assert step.open('rb').read(64).startswith(b'ISO-10303-21;')
++assert (out/'ANALIZA_NIEKOMPLETNA.txt').is_file()
++assert 'Raport częściowy' in (out/'RAPORT.html').read_text()
++count=audit_preview((out/'PODGLAD_KOLOROW_3D.html').read_text(),s,allow_uncertain=True)
++assert s['preview_3d']['pominiete']==0
++print('PARTIAL_REVIEW_ARTIFACTS_PASS',count,'visual occurrences; all original inputs accounted for')
+--- a/ci/audit_preview.py
++++ b/ci/audit_preview.py
+@@ -1,6 +1,6 @@
+ """Check actual preview occurrence records, including removed material."""
+ import json,re,math,base64,struct
+-def audit_preview(text,summary):
++def audit_preview(text,summary,*,allow_uncertain=False):
+  match=re.search(r'^const scene=(.*);$',text,re.M);assert match,'Missing scene'
+  scene=json.loads(match.group(1));records=summary['records'];observed={};meshes=set()
+  regions={r['record_index']:r for r in summary.get('material_regions',[])}
+@@ -29,6 +29,10 @@
+   elif status=='CHANGED':
+    reg=regions[i]
+    expected={(role,key) for role,key,v in [('B','CHANGED_COMMON',reg['common_mm3']),('B','CHANGED_ADDED',reg['added_mm3']),('A','CHANGED_REMOVED',reg['removed_mm3'])] if v>1e-7}
++  elif status=='UNCERTAIN' and allow_uncertain:
++   expected=set()
++   if r.get('a_index') is not None:expected.add(('A','UNCERTAIN_OLD'))
++   if r.get('b_index') is not None:expected.add(('B','UNCERTAIN_NEW'))
+   else:raise AssertionError('Unverified status '+status)
+   assert observed.get(i,set())==expected,f'Missing/wrong scene regions: {i}'
+  assert len(scene)==summary['preview_3d']['elementy']
+--- /dev/null
 +++ b/ci/check_source_bundle.py
 @@ -0,0 +1,21 @@
 +"""Reject incomplete/mixed source packages before tests or EXE build."""
@@ -2275,7 +2613,7 @@
   counts=summary['statuses']
   if args.case=='shift':
    same=counts.get('SAME',0)+counts.get('RENAMED',0)
---- a/ci/package_sources.py
+--- /dev/null
 +++ b/ci/package_sources.py
 @@ -0,0 +1,23 @@
 +"""Build a complete source ZIP with a checked file manifest."""
@@ -2301,7 +2639,7 @@
 +        info=zipfile.ZipInfo('dscompare_rc9_manual/'+name,date_time=(2026,10,30,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED
 +        info.external_attr=0o100644<<16;z.writestr(info,content)
 +print(args.output,len(data),'files',args.output.stat().st_size,'bytes')
---- a/ci/patch_rc9_frame_cache.py
+--- /dev/null
 +++ b/ci/patch_rc9_frame_cache.py
 @@ -0,0 +1,24 @@
 +"""Install the measured frame-proof optimization after the RC9 patch chain."""
@@ -2328,7 +2666,7 @@
 +for destination,payload in pending:
 +    destination.write_text(payload,encoding='utf-8')
 +print('PASS: sample/full proof cache installed with verified source versions')
---- a/ci/patch_rc9_ui_polish.py
+--- /dev/null
 +++ b/ci/patch_rc9_ui_polish.py
 @@ -0,0 +1,20 @@
 +"""Apply the reviewed GUI/report/color update after all existing RC9 patches."""
@@ -2351,7 +2689,7 @@
 +    pending.append((destination,payload))
 +for destination,payload in pending:destination.write_text(payload,encoding='utf8')
 +print('PASS: coherent palette, transactional settings, desktop actions, reports and offline 3D installed')
---- a/ci/patch_rc9_wire_bounds.py
+--- /dev/null
 +++ b/ci/patch_rc9_wire_bounds.py
 @@ -0,0 +1,28 @@
 +"""Apply after the existing RC9 patch chain, before tests and packaging."""
@@ -2382,7 +2720,7 @@
 +elif source.count(new) != 1 or old in source:
 +    raise SystemExit('Unexpected solid bounds source; refusing an unverified patch')
 +print('PASS: disjoint solid bounds reject; overlapping bounds require full geometry proof')
---- a/ci/rc9_common_probe.py
+--- /dev/null
 +++ b/ci/rc9_common_probe.py
 @@ -0,0 +1,161 @@
 +"""Bounded, diagnostic-only replay of failed OCCT Common B-Reps.
@@ -2546,7 +2884,7 @@
 +    else:
 +        raise SystemExit('Usage: rc9_common_probe.py PAIR_DIR OUTPUT_JSON [TIMEOUT_SECONDS]')
 +
---- a/ci/rc9_failure_summary.py
+--- /dev/null
 +++ b/ci/rc9_failure_summary.py
 @@ -0,0 +1,52 @@
 +"""Generate a failure-focused diagnostic summary from persisted CI evidence.
@@ -2601,6 +2939,66 @@
 +    for line_no, value in item["last_matching_lines"][-5:]:
 +        print(f"  L{line_no}: {value[:350]}")
 +
+--- /dev/null
++++ b/ci/real_openarm_review.py
+@@ -0,0 +1,57 @@
++"""Frozen EXE: explicitly approved partial review of the public OpenArm pair."""
++import hashlib,json,os,subprocess,sys,time,traceback,urllib.request
++from pathlib import Path
++from urllib.parse import quote
++
++root=Path('evidence').resolve();root.mkdir(exist_ok=True);out=root/'comparison';out.mkdir(exist_ok=True)
++exe=Path(sys.argv[1]).resolve()
++report={'scenario':'openarm_explicit_partial_review','expected_partial':True,'sources':[],
++        'exe_sha256':hashlib.sha256(exe.read_bytes()).hexdigest()}
++def save():(root/'TEST_RESULT.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8')
++try:
++    inputs=[]
++    for filename,expected in [('OpenArm_v1.0_follower.step','9cac80902edc3f5ebb9fd7050d687559a1a99324202add756c3f1278fcbdd441'),
++                              ('OpenArm_v1.1_follower.STEP','71d11da9ceb0155fb4003206ae25f51eb2cfbfefa3f2097ea35c36a3d29389b0')]:
++        source='https://raw.githubusercontent.com/Utsav92/openarm-3d-cad-assembly/0c0852bd76ee7026f97875d6eac789d189a0012a/'+quote('STEP (assembly)/'+filename)
++        target=Path('models/openarm')/filename;target.parent.mkdir(parents=True,exist_ok=True)
++        urllib.request.urlretrieve(source,target)
++        digest=hashlib.sha256(target.read_bytes()).hexdigest();assert digest==expected,(filename,digest)
++        inputs.append(target.resolve());report['sources'].append({'url':source,'sha256':digest});save()
++    command=[str(exe),'--worker','compare','--a',str(inputs[0]),'--b',str(inputs[1]),
++             '--output',str(out),'--align-auto','--allow-review-decision','--generate-step','--preview3d','--revision-style']
++    report['command']=command;save();decisions=[];start=time.monotonic()
++    with (root/'EXE_STDOUT.log').open('wb') as stdout,(root/'EXE_STDERR.log').open('wb') as stderr:
++        proc=subprocess.Popen(command,stdout=stdout,stderr=stderr)
++        while proc.poll() is None:
++            request=out/'_WYROWNANIE_PYTANIE.json'
++            if request.is_file():
++                try:
++                    question=json.loads(request.read_text());token=question['token']
++                    if token not in [x['token'] for x in decisions]:
++                        choice='review' if question.get('material_unverified') else 'original'
++                        answer={'token':token,'decision':choice};decisions.append(answer)
++                        (out/'_WYROWNANIE_ODPOWIEDZ.json').write_text(json.dumps(answer))
++                except (OSError,ValueError,KeyError):pass
++            if time.monotonic()-start>1500:
++                subprocess.run(['taskkill','/F','/T','/PID',str(proc.pid)],capture_output=True)
++                raise TimeoutError('OpenArm review exceeded 1500 seconds')
++            time.sleep(.5)
++    report.update(seconds=round(time.monotonic()-start,2),returncode=proc.returncode,decisions=decisions);save()
++    assert proc.returncode==0,'OpenArm worker failed'
++    summary=json.loads((out/'PODSUMOWANIE.json').read_text())
++    assert summary['analysis_complete'] is False and summary['material_analysis_complete'] is False
++    assert any(x['decision']=='review' for x in decisions),'Review was not explicitly approved'
++    assert summary['solids_A']==summary['solids_B']==553
++    assert summary['statuses'].get('UNCERTAIN',0)>0
++    assert summary['step_ready'] and not summary['step_export_error']
++    assert summary['preview_3d']['pominiete']==0
++    for key in ('a_index','b_index'):
++        indices=[r[key] for r in summary['records'] if r.get(key) is not None]
++        assert len(indices)==len(set(indices))==553 and set(indices)==set(range(553)),key
++    assert (out/'ANALIZA_NIEKOMPLETNA.txt').is_file()
++    assert 'Raport częściowy' in (out/'RAPORT.html').read_text()
++    for path,source in zip(inputs,report['sources']):assert hashlib.sha256(path.read_bytes()).hexdigest()==source['sha256']
++    report.update(result='PASS',analysis_complete=False,statuses=summary['statuses'],solids_A=553,solids_B=553)
++    save();print(json.dumps(report,ensure_ascii=False),flush=True)
++except BaseException:
++    report.update(result='FAIL',error=traceback.format_exc());save();raise
 --- a/ci/real_revision_without_shift.py
 +++ b/ci/real_revision_without_shift.py
 @@ -55,7 +55,9 @@
@@ -2628,7 +3026,7 @@
      report["alignment_prompts"]=len(decisions)
      save()
      if proc.returncode!=0:raise RuntimeError("Frozen EXE failed with "+str(proc.returncode))
---- a/ci/replay_world_pair.py
+--- /dev/null
 +++ b/ci/replay_world_pair.py
 @@ -0,0 +1,21 @@
 +"""Replay captured B-Reps through the same isolated worker as the EXE."""
@@ -2654,7 +3052,7 @@
 +assert run.returncode==0 and data=={'ok':True,'match':args.expected=='true'},result
 --- a/ci/run_manual_regressions.py
 +++ b/ci/run_manual_regressions.py
-@@ -3,10 +3,16 @@
+@@ -3,10 +3,17 @@
  root=Path(__file__).resolve().parents[1];sys.path.insert(0,str(root))
  import TESTUJ
  os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
@@ -2662,7 +3060,8 @@
 +small=['test_stability.py','test_efficient.py','test_robust_translation.py','test_face_candidates.py','test_safe_boolean_worker.py','test_occt_integration.py','test_manual_audit.py','test_manual_preview_audit.py',
 +       'test_ui_polish.py','test_output_palette.py','test_frame_proof_cache.py','test_step_boundary_proof.py',
 +       'test_revision_common_recovery.py','test_shift_user_results.py',
-+       'test_registered_centroid_reexport.py']
++       'test_registered_centroid_reexport.py','test_fractional_shift_topology.py',
++       'test_partial_material_review.py']
  for names,report in [(small,'integration.xml'),(TESTUJ.tests,'full-regressions.xml')]:
   try:
    run=subprocess.run([sys.executable,'-m','pytest','-vv','--junitxml='+report,*[str(root/'tests'/n) for n in names]],cwd=root,timeout=1800)
@@ -2672,7 +3071,7 @@
 +run=subprocess.run([sys.executable,'-m','pytest','-q','--junitxml=ci-regressions.xml',
 +                    str(root/'ci'),'--ignore='+str(root/'ci/test_rc9_original_boundary.py')],cwd=root,timeout=240)
 +raise SystemExit(run.returncode)
---- a/ci/test_rc9_active_world_capture.py
+--- /dev/null
 +++ b/ci/test_rc9_active_world_capture.py
 @@ -0,0 +1,37 @@
 +"""Regression: crash evidence is a ring of exact B-Rep bytes, not a proof."""
@@ -2712,7 +3111,7 @@
 +        assert (target/'slot1_A.brep').read_bytes()==b'BRep A #2'
 +print('PASS: latest native B-Rep pair preserved across crash; 0.01 mm unchanged')
 +
---- a/ci/test_rc9_analytic_bore.py
+--- /dev/null
 +++ b/ci/test_rc9_analytic_bore.py
 @@ -0,0 +1,41 @@
 +"""Strict cone canonicalization and fail-closed bore recognizer regressions.
@@ -2756,7 +3155,7 @@
 +assert try_added_bore(s,s,.01) is None, 'Identical shapes cannot be a changed bore'
 +print('RC9_CONE_AND_BORE_FAIL_CLOSED_PASS')
 +
---- a/ci/test_rc9_common_failfast.py
+--- /dev/null
 +++ b/ci/test_rc9_common_failfast.py
 @@ -0,0 +1,65 @@
 +"""Regression: Common never converts invalid geometry into a revision verdict."""
@@ -2824,7 +3223,7 @@
 +    assert 'impossible signed volume' in data['error']
 +    assert reply.with_suffix('.phase').read_text(encoding='utf-8')=='common_rejected'
 +
---- a/ci/test_rc9_common_immediate_error.py
+--- /dev/null
 +++ b/ci/test_rc9_common_immediate_error.py
 @@ -0,0 +1,50 @@
 +"""Regression: invalid Common must terminate isolated worker with explicit error.
@@ -2877,7 +3276,7 @@
 +    assert not (root/'common.brep').exists()
 +print('PASS: invalid Common fails closed and exits without native teardown')
 +
---- a/ci/test_rc9_conservative_face_bounds.py
+--- /dev/null
 +++ b/ci/test_rc9_conservative_face_bounds.py
 @@ -0,0 +1,29 @@
 +"""Regression: analytic-face AABBs are only candidate filters, not SAME."""
@@ -2909,7 +3308,7 @@
 +from unittest.mock import patch
 +with patch('dsac29.parametric_identity.prove',return_value=False):
 +    assert not reexport_equivalent_world(a,same,.01,allow_boolean=False)
---- a/ci/test_rc9_exact_brep_identity.py
+--- /dev/null
 +++ b/ci/test_rc9_exact_brep_identity.py
 @@ -0,0 +1,12 @@
 +from pathlib import Path
@@ -2924,7 +3323,7 @@
 +        b.write_bytes(b'abd')
 +        assert not identical_serialized_brep(a,b)
 +
---- a/ci/test_rc9_face_coverage_prefilter.py
+--- /dev/null
 +++ b/ci/test_rc9_face_coverage_prefilter.py
 @@ -0,0 +1,25 @@
 +"""Regression for safe necessary face coverage filtering in RC9.
@@ -2952,7 +3351,7 @@
 +assert _perfect_face_owner([[0], [0, 1], [0, 1]]) is None
 +print("PASS: impossible coverage rejected; valid bijections preserved")
 +
---- a/ci/test_rc9_face_matching.py
+--- /dev/null
 +++ b/ci/test_rc9_face_matching.py
 @@ -0,0 +1,34 @@
 +"""Regression: exact face multiset and nonrecursive bijective matching."""
@@ -2989,7 +3388,7 @@
 +assert owner is not None and owner == {1: 0, 0: 1}
 +print("PASS: strict face-orientation multiset, iterative bijection, dense negatives")
 +
---- a/ci/test_rc9_fast_bounds.py
+--- /dev/null
 +++ b/ci/test_rc9_fast_bounds.py
 @@ -0,0 +1,34 @@
 +"""Regression: faster conservative AABBs cannot establish SAME themselves."""
@@ -3026,7 +3425,7 @@
 +from unittest.mock import patch
 +with patch('dsac29.parametric_identity.prove',return_value=False):
 +    assert not reexport_equivalent_world(a,describe(identical,'no-proof','no-proof'),.01,allow_boolean=False)
---- a/ci/test_rc9_interleaved.py
+--- /dev/null
 +++ b/ci/test_rc9_interleaved.py
 @@ -0,0 +1,51 @@
 +"""Synthetic regression: translation is not accepted from a sampled proof."""
@@ -3080,7 +3479,7 @@
 +    print('sample-only rejected',scenario(False))
 +    print('PASS: virtual offset requires full proof')
 +
---- a/ci/test_rc9_isolated_pair_recovery.py
+--- /dev/null
 +++ b/ci/test_rc9_isolated_pair_recovery.py
 @@ -0,0 +1,13 @@
 +"""Keep original fail-closed behavior until an independently verified recovery exists."""
@@ -3096,7 +3495,7 @@
 +assert 'except NativeGeometryFailure:' in b
 +print('PASS: strict native failure propagation remains enabled')
 +
---- a/ci/test_rc9_native_repair_budget.py
+--- /dev/null
 +++ b/ci/test_rc9_native_repair_budget.py
 @@ -0,0 +1,89 @@
 +"""Invalid B-Reps must be proved using independently verified repaired copies."""
@@ -3188,7 +3587,7 @@
 +    assert repairs==[(a,0.005,0.01),(b,0.005,0.01)]
 +    assert proofs[0][3]['_repair_boundary_only'] is False
 +
---- a/ci/test_rc9_optimal_analytic_bounds.py
+--- /dev/null
 +++ b/ci/test_rc9_optimal_analytic_bounds.py
 @@ -0,0 +1,46 @@
 +"""Regression for exact analytic bounds; never use a bound as SAME proof."""
@@ -3237,7 +3636,7 @@
 +    assert reexport_equivalent_world(*parts,.01,allow_boolean=False), "Captured CAD pair must pass full surface/trim proof"
 +print("PASS: analytic bounds prefilter, strict positive proof and changed geometry negative")
 +
---- a/ci/test_rc9_oriented_trim_budget.py
+--- /dev/null
 +++ b/ci/test_rc9_oriented_trim_budget.py
 @@ -0,0 +1,66 @@
 +"""Regression: strict 0.01 mm re-export, tighter repair, no false SAME."""
@@ -3306,7 +3705,7 @@
 +    step._verified_difference_empty = original_boolean
 +print("PASS: half-budget re-export proof, repair strictness, negative geometry")
 +
---- a/ci/test_rc9_original_boundary.py
+--- /dev/null
 +++ b/ci/test_rc9_original_boundary.py
 @@ -0,0 +1,67 @@
 +"""Original boundary identity: real failure replay and negative CAD controls."""
@@ -3376,7 +3775,7 @@
 +    assert not same(a,move(b,.02))
 +    print('PASS: captured Trident A273/B273 native worker and displaced negative control',flush=True)
 +
---- a/ci/test_rc9_original_tolerance_budget.py
+--- /dev/null
 +++ b/ci/test_rc9_original_tolerance_budget.py
 @@ -0,0 +1,38 @@
 +"""Fail-closed source-tolerance budget regressions (no CAD files required)."""
@@ -3417,7 +3816,7 @@
 +else:raise AssertionError('Total tolerance budget >0.01 must be rejected')
 +print('PASS: source tolerance budget and independent oriented boundary proof')
 +
---- a/ci/test_rc9_repair_failfast.py
+--- /dev/null
 +++ b/ci/test_rc9_repair_failfast.py
 @@ -0,0 +1,28 @@
 +"""Regression: failed native repair remains incomplete and exits promptly."""
@@ -3448,7 +3847,7 @@
 +    assert 'match' not in data
 +print('PASS: rejected repair cannot become SAME; isolated worker exits immediately')
 +
---- a/ci/test_rc9_revision_proof_cache.py
+--- /dev/null
 +++ b/ci/test_rc9_revision_proof_cache.py
 @@ -0,0 +1,50 @@
 +"""RC9: only exact native partner pairs under shared translation may reuse proof."""
@@ -3501,7 +3900,92 @@
 +    assert stat['region_proof_reuse']==0,stat
 +    assert stat['boolean_checks']==2,stat
 +
---- a/tests/test_frame_proof_cache.py
+--- /dev/null
++++ b/tests/test_fractional_shift_topology.py
+@@ -0,0 +1,82 @@
++"""Real run 41059887556: fractional STEP shift, collapsed strips and mass drift."""
++from pathlib import Path
++from types import SimpleNamespace
++import json
++import numpy as np
++import pytest
++from OCP.TopAbs import TopAbs_FACE
++from OCP.TopoDS import TopoDS
++from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
++from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
++from OCP.gp import gp_Trsf,gp_Pnt,gp_Vec
++from dsac29 import parametric_identity as proof
++from dsac29.native_guard import _load_brep,guarded_world_reexport,NativeGeometryFailure
++from dsac29.geometry import describe
++from dsac29.alignment import _relocate
++from dsac29.step_reexport_tolerance import reexport_equivalent_world,world_candidate
++
++ROOT=Path(__file__).parent/'fixtures'
++
++def pair(name):
++    return [_load_brep(ROOT/name/(r+'.brep')) for r in ('A','B')]
++
++@pytest.mark.parametrize('index',[29,59,60])
++def test_full_micro_cylinder_patch_and_both_edges_are_bounded(index):
++    a,b=[proof.items(s,TopAbs_FACE,TopoDS.Face_s)[index] for s in pair('collapsed_cylinders')]
++    assert proof.collapsed_cylinder_equal(a,b,.01)
++    assert not proof.collapsed_cylinder_equal(a,b,.001)
++    tr=gp_Trsf();tr.SetTranslation(gp_Vec(0.,.02,0.))
++    moved=TopoDS.Face_s(BRepBuilderAPI_Transform(b,tr,True).Shape())
++    assert not proof.collapsed_cylinder_equal(a,moved,.01)
++    tr=gp_Trsf();tr.SetScale(gp_Pnt(0,0,0),3.)
++    large=[TopoDS.Face_s(BRepBuilderAPI_Transform(f,tr,True).Shape()) for f in (a,b)]
++    assert not proof.collapsed_cylinder_equal(*large,.01)
++
++def test_captured_full_solid_requires_every_other_surface_and_trim(monkeypatch):
++    a,b=[describe(s,r,r) for r,s in zip(('A','B'),pair('collapsed_cylinders'))]
++    assert reexport_equivalent_world(a,b,.01,allow_boolean=False,_original_boundary_only=True)
++    assert not reexport_equivalent_world(a,b,.01,allow_boolean=False,_repair_boundary_only=True)
++    monkeypatch.setattr(proof,'surface_equal',lambda *args:False)
++    assert not reexport_equivalent_world(a,b,.01,allow_boolean=False,_original_boundary_only=True)
++
++def test_fractional_shift_capture_runs_through_the_actual_isolated_worker():
++    a,b=[describe(s,r,r) for r,s in zip(('A','B'),pair('collapsed_cylinders'))]
++    assert guarded_world_reexport(a,b,.01,timeout_s=25)
++    with pytest.raises(NativeGeometryFailure):
++        guarded_world_reexport(a,_relocate(b,np.eye(3),np.array([.02,0.,0.])),.01,timeout_s=25)
++
++def test_mass_profile_drift_is_only_a_candidate_not_a_geometric_verdict(monkeypatch):
++    profile=json.loads((ROOT/'volume_reexport/PROVENANCE.json').read_text())['full_inputs']
++    a,b=[SimpleNamespace(shape=s,volume=profile[r]['volume'],area=profile[r]['area'])
++         for r,s in zip(('A','B'),pair('volume_reexport'))]
++    assert abs(a.volume-b.volume)/a.volume>.02
++    assert world_candidate(a,b,.01)
++    assert reexport_equivalent_world(a,b,.01,allow_boolean=False)
++    monkeypatch.setattr(proof,'prove',lambda *args,**kwargs:False)
++    assert not reexport_equivalent_world(a,b,.01,allow_boolean=False)
++
++def test_real_dimensional_change_is_not_accepted_despite_permissive_mass_filter():
++    a=describe(BRepPrimAPI_MakeBox(10.,10.,10.).Shape(),'A','A')
++    b=describe(BRepPrimAPI_MakeBox(10.05,10.,10.).Shape(),'B','B')
++    assert world_candidate(a,b,.01)
++    assert not reexport_equivalent_world(a,b,.01,allow_boolean=False)
++
++def test_micro_cylinder_interval_cover_retains_extra_point_seams(monkeypatch):
++    a,b=[describe(s,r,r) for r,s in zip(('A','B'),pair('collapsed_cylinders_seams'))]
++    fa,fb=[proof.items(p.shape,TopAbs_FACE,TopoDS.Face_s)[30] for p in (a,b)]
++    assert proof.collapsed_cylinder_equal(fa,fb,.01)
++    assert reexport_equivalent_world(a,b,.01,allow_boolean=False,_original_boundary_only=True)
++    monkeypatch.setattr(proof,'surface_equal',lambda *args:False)
++    assert not reexport_equivalent_world(a,b,.01,allow_boolean=False,_original_boundary_only=True)
++
++def test_point_seams_with_real_curves_cannot_use_cylinder_cover():
++    from OCP.BRep import BRep_Builder,BRep_Tool
++    from OCP.Geom import Geom_Line
++    from OCP.gp import gp_Dir
++    from OCP.TopAbs import TopAbs_EDGE
++    a,b=[proof.items(s,TopAbs_FACE,TopoDS.Face_s)[30] for s in pair('collapsed_cylinders_seams')]
++    for edge in proof.items(b,TopAbs_EDGE,TopoDS.Edge_s):
++        if BRep_Tool.Degenerated_s(edge):
++            BRep_Builder().UpdateEdge(edge,Geom_Line(gp_Pnt(0,0,0),gp_Dir(1,0,0)),1e-7)
++            break
++    assert not proof.collapsed_cylinder_equal(a,b,.01)
+--- /dev/null
 +++ b/tests/test_frame_proof_cache.py
 @@ -0,0 +1,103 @@
 +"""Proof reuse must preserve results, placements and native error semantics."""
@@ -3607,7 +4091,7 @@
 +    b.append(_relocate(b[0],np.eye(3),np.array([30.,0,0])))
 +    cache=FrameProofCache();frame_support(a,b,.01,proof_cache=cache)
 +    with pytest.raises(ValueError):frame_support(a,b[::-1],.01,proof_cache=cache)
---- a/tests/test_output_palette.py
+--- /dev/null
 +++ b/tests/test_output_palette.py
 @@ -0,0 +1,47 @@
 +"""Same colors in STEP, report and HTML; custom choices remain effective."""
@@ -3657,6 +4141,68 @@
 +    assert summary['colors_hex']['CHANGED_ADDED']=='#123456'
 +    scene=json.loads(re.search(r'^const scene=(.*);$',(tmp_path/'PODGLAD_KOLOROW_3D.html').read_text(),re.M).group(1))
 +    assert next(p for p in scene if p['status']=='CHANGED_ADDED')['rgb']==list(colors['CHANGED_ADDED'])
+--- /dev/null
++++ b/tests/test_partial_material_review.py
+@@ -0,0 +1,59 @@
++"""Explicit review never turns incomplete material proof into ADDED/REMOVED."""
++import json
++from pathlib import Path
++import pytest
++from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
++from dsac29 import native_guard,revision_overlap
++from dsac29.compare import Record
++from dsac29.geometry import describe
++from dsac29.report import produce
++from dsac29.brep_safety import validated_copy,UnprovenRepair,topology_tolerances
++
++def inputs():
++    stable=describe(BRepPrimAPI_MakeBox(20.,15.,10.).Shape(),'stable','stable')
++    old=describe(BRepPrimAPI_MakeBox(10.,10.,10.).Shape(),'old','old')
++    new=describe(BRepPrimAPI_MakeBox(11.,10.,10.).Shape(),'new','new')
++    return [stable,old],[stable,new],[Record(0,0,'SAME','proven'),Record(1,None,'REMOVED',''),Record(None,1,'ADDED','')]
++
++def fail(*args,**kwargs):
++    raise native_guard.NativeGeometryFailure('source tolerance budget 0.17 mm > 0.01 mm')
++
++def test_strict_mode_and_declining_review_still_stop(monkeypatch):
++    a,b,records=inputs();monkeypatch.setattr(native_guard,'guarded_common',fail)
++    with pytest.raises(native_guard.NativeGeometryFailure,match='source tolerance'):
++        revision_overlap.merge_material_revisions(a,b,records)
++    with pytest.raises(InterruptedError,match='raportu częściowego'):
++        revision_overlap.merge_material_revisions(a,b,records,review_approval=lambda p:'cancel')
++    assert [r.status for r in records]==['SAME','REMOVED','ADDED']
++
++def test_explicit_review_preserves_all_inputs_and_exports_no_fake_material(tmp_path,monkeypatch):
++    a,b,records=inputs();monkeypatch.setattr(native_guard,'guarded_common',fail)
++    proposals=[]
++    def approve(p):proposals.append(p);return 'review'
++    result,cache,stat=revision_overlap.merge_material_revisions(a,b,records,review_approval=approve)
++    assert len(proposals)==1 and proposals[0]['status']=='material_unverified'
++    assert proposals[0]['unverified_A']==proposals[0]['unverified_B']==1
++    assert [r.status for r in result]==['SAME','UNCERTAIN','UNCERTAIN']
++    assert {r.a_index for r in result if r.a_index is not None}=={0,1}
++    assert {r.b_index for r in result if r.b_index is not None}=={0,1}
++    assert not cache and stat['incomplete']
++    out,error=produce(tmp_path,a,b,result,7850.,generate_step=True,preview3d=True,
++                      revision_style=True,full_bom=False,diff_step=False,
++                      report_context={'revision_overlap':stat})
++    assert not error
++    s=json.loads((out/'PODSUMOWANIE.json').read_text())
++    assert not s['analysis_complete'] and not s['material_analysis_complete']
++    assert s['statuses']=={'SAME':1,'UNCERTAIN':2}
++    assert not s['material_regions'] and not s['material_errors']
++    assert s['step_ready'] and s['preview_3d']['pominiete']==0
++    assert 'Raport częściowy' in (out/'RAPORT.html').read_text()
++    assert (out/'ANALIZA_NIEKOMPLETNA.txt').is_file()
++
++def test_actual_openarm_tolerance_is_reported_without_changing_source():
++    root=Path(__file__).parent/'fixtures/openarm_source_tolerance'
++    shape=native_guard._load_brep(root/'A.brep');before=topology_tolerances(shape)
++    assert before['vertex']>.17 and before['edge']>.07
++    with pytest.raises(UnprovenRepair,match='wierzchołki: 0.170017583 mm') as error:
++        validated_copy(shape,.01)
++    assert 'limit: 0.01 mm' in str(error.value)
++    assert topology_tolerances(shape)==before
 --- a/tests/test_r6_preview.py
 +++ b/tests/test_r6_preview.py
 @@ -40,6 +40,12 @@
@@ -3673,7 +4219,7 @@
 +        assert not w._settings_dirty()
 +    finally:
 +        w._settings_revert();w.close()
---- a/tests/test_registered_centroid_reexport.py
+--- /dev/null
 +++ b/tests/test_registered_centroid_reexport.py
 @@ -0,0 +1,34 @@
 +"""Captured CI pair: integrated centers must not block the full world proof."""
@@ -3710,7 +4256,7 @@
 +    # required, never SAME or a fabricated empty material difference.
 +    with pytest.raises(NativeGeometryFailure):
 +        guarded_world_reexport(a,moved,.01,timeout_s=20)
---- a/tests/test_revision_common_recovery.py
+--- /dev/null
 +++ b/tests/test_revision_common_recovery.py
 @@ -0,0 +1,41 @@
 +"""An unusable optional Common must trigger a full independent region proof."""
@@ -3754,7 +4300,7 @@
 +    monkeypatch.setattr(revision,'calculate',lambda *args,**kwargs:bad)
 +    with pytest.raises(native_guard.NativeGeometryFailure,match='invalid or null topology'):
 +        revision.merge_material_revisions(a,b,records,.01)
---- a/tests/test_shift_user_results.py
+--- /dev/null
 +++ b/tests/test_shift_user_results.py
 @@ -0,0 +1,50 @@
 +"""Actual STEP imports: distinguish frame shifts from individual part moves."""
@@ -3807,7 +4353,7 @@
 +def test_unknown_shift_is_never_described_as_no_displacement():
 +    assert 'Nie udało' in alignment_notice({'status':'unresolved_no_hypothesis'})
 +    assert alignment_notice({'applied':True,'translation_B_to_A_mm':[float('nan'),0,0]})==''
---- a/tests/test_step_boundary_proof.py
+--- /dev/null
 +++ b/tests/test_step_boundary_proof.py
 @@ -0,0 +1,68 @@
 +"""Exact point bookkeeping and whole-patch bounds, not sampled equality."""
@@ -3878,9 +4424,9 @@
 +            BRep_Builder().UpdateEdge(edge,Geom_Line(gp_Pnt(0,0,0),gp_Dir(1,0,0)),1e-7)
 +            break
 +    assert not prove_faces(a,b,allow_original_micro_degenerate=True)
---- a/tests/test_ui_polish.py
+--- /dev/null
 +++ b/tests/test_ui_polish.py
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,194 @@
 +"""Desktop actions and settings tested on real Qt widgets in offscreen mode."""
 +import os
 +from pathlib import Path
@@ -4020,6 +4566,44 @@
 +    assert 'anulowane' in w.compare_summary.text().lower()
 +    assert w.run_compare.isEnabled()
 +
++@pytest.mark.parametrize('choose_review',[False,True])
++def test_partial_report_prompt_requires_explicit_choice(win,tmp_path,choose_review):
++    import json
++    from PySide6.QtCore import QProcess
++    w=win;w.task='compare';w.current_folder=tmp_path;w.active_log=w.log
++    w.process=QProcess(w);w.was_cancelled=False
++    (tmp_path/'_WYROWNANIE_PYTANIE.json').write_text(json.dumps({
++        'token':'material-choice','material_unverified':True,'unverified_A':31,'unverified_B':31,
++        'reason':'source tolerance 0.17 mm > 0.01 mm'}))
++    def click():
++        dlg=QApplication.activeModalWidget()
++        assert dlg.defaultButton().text()=='Przerwij'
++        assert '31 elementów A' in dlg.informativeText()
++        label='Utwórz raport częściowy' if choose_review else 'Przerwij'
++        next(b for b in dlg.buttons() if b.text()==label).click()
++    QTimer.singleShot(0,click);w._coordinate_prompt()
++    reply=json.loads((tmp_path/'_WYROWNANIE_ODPOWIEDZ.json').read_text())
++    assert reply=={'token':'material-choice','decision':'review' if choose_review else 'cancel'}
++    assert w.was_cancelled is (not choose_review)
++    w.process=None
++
++def test_partial_result_is_labeled_and_all_unknown_rows_remain_visible(win,tmp_path):
++    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
++    from dsac29.geometry import describe
++    from dsac29.compare import Record
++    from dsac29.report import produce
++    p=describe(BRepPrimAPI_MakeBox(10.,10.,10.).Shape(),'P','P')
++    records=[Record(0,0,'SAME',''),Record(1,None,'UNCERTAIN','unverified'),Record(None,1,'UNCERTAIN','unverified')]
++    folder,error=produce(tmp_path,[p,p],[p,p],records,7850.,generate_step=True,preview3d=False,
++                         revision_style=True,full_bom=False,diff_step=False,
++                         report_context={'revision_overlap':{'incomplete':True,'reason':'source tolerance'}})
++    assert not error
++    w=win;w.load_result('compare',folder);w._set_compare_result_state(True)
++    assert 'Raport częściowy' in w._success_title.text()
++    assert 'Do sprawdzenia: 2' in w._summary_stats.text()
++    assert (folder/'ANALIZA_NIEKOMPLETNA.txt').exists()
++    w._details_toggle.click();assert w.compare_table.rowCount()==3
++
 +def test_material_selector_and_cache_clear_do_not_touch_sources(win,tmp_path,monkeypatch):
 +    from PySide6.QtWidgets import QInputDialog
 +    from dsac29 import import_cache
@@ -4037,7 +4621,7 @@
 +    monkeypatch.setattr(QMessageBox,'information',lambda *a:QMessageBox.Ok)
 +    w.clear_import_cache_button.click()
 +    assert not cache.exists() and source.read_text()=='source'
---- a/tests/test_wire_roundtrip.py
+--- /dev/null
 +++ b/tests/test_wire_roundtrip.py
 @@ -0,0 +1,66 @@
 +"""Replay an actual failed V2 pair; altered trims must still be rejected."""

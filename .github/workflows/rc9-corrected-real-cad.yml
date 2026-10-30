@@ -121,6 +121,7 @@ jobs:
           - {model: trident, case: revision_shift}
           - {model: v2, case: revision}
           - {model: trident, case: revision}
+          - {model: openarm, case: review}
     env:
       PYTHONUTF8: '1'
       PYTHONUNBUFFERED: '1'
@@ -221,6 +222,8 @@ jobs:
               }
               if (($results | Where-Object { $_ -ne 0 }).Count -gt 0) { $global:LASTEXITCODE = 1 }
               else { $global:LASTEXITCODE = 0 }
+            } elseif ($case -eq 'review') {
+              python dscompare_rc9_manual/ci/real_openarm_review.py dscompare_rc9_manual/dist/DSCompare/DSCompare.exe
             } elseif ($case -eq 'revision') {
               python dscompare_rc9_manual/ci/real_revision_without_shift.py dscompare_rc9_manual/dist/DSCompare/DSCompare.exe $model
             } else {
@@ -262,7 +265,11 @@ jobs:
         if: matrix.case != 'revision_repeat'
         shell: pwsh
         run: |
-          python dscompare_rc9_manual/ci/audit_artifacts.py evidence '${{ matrix.case }}'
+          if ('${{ matrix.case }}' -eq 'review') {
+            python dscompare_rc9_manual/ci/audit_partial_artifacts.py evidence
+          } else {
+            python dscompare_rc9_manual/ci/audit_artifacts.py evidence '${{ matrix.case }}'
+          }
           if ($LASTEXITCODE -ne 0) { throw 'Output artifact audit failed' }
       - name: Save evidence and diagnostics
         if: always()
