@@ -1,0 +1,56 @@
+name: DS Compare Svelte Tauri desktop UI release
+on:
+  pull_request:
+    paths: ['DSCompare_DESKTOP_04_1_ZRODLA.zip', '.github/workflows/desktop-interface.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  desktop:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify complete source and unchanged tested engine
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive DSCompare_DESKTOP_04_1_ZRODLA.zip -DestinationPath . -Force
+          python dscompare_rc9_manual/ci/check_source_bundle.py dscompare_rc9_manual
+          if ($LASTEXITCODE -ne 0) { throw 'Source bundle mismatch' }
+          Invoke-WebRequest 'https://raw.githubusercontent.com/damianink-png/test/6c055339129bf71ebd1d9af585ee88d87253509a/DSCompare_RC9_KOMPLET_ZRODLA.zip' -OutFile tested-engine-source.zip
+          python dscompare_rc9_manual/ci/check_desktop_engine.py dscompare_rc9_manual tested-engine-source.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Engine differs from tested artifact; rebuild/test engine instead' }
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: '41116925092'
+          artifact-ids: '13007565110'
+          merge-multiple: true
+          path: dscompare_rc9_manual/desktop/src-tauri/engine/DSCompare
+      - name: Check and build native desktop installer
+        shell: pwsh
+        working-directory: dscompare_rc9_manual/desktop
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (!(Test-Path src-tauri/engine/DSCompare/DSCompare.exe)) { throw 'Missing pinned engine' }
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
+          npm run check
+          if ($LASTEXITCODE -ne 0) { throw 'Svelte check failed' }
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend tests failed' }
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Rust process tests failed' }
+          npm run tauri build
+          if ($LASTEXITCODE -ne 0) { throw 'Tauri installer build failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-Svelte5-Tauri2-0.4.1-Windows-installer
+          path: dscompare_rc9_manual/desktop/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
