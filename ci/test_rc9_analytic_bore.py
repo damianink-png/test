@@ -4,6 +4,14 @@ The large Trident/Voron real-BRep tests remain authoritative for material
 classification, STEP and HTML; these unit tests never replace them.
 """
 import math
+import sys
+from pathlib import Path
+
+# The workflow invokes this file directly from dscompare_rc9_manual.
+# Python sets sys.path[0] to ci/, so explicitly include the extracted app.
+# Keep all geometry assertions and fail-closed checks unchanged.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'dscompare_rc9_manual'))
+
 import numpy as np
 from OCP.gp import gp_Ax3,gp_Pnt,gp_Dir,gp_Cone
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
