@@ -1,0 +1,63 @@
+name: DS Compare RC9 ZIP build and regression
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rc9-build-from-zip.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dscompare-rc9-zip-build
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract baseline and corrected RC9 source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive -LiteralPath DSCompare_RC9_AUDYT_20261028_ZRODLA.zip -DestinationPath . -Force
+          if (!(Test-Path dscompare_rc9_manual/BUDUJ_WINDOWS.ps1)) { throw 'Missing RC9 Windows build script in baseline archive' }
+          Expand-Archive -LiteralPath DSCompare_RC9_POPRAWIONE_ZRODLA.zip -DestinationPath corrected -Force
+          foreach ($folder in @('dsac29','ci')) {
+            if (!(Test-Path "corrected/$folder")) { throw "Missing corrected folder: $folder" }
+            New-Item -ItemType Directory -Force "dscompare_rc9_manual/$folder" | Out-Null
+            Copy-Item "corrected/$folder/*" "dscompare_rc9_manual/$folder/" -Recurse -Force
+          }
+          if (Test-Path corrected/tests) {
+            New-Item -ItemType Directory -Force tests | Out-Null
+            Copy-Item corrected/tests/* tests/ -Recurse -Force
+          }
+          python -m compileall -q dscompare_rc9_manual/dsac29
+          if ($LASTEXITCODE -ne 0) { throw 'Python syntax validation failed' }
+      - name: Build Windows executable
+        shell: pwsh
+        working-directory: dscompare_rc9_manual
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./BUDUJ_WINDOWS.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
+          if (!(Test-Path dist/DSCompare/DSCompare.exe)) { throw 'Missing DSCompare.exe' }
+      - name: Package full application
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force output | Out-Null
+          Compress-Archive -Path dscompare_rc9_manual/dist/DSCompare/* -DestinationPath output/DSCompare_RC9_Windows.zip -Force
+      - name: Upload EXE ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-RC9-Windows-unverified
+          path: output/DSCompare_RC9_Windows.zip
+          if-no-files-found: error
+          retention-days: 14
