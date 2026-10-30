@@ -1,0 +1,326 @@
+name: DS Compare RC9 corrected ZIP real CAD tests
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rc9-corrected-real-cad.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract corrected RC9 sources used by ZIP build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive DSCompare_RC9_AUDYT_20261028_ZRODLA.zip -DestinationPath . -Force
+          $zip = Join-Path $env:RUNNER_TEMP 'corrected.zip'
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/damianink-png/test/86843ff1e30d39938a9015c85ea455a03eefd35b/DSCompare_RC9_POPRAWIONE_ZRODLA.zip' -OutFile $zip
+          Expand-Archive $zip -DestinationPath corrected -Force
+          foreach ($folder in @('dsac29','ci')) {
+            if (!(Test-Path "corrected/$folder")) { throw "Missing corrected folder: $folder" }
+            New-Item -ItemType Directory -Force "dscompare_rc9_manual/$folder" | Out-Null
+            Copy-Item "corrected/$folder/*" "dscompare_rc9_manual/$folder/" -Recurse -Force
+          }
+          if (Test-Path corrected/tests) {
+            New-Item -ItemType Directory -Force tests | Out-Null
+            Copy-Item corrected/tests/* tests/ -Recurse -Force
+          }
+          python -m compileall -q dscompare_rc9_manual/dsac29
+          if ($LASTEXITCODE -ne 0) { throw 'Syntax validation failed' }
+      - name: Upload patched Python sources for deterministic failure analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-patched-source-snapshot
+          path: |
+            dscompare_rc9_manual/dsac29/*.py
+            dscompare_rc9_manual/ci/*.py
+          if-no-files-found: error
+          retention-days: 14
+      - name: Build current patched RC9 source for each large test
+        shell: pwsh
+        working-directory: dscompare_rc9_manual
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Install failed' }
+          python -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { throw 'pytest installation failed' }
+          python -m pytest -q ../patches/rc9/test_robust_translation.py
+          if ($LASTEXITCODE -ne 0) { throw 'Virtual translation proposal regressions failed' }
+          python ../ci/test_rc9_original_boundary.py
+          if ($LASTEXITCODE -ne 0) { throw 'Original boundary proof regression failed' }
+          python ../ci/test_rc9_interleaved.py
+          if ($LASTEXITCODE -ne 0) { throw 'Interleaved proof regression failed' }
+          python -m pytest -vv -s ../ci/test_rc9_native_repair_budget.py ../ci/test_rc9_common_failfast.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native proof and Common regression failed' }
+          python ../ci/test_rc9_fast_bounds.py
+          if ($LASTEXITCODE -ne 0) { throw 'Fast bounds strict proof regression failed' }
+          python ../ci/test_rc9_oriented_trim_budget.py
+          if ($LASTEXITCODE -ne 0) { throw 'Oriented trim strict proof regression failed' }
+          python ../ci/test_rc9_face_matching.py
+          if ($LASTEXITCODE -ne 0) { throw 'Iterative face matching regression failed' }
+          python ../ci/test_rc9_face_coverage_prefilter.py
+          if ($LASTEXITCODE -ne 0) { throw 'Face coverage regression failed' }
+          python ../ci/test_rc9_conservative_face_bounds.py
+          if ($LASTEXITCODE -ne 0) { throw 'Conservative analytic-face candidate regression failed' }
+          python ../ci/test_rc9_optimal_analytic_bounds.py
+          if ($LASTEXITCODE -ne 0) { throw 'Optimal analytic bounds regression failed' }
+          python -m pytest -q ../ci/test_rc9_revision_proof_cache.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native revision proof reuse regression failed' }
+          python ci/run_manual_regressions.py
+          if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
+          python ../ci/test_rc9_common_immediate_error.py
+          if ($LASTEXITCODE -ne 0) { throw 'Common immediate failure regression failed' }
+          python ../ci/test_rc9_repair_failfast.py
+          if ($LASTEXITCODE -ne 0) { throw 'Rejected repair fail-closed regression failed' }
+          python ../ci/test_rc9_original_tolerance_budget.py
+          if ($LASTEXITCODE -ne 0) { throw 'Original STEP tolerance budget regression failed' }
+          python ../ci/test_rc9_isolated_pair_recovery.py
+          if ($LASTEXITCODE -ne 0) { throw 'Pair-local recovery regression failed' }
+          python -m pytest -q ../ci/test_rc9_exact_brep_identity.py
+          if ($LASTEXITCODE -ne 0) { throw 'Exact BRep identity regression failed' }
+          python ../ci/test_rc9_active_world_capture.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native crash evidence regression failed' }
+          python ../ci/test_rc9_analytic_bore.py
+          if ($LASTEXITCODE -ne 0) { throw 'Analytic bore regression failed' }
+          python ../ci/test_rc9_multi_micro_seams.py
+          if ($LASTEXITCODE -ne 0) { throw 'Bounded point-seam regression failed' }
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          if (-not (Test-Path dist/DSCompare/DSCompare.exe)) { throw 'Missing executable' }
+      - name: Validate packaged Windows EXE and archive roundtrip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dist = 'dscompare_rc9_manual/dist/DSCompare'
+          $exe = Join-Path $dist 'DSCompare.exe'
+          if (-not (Test-Path $exe)) { throw 'Missing packaged EXE' }
+          $dlls = @(Get-ChildItem -Path $dist -Filter '*.dll' -Recurse -File)
+          if ($dlls.Count -eq 0) { throw 'No packaged native DLLs' }
+          $ocp = @(Get-ChildItem -Path $dist -Recurse -File | Where-Object { $_.FullName -match '[\\/]OCP[\\/]' -and $_.Extension -eq '.pyd' })
+          if ($ocp.Count -eq 0) { throw 'Missing OCP Python extension modules' }
+          $zip = Join-Path $env:RUNNER_TEMP 'DSCompare-RC9-verify.zip'
+          Compress-Archive -Path "$dist/*" -DestinationPath $zip -CompressionLevel Optimal -Force
+          Add-Type -AssemblyName System.IO.Compression
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+            foreach ($entry in $archive.Entries) {
+              if ($entry.Length -eq 0 -and $entry.Name -eq '') { continue }
+              $stream = $entry.Open()
+              try {
+                $buffer = New-Object byte[] 1048576
+                while ($stream.Read($buffer, 0, $buffer.Length) -gt 0) {}
+              } finally { $stream.Dispose() }
+            }
+          } finally { $archive.Dispose() }
+          $unpack = Join-Path $env:RUNNER_TEMP 'DSCompare-RC9-roundtrip'
+          Expand-Archive -Path $zip -DestinationPath $unpack -Force
+          $original = @(Get-ChildItem -Path $dist -Recurse -File)
+          foreach ($file in $original) {
+            $relative = $file.FullName.Substring((Resolve-Path $dist).Path.Length).TrimStart('\')
+            $copy = Join-Path $unpack $relative
+            if (-not (Test-Path $copy)) { throw "Archive missing $relative" }
+            if ((Get-FileHash $file.FullName -Algorithm SHA256).Hash -ne (Get-FileHash $copy -Algorithm SHA256).Hash) {
+              throw "Archive corrupted $relative"
+            }
+          }
+          Write-Host "PACKAGING_ROUNDTRIP_PASS files=$($original.Count) ocp_extensions=$($ocp.Count)"
+      - name: Upload exact tested Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-large-current-Windows-x64
+          path: dscompare_rc9_manual/dist/DSCompare/**
+          if-no-files-found: error
+  cad:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - {model: v2, case: shift}
+          - {model: v2, case: revision_shift}
+          - {model: trident, case: shift}
+          - {model: trident, case: revision_shift}
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+      DSCOMPARE_CAPTURE_ACTIVE_BREP: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract corrected RC9 sources used by ZIP build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive DSCompare_RC9_AUDYT_20261028_ZRODLA.zip -DestinationPath . -Force
+          $zip = Join-Path $env:RUNNER_TEMP 'corrected.zip'
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/damianink-png/test/86843ff1e30d39938a9015c85ea455a03eefd35b/DSCompare_RC9_POPRAWIONE_ZRODLA.zip' -OutFile $zip
+          Expand-Archive $zip -DestinationPath corrected -Force
+          foreach ($folder in @('dsac29','ci')) {
+            if (!(Test-Path "corrected/$folder")) { throw "Missing corrected folder: $folder" }
+            New-Item -ItemType Directory -Force "dscompare_rc9_manual/$folder" | Out-Null
+            Copy-Item "corrected/$folder/*" "dscompare_rc9_manual/$folder/" -Recurse -Force
+          }
+          if (Test-Path corrected/tests) {
+            New-Item -ItemType Directory -Force tests | Out-Null
+            Copy-Item corrected/tests/* tests/ -Recurse -Force
+          }
+          python -m compileall -q dscompare_rc9_manual/dsac29
+          if ($LASTEXITCODE -ne 0) { throw 'Syntax validation failed' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: RC9-large-current-Windows-x64
+          path: dscompare_rc9_manual/dist/DSCompare
+      - name: Install CAD test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+          New-Item -ItemType Directory -Path diagnostics -Force | Out-Null
+          python -m pip freeze | Out-File diagnostics/dependencies.txt
+          Get-ComputerInfo | Out-File diagnostics/system.txt
+      - name: Run real CAD assembly scenario
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = (Resolve-Path dscompare_rc9_manual).Path
+          $case = '${{ matrix.case }}'
+          $model = '${{ matrix.model }}'
+          New-Item -ItemType Directory -Path evidence -Force | Out-Null
+          # Enable a user-scoped Windows Error Reporting minidump for native AV.
+          # A failed registry setup does not weaken the CAD assertions.
+          try {
+            $dumpPath = Join-Path (Resolve-Path evidence).Path 'crash-dumps'
+            New-Item -ItemType Directory -Path $dumpPath -Force | Out-Null
+            $werKey = 'HKCU:\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\DSCompare.exe'
+            New-Item -Path $werKey -Force | Out-Null
+            New-ItemProperty -Path $werKey -Name DumpFolder -PropertyType ExpandString -Value $dumpPath -Force | Out-Null
+            New-ItemProperty -Path $werKey -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
+            New-ItemProperty -Path $werKey -Name DumpCount -PropertyType DWord -Value 2 -Force | Out-Null
+          } catch { Write-Warning "WER crash dump setup unavailable: $_" }
+          $ramPath = Join-Path (Resolve-Path evidence).Path 'ram-samples.csv'
+          Set-Content -Path $ramPath -Value 'utc,combined_working_set_bytes,max_process_working_set_bytes,process_count'
+          $sampler = Start-Job -ArgumentList $ramPath -ScriptBlock {
+            param($path)
+            while ($true) {
+              try {
+                $p = @(Get-Process -Name DSCompare -ErrorAction SilentlyContinue)
+                if ($p.Count -gt 0) {
+                  $sum = ($p | Measure-Object -Property WorkingSet64 -Sum).Sum
+                  $max = ($p | Measure-Object -Property WorkingSet64 -Maximum).Maximum
+                  $stamp = [DateTime]::UtcNow.ToString('o')
+                  Add-Content -Path $path -Value "$stamp,$sum,$max,$($p.Count)"
+                }
+              } catch {}
+              Start-Sleep -Seconds 2
+            }
+          }
+          try {
+            if ($case -eq 'revision_repeat') {
+              # Reproduce first-pass success followed by failure on the SAME
+              # runner, same EXE and same workspace, without clearing caches.
+              # Each invocation is a fresh process; in-process UI reuse is
+              # a separate regression scenario.
+              $results = @()
+              foreach ($iteration in 1..2) {
+                Write-Host "REPEAT_BEGIN iteration=$iteration commit=$env:GITHUB_SHA"
+                python dscompare_rc9_manual/ci/real_revision_without_shift.py dscompare_rc9_manual/dist/DSCompare/DSCompare.exe $model
+                $rc = $LASTEXITCODE
+                $results += $rc
+                $iterationDir = "evidence/repeat-$iteration"
+                New-Item -ItemType Directory -Path $iterationDir -Force | Out-Null
+                foreach ($log in @('EXE_STDOUT.log','EXE_STDERR.log')) {
+                  $logPath = "dscompare_rc9_manual/ci/$log"
+                  if (Test-Path $logPath) { Copy-Item $logPath "$iterationDir/$log" -Force }
+                }
+                Get-ChildItem -Path 'dscompare_rc9_manual/ci' -Filter '*.json' -ErrorAction SilentlyContinue |
+                  Copy-Item -Destination $iterationDir -Force -ErrorAction SilentlyContinue
+                Write-Host "REPEAT_END iteration=$iteration exit_code=$rc"
+              }
+              $results | ConvertTo-Json | Set-Content evidence/repeat-exit-codes.json
+              if ($results[0] -ne $results[1]) {
+                Write-Host "::error::NONDETERMINISTIC repeat results: $($results -join ',')"
+              }
+              if (($results | Where-Object { $_ -ne 0 }).Count -gt 0) { $global:LASTEXITCODE = 1 }
+              else { $global:LASTEXITCODE = 0 }
+            } elseif ($case -eq 'revision') {
+              python dscompare_rc9_manual/ci/real_revision_without_shift.py dscompare_rc9_manual/dist/DSCompare/DSCompare.exe $model
+            } else {
+              python dscompare_rc9_manual/ci/large_exe.py dscompare_rc9_manual/dist/DSCompare/DSCompare.exe $model $case
+            }
+            $exitCode = $LASTEXITCODE
+          } finally {
+            Stop-Job $sampler -ErrorAction SilentlyContinue
+            Remove-Job $sampler -Force -ErrorAction SilentlyContinue
+            try {
+              $faultRoot = Join-Path $env:LOCALAPPDATA 'DSCompare\logs'
+              if (Test-Path $faultRoot) {
+                New-Item -ItemType Directory -Path evidence/faultlogs -Force | Out-Null
+                Copy-Item -Path (Join-Path $faultRoot '*') -Destination evidence/faultlogs -Force -ErrorAction SilentlyContinue
+              }
+            } catch { Write-Warning "Could not collect faulthandler logs: $_" }
+          }
+          $samples = @(Import-Csv $ramPath)
+          if ($samples.Count -gt 0) {
+            $peak = ($samples | Measure-Object -Property combined_working_set_bytes -Maximum).Maximum
+            Write-Host "SAMPLED_COMBINED_PEAK_WORKING_SET_BYTES=$peak"
+          }
+          if ($exitCode -ne 0) { throw "Real CAD $model $case failed" }
+      - name: Probe failed Common independently (diagnostic only)
+        if: failure()
+        shell: pwsh
+        run: |
+          # Captured A/B are the exact failed inputs; probes are never a CAD verdict.
+          # Timeouts and invalid OCCT outputs remain explicit in the JSON artifact.
+          python ci/rc9_common_probe.py evidence/comparison/FAILED_BREP/common evidence/common-probe.json 12
+          if ($LASTEXITCODE -ne 0) { Write-Warning 'Common probe failed; original CAD failure remains authoritative' }
+      - name: Summarize failure location and persisted diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          python ci/rc9_failure_summary.py evidence '${{ matrix.model }}' '${{ matrix.case }}'
+          if ($LASTEXITCODE -ne 0) { Write-Warning 'Diagnostic summary failed; preserve original CAD failure' }
+      - name: Audit STEP HTML and BOM artifacts
+        if: matrix.case != 'revision_repeat'
+        shell: pwsh
+        run: |
+          python dscompare_rc9_manual/ci/audit_artifacts.py evidence '${{ matrix.case }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Output artifact audit failed' }
+      - name: Save evidence and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-large-${{ matrix.model }}-${{ matrix.case }}
+          path: |
+            evidence/**
+            diagnostics/**
+            dscompare_rc9_manual/ci/EXE_STDOUT.log
+            dscompare_rc9_manual/ci/EXE_STDERR.log
+            dscompare_rc9_manual/ci/evidence/**
+            dscompare_rc9_manual/ci/models/**/comparison/**
+          if-no-files-found: warn
+          retention-days: 14
