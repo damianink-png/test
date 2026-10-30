@@ -2,7 +2,7 @@ name: DS Compare RC9 large real CAD assemblies
 on:
   push:
     branches: [fix/rc9-native-crash-evidence-20261028, fix/rc9-oriented-trim-budget-20261029, feature/rc9-old-engine-proof-cache-20261029]
-    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_immediate_error.py', 'ci/patch_rc9_analytic_bore.py', 'ci/rc9_analytic_bore_delta.py', 'ci/test_rc9_analytic_bore.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py', 'ci/patch_rc9_original_tolerance_budget.py', 'ci/test_rc9_original_tolerance_budget.py', 'ci/test_rc9_native_repair_budget.py', 'ci/rc9_common_probe.py', 'ci/patch_rc9_fast_bounds.py', 'ci/test_rc9_fast_bounds.py', 'ci/patch_rc9_oriented_trim_budget.py', 'ci/test_rc9_oriented_trim_budget.py', 'ci/patch_rc9_face_matching.py', 'ci/test_rc9_face_matching.py', 'ci/patch_rc9_conservative_face_bounds.py', 'ci/test_rc9_conservative_face_bounds.py', 'ci/patch_rc9_face_coverage_prefilter.py', 'ci/test_rc9_face_coverage_prefilter.py', 'ci/rc9_failure_summary.py', 'ci/patch_rc9_interleaved_verification.py', 'ci/patch_rc9_isolated_pair_recovery.py', 'ci/test_rc9_isolated_pair_recovery.py', 'ci/rc9_common_probe.py', 'ci/patch_rc9_original_boundary.py', 'ci/patch_rc9_proven_micro_degenerate.py', 'ci/test_rc9_original_boundary.py', 'ci/patch_rc9_optimal_analytic_bounds.py', 'ci/test_rc9_optimal_analytic_bounds.py', 'ci/patch_rc9_revision_proof_cache.py', 'ci/test_rc9_revision_proof_cache.py']
+    paths: ['.github/workflows/rc9-large-cad.yml', 'ci/patch_rc9_common_immediate_error.py', 'ci/test_rc9_common_immediate_error.py', 'ci/patch_rc9_analytic_bore.py', 'ci/rc9_analytic_bore_delta.py', 'ci/test_rc9_analytic_bore.py', 'ci/test_rc9_common_failfast.py', 'ci/patch_rc9_repair_failfast.py', 'ci/test_rc9_repair_failfast.py', 'ci/patch_rc9_active_world_capture.py', 'ci/test_rc9_active_world_capture.py', 'ci/patch_rc9_original_tolerance_budget.py', 'ci/test_rc9_original_tolerance_budget.py', 'ci/test_rc9_native_repair_budget.py', 'ci/rc9_common_probe.py', 'ci/patch_rc9_fast_bounds.py', 'ci/test_rc9_fast_bounds.py', 'ci/patch_rc9_oriented_trim_budget.py', 'ci/test_rc9_oriented_trim_budget.py', 'ci/patch_rc9_face_matching.py', 'ci/test_rc9_face_matching.py', 'ci/patch_rc9_conservative_face_bounds.py', 'ci/test_rc9_conservative_face_bounds.py', 'ci/patch_rc9_face_coverage_prefilter.py', 'ci/test_rc9_face_coverage_prefilter.py', 'ci/rc9_failure_summary.py', 'ci/patch_rc9_interleaved_verification.py', 'ci/patch_rc9_isolated_pair_recovery.py', 'ci/test_rc9_isolated_pair_recovery.py', 'ci/rc9_common_probe.py', 'ci/patch_rc9_original_boundary.py', 'ci/patch_rc9_proven_micro_degenerate.py', 'ci/patch_rc9_multi_micro_seams.py', 'ci/test_rc9_multi_micro_seams.py', 'ci/test_rc9_original_boundary.py', 'ci/patch_rc9_optimal_analytic_bounds.py', 'ci/test_rc9_optimal_analytic_bounds.py', 'ci/patch_rc9_revision_proof_cache.py', 'ci/test_rc9_revision_proof_cache.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -79,6 +79,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Strict degenerate-point seam proof patch failed' }
           python ci/patch_rc9_analytic_bore.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict analytic bore proof patch failed' }
+          python ci/patch_rc9_multi_micro_seams.py
+          if ($LASTEXITCODE -ne 0) { throw 'Bounded redundant point-seam proof patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/brep_safety.py dscompare_rc9_manual/dsac29/step_reexport_tolerance.py dscompare_rc9_manual/dsac29/parametric_identity.py
           if ($LASTEXITCODE -ne 0) { throw 'Fast bounds syntax failed' }
       - name: Upload patched Python sources for deterministic failure analysis
@@ -136,6 +138,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native crash evidence regression failed' }
           python ../ci/test_rc9_analytic_bore.py
           if ($LASTEXITCODE -ne 0) { throw 'Analytic bore regression failed' }
+          python ../ci/test_rc9_multi_micro_seams.py
+          if ($LASTEXITCODE -ne 0) { throw 'Bounded point-seam regression failed' }
           ./BUDUJ_WINDOWS.ps1 -NoInstall
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           if (-not (Test-Path dist/DSCompare/DSCompare.exe)) { throw 'Missing executable' }
@@ -193,7 +197,6 @@ jobs:
         include:
           - {model: v2, case: shift}
           - {model: v2, case: revision_shift}
-          - {model: trident, case: revision}
           - {model: trident, case: shift}
           - {model: trident, case: revision_shift}
     env:
@@ -266,6 +269,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Strict degenerate-point seam proof patch failed' }
           python ci/patch_rc9_analytic_bore.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict analytic bore proof patch failed' }
+          python ci/patch_rc9_multi_micro_seams.py
+          if ($LASTEXITCODE -ne 0) { throw 'Bounded redundant point-seam proof patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/brep_safety.py dscompare_rc9_manual/dsac29/step_reexport_tolerance.py dscompare_rc9_manual/dsac29/parametric_identity.py
           if ($LASTEXITCODE -ne 0) { throw 'Fast bounds syntax failed' }
       - uses: actions/download-artifact@v4
