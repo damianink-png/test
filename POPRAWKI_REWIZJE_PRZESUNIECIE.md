@@ -21,6 +21,15 @@ Testy tworzą rzeczywiste pliki STEP, wczytują je ponownie i uruchamiają produ
 
 Przechwycona para z GitHub: przebieg `41035666577`, artefakt `12969261874`, pliki `FAILED_BREP/common`. Nowy test obejmuje ją w złożeniu 601 elementów, z wcześniej potwierdzoną ramą i bez niej. Negatywna kontrola z dodatkowym przesunięciem 0,02 mm nie może uzyskać zgodności. Pochodzenie i SHA-256 znajdują się w `tests/fixtures/centroid_reexport/PROVENANCE.json`.
 
+## Dalsza poprawka po pełnych testach Windows
+
+Przebieg `41059887556`, commit `02cef2021fb6d7d030d4198928718e9894095b66`: wszystkie **311 testów Windows i budowa EXE PASS**. Pełne rewizje **V2 i Trident bez przesunięcia PASS**, łącznie z kontrolą STEP, HTML, BOM i podglądu 3D. Cztery scenariusze z przesunięciem ujawniły dwie dalsze przyczyny; nie oznaczono ich jako zaliczone.
+
+- V2: po ułamkowej translacji STEP zmienił orientację i domenę trzech mikrocylindrów o promieniu 0,005 mm. Dodano ograniczenie odległości **całego analitycznego płata i obu rzeczywistych krawędzi liniowych** w obie strony. Używa pełnego zakresu parametrów, analitycznej otoczki łuku/okręgu i wypukłości odległości między odcinkami. Nie opiera się na próbkach, siatce ani polu powierzchni. Ograniczenie musi zmieścić się w tolerancji po odjęciu marginesu numerycznego; nie zwiększono tolerancji. Naprawy oryginału nadal zachowują odrębny ścisły budżet.
+- Trident: całkowana objętość tej samej geometrii różniła się o ponad 3%, wskutek rekonstruowanych obrysów STEP. Różnica całkowanej objętości nie blokuje już niezależnego kompletnego dowodu powierzchni i obrysów. Pole pozostaje wstępnym filtrem kandydatów, aby zachować wykrywanie przesunięcia w mocno zmienionych rewizjach. Samo przejście filtra nie jest dowodem zgodności; rzeczywista zmiana wymiarów nadal jest odrzucana.
+
+Obie dokładnie przechwycone pary przeszły po poprawce przez rzeczywisty izolowany `native_guard`: V2 1,984 s, Trident 4,866 s. SHA-256 wejść, małe przypadki regresji i pochodzenie zapisano w `tests/fixtures/collapsed_cylinders` oraz `tests/fixtures/volume_reexport`. Pełną parę Trident odtworzono z artefaktu `12982331508`; fixture zawiera jej problematyczną powierzchnię oraz profil całkowanych wartości. V2 pochodzi z artefaktu `12982361169`. Dodano siedem testów dodatnich i ujemnych; pełne scenariusze Windows są ponawiane dla nowego commita.
+
 ## Granice potwierdzenia
 
 Weryfikacja lokalna obejmuje testy regresji, rzeczywisty interfejs Qt/QProcess oraz Chromium/WebGL. Test Windows Job Object jest pomijany na Linux i wykonywany w Windows CI. Wyniki XML i logi są w osobnej paczce dowodów.
