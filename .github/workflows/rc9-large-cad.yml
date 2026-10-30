@@ -77,6 +77,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native revision proof reuse patch failed' }
           python ci/patch_rc9_proven_micro_degenerate.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict degenerate-point seam proof patch failed' }
+          python ci/patch_rc9_analytic_bore.py
+          if ($LASTEXITCODE -ne 0) { throw 'Strict analytic bore proof patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/brep_safety.py dscompare_rc9_manual/dsac29/step_reexport_tolerance.py dscompare_rc9_manual/dsac29/parametric_identity.py
           if ($LASTEXITCODE -ne 0) { throw 'Fast bounds syntax failed' }
       - name: Upload patched Python sources for deterministic failure analysis
@@ -132,6 +134,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Exact BRep identity regression failed' }
           python ../ci/test_rc9_active_world_capture.py
           if ($LASTEXITCODE -ne 0) { throw 'Native crash evidence regression failed' }
+          python ../ci/test_rc9_analytic_bore.py
+          if ($LASTEXITCODE -ne 0) { throw 'Analytic bore regression failed' }
           ./BUDUJ_WINDOWS.ps1 -NoInstall
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           if (-not (Test-Path dist/DSCompare/DSCompare.exe)) { throw 'Missing executable' }
@@ -260,6 +264,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native revision proof reuse patch failed' }
           python ci/patch_rc9_proven_micro_degenerate.py
           if ($LASTEXITCODE -ne 0) { throw 'Strict degenerate-point seam proof patch failed' }
+          python ci/patch_rc9_analytic_bore.py
+          if ($LASTEXITCODE -ne 0) { throw 'Strict analytic bore proof patch failed' }
           python -m py_compile dscompare_rc9_manual/dsac29/brep_safety.py dscompare_rc9_manual/dsac29/step_reexport_tolerance.py dscompare_rc9_manual/dsac29/parametric_identity.py
           if ($LASTEXITCODE -ne 0) { throw 'Fast bounds syntax failed' }
       - uses: actions/download-artifact@v4
