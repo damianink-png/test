@@ -286,3 +286,45 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  desktop:
+    name: Svelte 5 Tauri 2 Windows installer
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Extract verified complete source bundle
+        shell: pwsh
+        run: |
+          Expand-Archive -LiteralPath DSCompare_RC9_KOMPLET_ZRODLA.zip -DestinationPath . -Force
+          python dscompare_rc9_manual/ci/check_source_bundle.py dscompare_rc9_manual
+          if ($LASTEXITCODE -ne 0) { throw 'Source bundle mismatch' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: RC9-large-current-Windows-x64
+          path: dscompare_rc9_manual/desktop/src-tauri/engine/DSCompare
+      - name: Check frontend and process boundary then build complete installer
+        shell: pwsh
+        working-directory: dscompare_rc9_manual/desktop
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
+          npm run check
+          if ($LASTEXITCODE -ne 0) { throw 'Svelte check failed' }
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend tests failed' }
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Rust process tests failed' }
+          npm run tauri build
+          if ($LASTEXITCODE -ne 0) { throw 'Tauri installer build failed' }
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: DSCompare-Svelte5-Tauri2-Windows-installer
+          path: dscompare_rc9_manual/desktop/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

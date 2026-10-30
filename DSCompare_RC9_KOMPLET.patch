@@ -1130,7 +1130,7 @@
  
  def _load_brep(path):
      from OCP.BRepTools import BRepTools
-@@ -63,27 +112,100 @@
+@@ -63,27 +112,101 @@
      if req.get('operation') == 'world_reexport':
          from .step_reexport_tolerance import reexport_equivalent_world
          from .brep_safety import is_valid,validated_copy
@@ -1159,10 +1159,11 @@
 +            if identical_serialized_brep(Path(req['a']),Path(req['b'])):
 +                report('exact_invalid_world_brep_proven')
 +                direct_same=True
-+        if not valid_a and not valid_b and not direct_same:
++        if original_invalid and not direct_same:
 +            # Full original-oriented face AND trimming-wire identity is
-+            # sufficient for SAME even when both imported solids have the
-+            # identical invalid topology. No volume-only or bbox shortcut.
++            # sufficient for SAME even when a STEP re-export changes formal
++            # validity on only one side. Every original surface and trim
++            # must still pass; invalidity alone never establishes equality. No volume-only or bbox shortcut.
 +            # An unproven result falls through to copy-only repair.
 +            report('direct_invalid_pair_oriented_proof')
 +            original_a=describe(a_shape,'A','native-guard/original-A')
@@ -1245,7 +1246,7 @@
      else:
          a = describe(a_shape, 'A', 'native-guard/A')
          b = describe(b_shape, 'B', 'native-guard/B')
-@@ -149,7 +271,7 @@
+@@ -149,7 +272,7 @@
      raise SystemExit(worker(sys.argv[1],sys.argv[2]))
  
  
@@ -1254,7 +1255,7 @@
      """Boolean Common in an isolated native process; return validated B-Rep shape.
  
      Any failed or slow native operation aborts the comparison. Returning zero
-@@ -178,7 +300,15 @@
+@@ -178,7 +301,15 @@
          if proc.returncode!=0 or not reply.exists() or not common.exists():
              _preserve_failure(root,'common')
              trace.mark('native_common','CRASH',exit_code=proc.returncode)
@@ -1271,7 +1272,7 @@
          try:
              data=json.loads(reply.read_text(encoding='utf-8'))
              if data.get('ok') is not True or not isinstance(data.get('common_volume'),(int,float)):
-@@ -196,7 +326,7 @@
+@@ -196,7 +327,7 @@
          return result
  
  
@@ -1280,7 +1281,7 @@
                             allow_boolean=False, process_args=None):
      """Subprocess-only B-Rep world equivalence proof for large STEP assemblies.
  
-@@ -221,6 +351,8 @@
+@@ -221,6 +352,8 @@
              'tolerance': float(tolerance),
              'allow_boolean': bool(allow_boolean),
          }), encoding='utf-8')
@@ -1289,7 +1290,7 @@
          argv = process_args or (
              [sys.executable, '--native-brep-compare'] if getattr(sys, 'frozen', False)
              else [sys.executable, '-m', 'dsac29.native_guard'])
-@@ -237,6 +369,7 @@
+@@ -237,6 +370,7 @@
                      timeout=timeout_s, stdout=subprocess.DEVNULL,
                      stderr=subprocess.PIPE, check=False)
          except subprocess.TimeoutExpired as exc:
@@ -1297,7 +1298,7 @@
              trace.mark('native_world', 'TIMEOUT',
                         seconds=round(time.monotonic()-started, 2))
              raise NativeGeometryFailure(
-@@ -248,9 +381,19 @@
+@@ -248,9 +382,19 @@
              detail=phase.read_text(encoding='utf-8') if phase.exists() else 'start procesu'
              raise NativeGeometryFailure(f'{exc}; etap: {detail}; A: {a.path}; B: {b.path}') from exc
          if proc.returncode != 0 or not reply.exists():
@@ -2625,9 +2626,9 @@
 +files=[]
 +for path in root.iterdir():
 +    if path.is_file() and path.suffix.lower() in ('.py','.ps1','.cmd','.txt','.md','.json') and path.name!='SOURCE_MANIFEST.json':files.append(path)
-+for name in ('dsac29','ci','tests','samples','assets','benchmarks','bridge','scripts','docs'):
++for name in ('dsac29','ci','tests','samples','assets','benchmarks','bridge','scripts','docs','desktop'):
 +    for path in (root/name).rglob('*'):
-+        if path.is_file() and not any(x in path.parts for x in ('__pycache__','.pytest_cache')) and path.suffix.lower() not in ('.pyc','.pyo'):
++        if path.is_file() and not any(x in path.parts for x in ('__pycache__','.pytest_cache','node_modules','target','dist','engine')) and path.suffix.lower() not in ('.pyc','.pyo','.log'):
 +            files.append(path)
 +workflow=root/'.github/workflows/rc9-corrected-real-cad.yml';files.append(workflow)
 +data={str(f.relative_to(root)).replace('\\','/'):f.read_bytes() for f in sorted(files)}
@@ -3061,7 +3062,7 @@
 +       'test_ui_polish.py','test_output_palette.py','test_frame_proof_cache.py','test_step_boundary_proof.py',
 +       'test_revision_common_recovery.py','test_shift_user_results.py',
 +       'test_registered_centroid_reexport.py','test_fractional_shift_topology.py',
-+       'test_partial_material_review.py']
++       'test_partial_material_review.py','test_mixed_validity_reexport.py']
  for names,report in [(small,'integration.xml'),(TESTUJ.tests,'full-regressions.xml')]:
   try:
    run=subprocess.run([sys.executable,'-m','pytest','-vv','--junitxml='+report,*[str(root/'tests'/n) for n in names]],cwd=root,timeout=1800)
@@ -3497,8 +3498,8 @@
 +
 --- /dev/null
 +++ b/ci/test_rc9_native_repair_budget.py
-@@ -0,0 +1,89 @@
-+"""Invalid B-Reps must be proved using independently verified repaired copies."""
+@@ -0,0 +1,93 @@
++"""Invalid B-Reps require full original boundaries or independently verified copies."""
 +import json
 +from types import SimpleNamespace
 +from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
@@ -3561,7 +3562,7 @@
 +    assert proofs[0][3]['_original_boundary_only'] is True
 +
 +
-+def test_one_invalid_shape_never_uses_direct_fastpath(tmp_path,monkeypatch):
++def test_unproved_mixed_validity_still_requires_conserved_copy_repair(tmp_path,monkeypatch):
 +    a=BRepPrimAPI_MakeBox(10.,10.,10.).Shape()
 +    b=BRepPrimAPI_MakeBox(10.,10.,10.).Shape()
 +    inputs=iter((a,b))
@@ -3583,9 +3584,13 @@
 +    req.write_text(json.dumps({'operation':'world_reexport','a':'A.brep','b':'B.brep','tolerance':0.01}))
 +    assert native_guard.worker(str(req),str(out))==0
 +    assert json.loads(out.read_text())=={'ok':True,'match':False}
-+    assert len(proofs)==1 and proofs[0][2]==0.005
++    assert len(proofs)==2
++    assert proofs[0][0] is a and proofs[0][1] is b and proofs[0][2]==0.01
++    assert proofs[0][3]['_original_boundary_only'] is True
++    assert proofs[0][3]['allow_boolean'] is False
++    assert proofs[1][2]==0.005
 +    assert repairs==[(a,0.005,0.01),(b,0.005,0.01)]
-+    assert proofs[0][3]['_repair_boundary_only'] is False
++    assert proofs[1][3]['_repair_boundary_only'] is False
 +
 --- /dev/null
 +++ b/ci/test_rc9_optimal_analytic_bounds.py
@@ -3818,7 +3823,7 @@
 +
 --- /dev/null
 +++ b/ci/test_rc9_repair_failfast.py
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,30 @@
 +"""Regression: failed native repair remains incomplete and exits promptly."""
 +import json,sys,tempfile
 +from pathlib import Path
@@ -3826,7 +3831,7 @@
 +if not (_source_root/'dsac29').is_dir():_source_root=_source_root/'dscompare_rc9_manual'
 +from unittest.mock import patch
 +sys.path.insert(0,str(_source_root))
-+from dsac29 import native_guard,brep_safety
++from dsac29 import native_guard,brep_safety,step_reexport_tolerance,geometry
 +class ExitRequested(BaseException):
 +    def __init__(self,code):self.code=code
 +with tempfile.TemporaryDirectory(prefix='rc9_unproven_repair_') as td:
@@ -3835,6 +3840,8 @@
 +        'b':str(root/'B.brep'),'tolerance':0.01,'allow_boolean':False}),encoding='utf8')
 +    with patch.object(native_guard,'_load_brep',side_effect=[object(),object()]), \
 +         patch.object(brep_safety,'is_valid',side_effect=[False,True]), \
++         patch.object(geometry,'describe',return_value=object()), \
++         patch.object(step_reexport_tolerance,'reexport_equivalent_world',return_value=False), \
 +         patch.object(brep_safety,'validated_copy',side_effect=brep_safety.UnprovenRepair('Repair increases stored vertex tolerance')), \
 +         patch.object(native_guard.os,'_exit',side_effect=lambda code: (_ for _ in ()).throw(ExitRequested(code))):
 +        try:native_guard.worker(str(request),str(reply))
@@ -3901,6 +3908,149 @@
 +    assert stat['boolean_checks']==2,stat
 +
 --- /dev/null
++++ b/tests/fixtures/centroid_reexport/PROVENANCE.json
+@@ -0,0 +1,11 @@
++{
++  "repository": "damianink-png/test",
++  "workflow_run": 41035666577,
++  "artifact_id": 12969261874,
++  "source_pair": "evidence/comparison/FAILED_BREP/common",
++  "description": "37-face original B-Reps, both with the same unorientable face. Integrated centers differ by 0.199449 mm, but full original oriented surface/trim proof passes at 0.01 mm. Raw files are unmodified.",
++  "sha256": {
++    "A": "2a97bb08a158a2eee143728f51c174ae198ad0cbae3c2c3a421c3fb84c6ec076",
++    "B": "f4e7b42fdc48e28565e49144e33dbc1ca37e3271256d15080dbeb80e73ff9c5e"
++  }
++}
+--- /dev/null
++++ b/tests/fixtures/collapsed_cylinders/PROVENANCE.json
+@@ -0,0 +1,10 @@
++{
++  "repository": "damianink-png/test",
++  "workflow_run": 41059887556,
++  "artifact_id": 12982361169,
++  "source_pair": "FAILED_BREP/world",
++  "sha256": {
++    "A": "0e7066105a64568927fabb6dfce2c3e174481767f4523740fbeb3b1fdc3ab519",
++    "B": "a83a47f9a5c341949401fe5d4ca74cf394e8b65f4142b521406ef02609d57359"
++  }
++}
+--- /dev/null
++++ b/tests/fixtures/collapsed_cylinders_seams/PROVENANCE.json
+@@ -0,0 +1,11 @@
++{
++  "repository": "damianink-png/test",
++  "workflow_run": 41084199652,
++  "artifact_id": 12993476235,
++  "source_pair": "FAILED_BREP/active_world/slot1",
++  "capture_sequence": 1577,
++  "sha256": {
++    "A": "bc8b06bb39edb09354a73778abc09db2a6b61aa4ac9e59b5e55e025fb27412b9",
++    "B": "a5e2982d91d557cdc43c456b688e45012ca8191994c2fd4b6256a88de25209ef"
++  }
++}
+--- /dev/null
++++ b/tests/fixtures/mixed_validity_molex/PROVENANCE.json
+@@ -0,0 +1,9 @@
++{
++  "source": "GitHub Actions 41099940185 artifact 13001380925",
++  "case": "V2 shifted Molex 0471510001, active world sequence1577 slot1",
++  "operation": "original 270-face pair; A valid, B invalid; full original surface/wire proof at 0.01 mm",
++  "sha256": {
++    "B.brep": "93f12874142b69273e82a7ee4c222b0d69ad38ec545d7f8894585b592948126c",
++    "A.brep": "10628f34ec79e0035b31cba6e6c18457757fbc0da42403ff1b623a78cbaf97fc"
++  }
++}--- /dev/null
++++ b/tests/fixtures/openarm_source_tolerance/PROVENANCE.json
+@@ -0,0 +1,13 @@
++{
++  "source_repository": "https://github.com/Utsav92/openarm-3d-cad-assembly",
++  "source_commit": "0c0852bd76ee7026f97875d6eac789d189a0012a",
++  "source_path": "STEP (assembly)/OpenArm_v1.0_follower.step",
++  "source_git_blob": "3f1711aee491158f408c8bb0f0a680be21ab5c03",
++  "source_sha256": "9cac80902edc3f5ebb9fd7050d687559a1a99324202add756c3f1278fcbdd441",
++  "original_project": "https://github.com/enactic/openarm_hardware",
++  "license": "CERN-OHL-S-2.0; see LICENSE_OpenArm.txt",
++  "part_index_zero_based": 133,
++  "face_index_zero_based": 18,
++  "description": "Unmodified face extracted from the exact OpenArm input supplied by the user and verified byte-identical to the public source. This is CAD test data, not program code.",
++  "fixture_sha256": "e14384ff55d102223d6bd59fb48b271ca93d14d4551b3d6630c95d5bd7f451de"
++}
+--- /dev/null
++++ b/tests/fixtures/orientation_strip/PROVENANCE.json
+@@ -0,0 +1,15 @@
++{
++  "repository": "damianink-png/test",
++  "workflow_run": 41016958245,
++  "artifact_id": 12960584413,
++  "source_pair": "evidence/comparison/FAILED_BREP/common",
++  "face_indices_zero_based": [
++    617,
++    10
++  ],
++  "description": "Individual OCCT faces extracted without repairing geometry. Positive proof and negative curve controls in test_step_boundary_proof.py.",
++  "sha256": {
++    "A": "a445151c74990203a162397b70cad12359ce5d095ab3ea3d41c876e34ea67515",
++    "B": "ff8d9e9e8bb296b327fb0fa0e126aee3b79eb17d44033d5d9e0295f9f4b1c833"
++  }
++}--- /dev/null
++++ b/tests/fixtures/point_seams/PROVENANCE.json
+@@ -0,0 +1,15 @@
++{
++  "repository": "damianink-png/test",
++  "workflow_run": 41016958245,
++  "artifact_id": 12960584413,
++  "source_pair": "evidence/comparison/FAILED_BREP/common",
++  "face_indices_zero_based": [
++    310,
++    609
++  ],
++  "description": "Individual OCCT faces extracted without repairing geometry. Positive proof and negative curve controls in test_step_boundary_proof.py.",
++  "sha256": {
++    "A": "2210f255c378821f13ebe2e1ec01237fd53d29275ea1e73e645ce402af5166d8",
++    "B": "aabb67c7b9a6219949452b4f0633d6851aa254df9fe7f3b9734cea82060cee70"
++  }
++}--- /dev/null
++++ b/tests/fixtures/solid_bounds_roundtrip/PROVENANCE.json
+@@ -0,0 +1,8 @@
++{
++  "repository": "damianink-png/test",
++  "run_id": 41002751992,
++  "artifact_id": 12954858313,
++  "pair": "world_negative_07",
++  "tolerance_mm": 0.01,
++  "purpose": "Original B-Rep inputs from a failed STEP re-export comparison; no geometry modifications"
++}--- /dev/null
++++ b/tests/fixtures/volume_reexport/PROVENANCE.json
+@@ -0,0 +1,18 @@
++{
++  "repository": "damianink-png/test",
++  "workflow_run": 41059887556,
++  "artifact_id": 12982331508,
++  "face_index_zero_based": 15,
++  "full_inputs": {
++    "A": {
++      "volume": 113.74819381698849,
++      "area": 462.44259310512723,
++      "sha256": "2937cc7f3fb5262698b3b5d7cff372eea869add26b2490cd2708438da60cd436"
++    },
++    "B": {
++      "volume": 110.35481123408468,
++      "area": 462.4269233474444,
++      "sha256": "9f03dff5d2bfd1b2265aa832508a38462cf791e88efcc12d2fa25637083f87e9"
++    }
++  }
++}
+--- /dev/null
++++ b/tests/fixtures/wire_roundtrip/PROVENANCE.json
+@@ -0,0 +1,8 @@
++{
++  "repository": "damianink-png/test",
++  "run_id": 41002751992,
++  "artifact_id": 12955437108,
++  "pair": "world_negative_05",
++  "tolerance_mm": 0.01,
++  "purpose": "Original B-Rep inputs from a failed STEP re-export comparison; no geometry modifications"
++}--- /dev/null
 +++ b/tests/test_fractional_shift_topology.py
 @@ -0,0 +1,82 @@
 +"""Real run 41059887556: fractional STEP shift, collapsed strips and mass drift."""
@@ -4091,6 +4241,31 @@
 +    b.append(_relocate(b[0],np.eye(3),np.array([30.,0,0])))
 +    cache=FrameProofCache();frame_support(a,b,.01,proof_cache=cache)
 +    with pytest.raises(ValueError):frame_support(a,b[::-1],.01,proof_cache=cache)
+--- /dev/null
++++ b/tests/test_mixed_validity_reexport.py
+@@ -0,0 +1,22 @@
++"""A valid/invalid pair must receive the same full original-boundary proof."""
++from pathlib import Path
++from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
++from OCP.gp import gp_Trsf,gp_Vec
++from dsac29.native_guard import _load_brep,guarded_world_reexport
++from dsac29.brep_safety import is_valid
++from dsac29.geometry import describe
++from dsac29.step_reexport_tolerance import reexport_equivalent_world
++
++ROOT=Path(__file__).parent/'fixtures/mixed_validity_molex'
++def test_captured_mixed_validity_pair_passes_full_original_boundary_guard():
++    a,b=[_load_brep(ROOT/(r+'.brep')) for r in ('A','B')]
++    assert is_valid(a) and not is_valid(b)
++    left,right=describe(a,'A','molex-A'),describe(b,'B','molex-B')
++    assert guarded_world_reexport(left,right,.01,timeout_s=30)
++    assert is_valid(a) and not is_valid(b)  # original topology unchanged
++
++def test_real_displacement_is_not_accepted_by_original_boundary_proof():
++    a,b=[_load_brep(ROOT/(r+'.brep')) for r in ('A','B')]
++    shift=gp_Trsf();shift.SetTranslation(gp_Vec(.03,0.,0.))
++    b=BRepBuilderAPI_Transform(b,shift,True).Shape()
++    assert not reexport_equivalent_world(describe(a,'A','A'),describe(b,'B','B'),.01,allow_boolean=False,_original_boundary_only=True)
 --- /dev/null
 +++ b/tests/test_output_palette.py
 @@ -0,0 +1,47 @@
@@ -4690,3 +4865,403 @@
 +    tr = gp_Trsf(); tr.SetTranslation(gp_Vec(.02, 0, 0))
 +    b = describe(BRepBuilderAPI_Transform(b.shape, tr, True).Shape(), 'B', 'B')
 +    assert not reexport_equivalent_world(a, b, .01, allow_boolean=False)
+--- /dev/null
++++ b/desktop/README.md
+@@ -0,0 +1,36 @@
++# DS Compare Desktop 04 — Svelte 5 / Tauri 2
++
++Nowy interfejs desktopowy. Silnik geometrii pozostaje oddzielnym procesem DSCompare/OCCT; nie jest zastępowany heurystykami przeglądarki. Instalator Windows zawiera cały pakiet silnika, nie tylko EXE.
++
++Funkcje: porównanie STEP, postęp i anulowanie całego drzewa procesów, decyzje wyrównania i raportu częściowego, filtrowana tabela, raport/3D w izolowanej ramce, eksporty STEP/CSV/BOM, otwieranie wcześniejszych wyników, masy wielu plików, diagnostyka, zapis ustawień, dokładne pola liczbowe, paleta i jasny/ciemny motyw. Raport niepełny pozostaje niepełny w nowym GUI.
++
++## Uruchomienie i budowanie
++
++Node 22+, Rust stable oraz systemowe wymagania Tauri 2. Windows: Visual Studio Build Tools (C++), WebView2. Linux: GTK3/WebKitGTK 4.1 development libraries. Interfejs WWW jest wyłącznie podglądem; nie udaje działających obliczeń CAD.
++
++```
++npm ci
++npm run check
++npm test
++npm run dev
++```
++
++Natywny tryb deweloperski (zmienna obsługiwana wyłącznie w debug):
++
++```
++# DSCOMPARE_ENGINE_COMMAND = JSON array, e.g.
++# ["C:/Python311/python.exe","C:/DSCompare/DSCompareV3.py"]
++npm run tauri dev
++```
++
++Produkcja: skopiuj komplet zbudowanego DSCompare/ do src-tauri/engine/DSCompare/, następnie `npm run tauri build`. Workflow Windows wykonuje te kroki automatycznie. Samo `npm run build` sprawdza frontend i nie potwierdza działania natywnej aplikacji.
++
++`cargo test --manifest-path src-tauri/Cargo.toml --lib` sprawdza granicę procesu bez zależności GUI. Kompilacja `desktop` wymaga pełnych zależności Tauri i weryfikacji na docelowym Windows.
++
++Otwieranie artefaktów ograniczono do zarejestrowanych folderów i nazw wyników; interfejs WWW nie dostaje ogólnej komendy powłoki. Anulowanie nie usuwa wcześniejszych raportów. Dzienniki stdout/stderr silnika są zapisywane w folderze każdej operacji.
++
++## Projekty referencyjne
++
++CADdiff (Apache-2.0) uruchomiono bez modyfikowania kodu na OpenArm: 0 kandydatów geometrii, 177 różnic nazw BOM. Kontrola negatywna wykazała fałszywe `identical` dla otworu okrągłego i kwadratowego o równej objętości, rzeczywista różnica 22.756684 mm³. Nie przejęto silnika ani tej reguły.
++
++Kwantflow (GPL-3.0-only): przejrzano organizację Svelte/Tauri i podglądu CAD. Nie skopiowano kodu ani pakietów GPL do tej warstwy; interfejs napisano niezależnie. occt-import-js używany do podglądu nie stanowi silnika porównywania brył. FreeCAD posłużył do niezależnego uruchomienia CADdiff i kontrolnych operacji geometrycznych.
+--- /dev/null
++++ b/desktop/index.html
+@@ -0,0 +1 @@
++<!doctype html><html lang="pl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="color-scheme" content="dark light"><title>DS Compare</title></head><body><div id="app"></div><script type="module" src="/src/main.ts"></script></body></html>
+--- /dev/null
++++ b/desktop/package.json
+@@ -0,0 +1 @@
++{"name":"dscompare-desktop","version":"0.4.0","private":true,"type":"module","scripts":{"dev":"vite --host 127.0.0.1","build":"vite build","check":"svelte-check --tsconfig ./tsconfig.json","test":"vitest run","tauri":"tauri"},"dependencies":{"@tauri-apps/api":"^2.8.0","@tauri-apps/plugin-dialog":"^2.4.0","svelte":"^5.0.0","lucide-svelte":"^0.468.0"},"devDependencies":{"@sveltejs/vite-plugin-svelte":"^6.0.0","@tauri-apps/cli":"^2.8.0","@types/node":"^24.0.0","svelte-check":"^4.0.0","typescript":"^5.9.0","vite":"^7.0.0","vitest":"^3.2.0"}}
+--- /dev/null
++++ b/desktop/src/App.svelte
+@@ -0,0 +1,61 @@
++<script lang="ts">
++ import {onMount} from 'svelte';
++ import {GitCompareArrows,Layers3,Box,Scale,Settings2,Activity,FolderOpen,ArrowRightLeft,Play,Square,Check,AlertTriangle,Search,Sun,Moon,ExternalLink,Download,ChevronRight,RotateCcw,FileBox,X} from 'lucide-svelte';
++ import Numeric from './Numeric.svelte';
++ import {defaults,validate,visibleRows,statuses,fileName,type Settings,type Job,type Summary,type Row} from './model';
++ import {call,pick,start,asset,native} from './api';
++ let tab=$state('compare'),a=$state(''),b=$state(''),massFiles=$state<string[]>([]);
++ let settings=$state<Settings>(structuredClone(defaults));let saved=$state<Settings>(structuredClone(defaults));
++ let job=$state<Job|null>(null),summary=$state<Summary|null>(null),resultFolder=$state(''),auxFolder=$state(''),notice=$state(''),error=$state(''),busy=$state(false),engineReady=$state(false),polling=false;
++ let query=$state(''),filter=$state(''),page=$state(0),selected=$state<number|null>(null),frame=$state(''),frameKind=$state(''),logsOpen=$state(false),elapsed=$state(0),startedAt=0;
++ const rows=$derived(visibleRows(summary?.records||[],query,filter));const pageRows=$derived(rows.slice(page*100,page*100+100));
++ const running=$derived(job?.running===true);const partial=$derived(summary?.analysis_complete===false);
++ const nav=[{id:'compare',label:'Porównanie',icon:GitCompareArrows},{id:'results',label:'Wyniki',icon:Layers3},{id:'preview',label:'Podgląd 3D',icon:Box},{id:'mass',label:'Masa części',icon:Scale}];
++ const controls=[{id:'step',label:'Kolorowy model STEP'},{id:'preview',label:'Interaktywny podgląd 3D'},{id:'bom',label:'Grupowane zestawienie BOM'},{id:'bomCsv',label:'BOM także jako CSV'},{id:'align',label:'Sprawdzaj przesunięcie całego złożenia'}] as const;
++ function focusDialog(node:HTMLElement){const previous=document.activeElement as HTMLElement|null;queueMicrotask(()=>node.querySelector<HTMLButtonElement>('button')?.focus());const onKey=(e:KeyboardEvent)=>{if(e.key==='Tab'){const buttons=Array.from(node.querySelectorAll<HTMLElement>('button,summary,[tabindex]')).filter(x=>!(x as HTMLButtonElement).disabled);const first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus()}}};node.addEventListener('keydown',onKey);return{destroy(){node.removeEventListener('keydown',onKey);previous?.focus()}}}
++ function fail(e:unknown){error=String(e);}
++ async function choose(role:'a'|'b'|'mass'|'output'){try{const p=await pick(role==='output',role==='mass');if(!p.length)return;if(role==='a')a=p[0];else if(role==='b')b=p[0];else if(role==='mass')massFiles=[...new Set([...massFiles,...p])];else settings.output=p[0];}catch(e){fail(e)}}
++ async function run(mode='compare'){error='';notice='';const problem=validate(settings);if(problem){error=problem;return;}busy=true;try{job=await start(mode,mode==='compare'?[a,b]:mode==='mass'?massFiles:[],structuredClone($state.snapshot(settings)));startedAt=Date.now();elapsed=0;}catch(e){fail(e)}finally{busy=false}}
++ async function poll(){if(polling||!native)return;polling=true;try{const next=await call<Job|null>('poll_job');if(next){const finished=job?.running&&!next.running;job=next;if(next.running&&startedAt)elapsed=Math.floor((Date.now()-startedAt)/1000);if(finished){if(next.error)error=next.error;else if(next.cancelled)notice='Analiza anulowana. Poprzednie wyniki pozostają dostępne.';else if(next.summary){summary=next.summary;resultFolder=next.folder;selected=null;page=0;frame='';tab='results';}else{notice='Operacja zakończona.';auxFolder=next.folder;if(next.result?.podsumowanie)notice=JSON.stringify(next.result.podsumowanie);}}}}catch(e){fail(e)}finally{polling=false}}
++ async function cancel(){try{await call('cancel_job');await poll();}catch(e){fail(e)}}
++ async function answer(decision:string){if(!job?.question)return;busy=true;try{await call('answer_question',{token:job.question.token,decision});job={...job,question:null};}catch(e){fail(e)}finally{busy=false}}
++ async function save(){const problem=validate(settings);if(problem){error=problem;return;}try{await call('save_settings',{settings:structuredClone($state.snapshot(settings))});saved=structuredClone($state.snapshot(settings));notice='Ustawienia zapisane.';}catch(e){fail(e)}}
++ async function openResult(){try{const p=await pick(true);if(!p.length)return;const s=await call<Summary>('load_result',{folder:p[0]});summary=s;resultFolder=p[0];tab='results';frame='';page=0;}catch(e){fail(e)}}
++ async function output(name:string){try{await call('open_artifact',{folder:name==='RAPORT_MASY.html'?auxFolder:resultFolder||job?.folder,name});}catch(e){fail(e)}}
++ async function show(kind='preview'){if(!resultFolder){error='Najpierw wykonaj analizę lub otwórz folder wyników.';return;}try{const p=await call<string>('artifact_path',{folder:resultFolder,name:kind==='preview'?'PODGLAD_KOLOROW_3D.html':'RAPORT.html'});frame=asset(p);frameKind=kind;tab=kind==='preview'?'preview':'results';}catch(e){fail(e)}}
++ function rowTitle(r:Row){return `${r.a_index===null?'—':`A[${r.a_index}]`} → ${r.b_index===null?'—':`B[${r.b_index}]`}`;}
++ function theme(){settings.theme=settings.theme==='dark'?'light':'dark';}
++ onMount(()=>{let alive=true;(async()=>{if(native){try{const [s,env]=await Promise.all([call<Settings|null>('load_settings'),call<{engine_ready:boolean}>('environment')]);if(alive){if(s){settings={...structuredClone(defaults),...s,palette:{...defaults.palette,...s.palette}};saved=structuredClone($state.snapshot(settings));}engineReady=env.engine_ready;}}catch(e){fail(e)}}})();const timer=setInterval(poll,750);return()=>{alive=false;clearInterval(timer)}});
++</script>
++<svelte:head><title>DS Compare · Porównanie rewizji CAD</title></svelte:head>
++<div class="app" data-theme={settings.theme}>
++ <aside class="rail"><div class="brand"><span class="brand-mark"><Layers3 size={24}/></span><div>DS Compare<small>CAD REVISION WORKSPACE</small></div></div><div class="rail-caption">PRZESTRZEŃ ROBOCZA</div><nav>{#each nav as n}<button class:active={tab===n.id} onclick={()=>{tab=n.id;if(n.id==='preview'&&frameKind!=='preview')show()}}><n.icon size={19}/>{n.label}{#if n.id==='results'&&summary}<span class="nav-count">{summary.records?.length||0}</span>{/if}</button>{/each}</nav><div class="rail-bottom"><button class:active={tab==='diagnostic'} onclick={()=>tab='diagnostic'}><Activity size={18}/>Diagnostyka</button><button class:active={tab==='settings'} onclick={()=>tab='settings'}><Settings2 size={18}/>Ustawienia</button><div class="engine-state"><i class:ready={engineReady}></i><span>{native?engineReady?'Silnik CAD gotowy':'Brak pakietu silnika':'Podgląd interfejsu WWW'}</span></div><small>RC9 · Desktop 04</small></div></aside>
++ <div class="workspace"><header><div class="breadcrumb">Przestrzeń robocza<ChevronRight size={14}/><strong>{nav.find(n=>n.id===tab)?.label|| (tab==='settings'?'Ustawienia':'Diagnostyka')}</strong></div><div class="header-actions"><button class="subtle" onclick={openResult}><FolderOpen size={16}/>Otwórz wyniki</button><button class="icon-button" aria-label="Zmień motyw" onclick={theme}>{#if settings.theme==='dark'}<Sun size={18}/>{:else}<Moon size={18}/>{/if}</button></div></header>
++ <main>
++ {#if !native}<div class="banner info">Podgląd nowego interfejsu. Analiza CAD i wybór plików działają w aplikacji desktopowej Tauri.</div>{/if}
++ {#if error}<div class="banner danger" role="alert"><AlertTriangle size={18}/><div><strong>Operacja nie została ukończona</strong><p>{error}</p></div><button aria-label="Zamknij komunikat" onclick={()=>error=''}><X size={16}/></button></div>{/if}
++ {#if notice}<div class="banner info" role="status">{notice}<button aria-label="Zamknij informację" onclick={()=>notice=''}><X size={16}/></button></div>{/if}
++ {#if tab==='compare'}
++ <div class="page-heading"><div><span class="eyebrow">PORÓWNANIE MODELI</span><h1>Co zmieniło się w złożeniu?</h1><p>Wybierz dwie rewizje STEP. Sprawdź geometrię, przesunięcia i zmiany materiału.</p></div><span class="pill"><span class="dot"></span>Analiza lokalna</span></div>
++ <div class="compare-grid"><button class="file-card" disabled={running} onclick={()=>choose('a')}><span class="file-letter">A</span><span class="file-card-icon"><FileBox size={34}/></span><span class="eyebrow">POPRZEDNIA REWIZJA</span><strong>{a?fileName(a):'Wybierz model A'}</strong><span class="file-path">{a||'Plik .step lub .stp'}</span><span class="file-pick"><FolderOpen size={15}/>{a?'Zmień plik':'Wybierz plik'}</span></button><button class="swap" aria-label="Zamień modele A i B" disabled={running} onclick={()=>{const old=a;a=b;b=old}}><ArrowRightLeft size={20}/></button><button class="file-card file-new" disabled={running} onclick={()=>choose('b')}><span class="file-letter">B</span><span class="file-card-icon"><FileBox size={34}/></span><span class="eyebrow">NOWA REWIZJA</span><strong>{b?fileName(b):'Wybierz model B'}</strong><span class="file-path">{b||'Plik .step lub .stp'}</span><span class="file-pick"><FolderOpen size={15}/>{b?'Zmień plik':'Wybierz plik'}</span></button></div>
++ <div class="analysis-options panel"><div><h2>Dokładność analizy</h2><p>Tolerancja geometryczna używana do weryfikacji modeli.</p></div><Numeric bind:value={settings.tolerance} step={.001} min={.000001} max={10} label="Tolerancja geometryczna" unit="mm" disabled={running}/><button class="subtle" onclick={()=>tab='settings'}>Wszystkie ustawienia<ChevronRight size={15}/></button></div>
++ <div class="panel exports"><div><h2>Wyniki porównania</h2><p>Raport zmian powstaje przy każdej ukończonej analizie.</p></div><div class="checkbox-grid">{#each controls as c}<label><input type="checkbox" bind:checked={settings[c.id]} disabled={running}/>{c.label}</label>{/each}</div></div>
++ <div class="start-row"><div class="muted"><Box size={17}/>Oryginalne pliki pozostają bez zmian.</div><button class="primary" disabled={!native||!engineReady||!a||!b||running||busy} onclick={()=>run()}><Play size={17}/>Porównaj rewizje</button></div>
++ <div class="legend-panel"><span>Kolory zmian</span>{#each ['SAME','MOVED','CHANGED','ADDED','REMOVED','UNCERTAIN'] as s}<span><i style={`background:${settings.palette[s.toLowerCase()]}`}></i>{statuses[s]}</span>{/each}</div>
++ {:else if tab==='settings'}
++ <div class="page-heading"><div><span class="eyebrow">KONFIGURACJA</span><h1>Ustawienia analizy</h1><p>Zmiany dotyczą kolejnej analizy. Zapisz ustawienia, aby użyć ich po ponownym uruchomieniu.</p></div></div>
++ <fieldset disabled={running} class="settings-grid"><section class="panel"><h2>Geometria i masa</h2><label class="setting">Tolerancja<Numeric bind:value={settings.tolerance} step={.001} min={.000001} max={10} label="Tolerancja" unit="mm"/></label><label class="setting">Gęstość materiału<Numeric bind:value={settings.density} step={50} min={1} label="Gęstość materiału" unit="kg/m³"/></label><p class="hint">Masa wynika z objętości i podanej gęstości. STEP nie musi zawierać materiału.</p><label class="setting">Limit brył<Numeric bind:value={settings.maxSolids} step={1000} min={1} max={1000000} label="Limit brył"/></label><label class="check"><input type="checkbox" bind:checked={settings.align}/>Wykrywaj przesunięcie całego złożenia</label><p class="hint">Program poprosi o decyzję przed wyrównaniem modeli.</p></section><section class="panel"><h2>Raport i eksport</h2><label class="stacked">Folder wyników<div class="input-action"><input bind:value={settings.output} placeholder="Dokumenty / DSCompare"/><button class="icon-button" aria-label="Wybierz folder wyników" onclick={()=>choose('output')}><FolderOpen size={17}/></button></div></label>{#each controls.slice(0,4) as c}<label class="check"><input type="checkbox" bind:checked={settings[c.id]}/>{c.label}</label>{/each}<label class="setting">Nieprzezroczystość starej A<Numeric bind:value={settings.oldAlpha} step={.05} min={0} max={1} label="Nieprzezroczystość starej wersji A"/></label><p class="hint">0 = całkowicie przezroczysta, 1 = nieprzezroczysta.</p></section><section class="panel"><h2>Kolory modeli</h2><div class="colors">{#each Object.keys(defaults.palette) as key}<label><input type="color" bind:value={settings.palette[key]} aria-label={`Kolor: ${statuses[key.toUpperCase()]}`}/>{statuses[key.toUpperCase()]}</label>{/each}</div><button class="subtle" onclick={()=>settings.palette=structuredClone(defaults.palette)}><RotateCcw size={15}/>Przywróć paletę</button></section><section class="panel"><h2>Zaawansowany eksport STEP</h2><label class="setting">Standard<select bind:value={settings.schema}><option>AP214IS</option><option>AP242DIS</option></select></label><label class="setting">Weryfikacja<select bind:value={settings.verify}><option value="auto">Automatyczna</option><option value="full">Pełna</option><option value="fast">Szybka</option></select></label><label class="check"><input type="checkbox" bind:checked={settings.flat}/>Płaski STEP bez podzłożeń</label><label class="check"><input type="checkbox" bind:checked={settings.bodyColors}/>Kolorowanie na poziomie brył</label><label class="check"><input type="checkbox" bind:checked={settings.diffStep}/>Osobny STEP różnic materiału</label><label class="check"><input type="checkbox" bind:checked={settings.fastBom}/>Szybkie grupowanie BOM</label></section></fieldset><div class="start-row"><button onclick={()=>{settings=structuredClone($state.snapshot(saved));notice='Przywrócono zapisane ustawienia.'}}><RotateCcw size={16}/>Cofnij zmiany</button><button class="primary" disabled={running||!native} onclick={save}><Check size={17}/>Zapisz ustawienia</button></div>
++ {:else if tab==='results'||tab==='preview'}
++ <div class="page-heading"><div><span class="eyebrow">{tab==='preview'?'PRZEGLĄD GEOMETRII':'RAPORT PORÓWNANIA'}</span><h1>{summary?partial?'Raport częściowy':'Wyniki analizy':tab==='preview'?'Podgląd 3D':'Wyniki analizy'}</h1><p>{resultFolder||'Wykonaj analizę lub otwórz istniejący folder wyników.'}</p></div>{#if summary}<button onclick={()=>output('folder')}><FolderOpen size={16}/>Folder wyników</button>{/if}</div>
++ {#if partial}<div class="banner warning" role="alert"><AlertTriangle size={20}/><div><strong>Nie potwierdzono wszystkich różnic materiału</strong><p>Pozycje „Do sprawdzenia” wymagają weryfikacji. Raport nie określa dla nich materiału dodanego ani usuniętego.</p></div></div>{/if}
++ {#if summary}<div class="stats">{#each ['SAME','MOVED','CHANGED','ADDED','REMOVED','UNCERTAIN'] as s}<button class:chosen={filter===s} onclick={()=>{filter=filter===s?'':s;page=0}} style={`--status:${settings.palette[s.toLowerCase()]}`}><span>{statuses[s]}</span><strong>{(summary.statuses?.[s]||0)+(s==='SAME'?(summary.statuses?.RENAMED||0):0)}</strong></button>{/each}</div><div class="toolbar"><button onclick={()=>show('report')}><ExternalLink size={16}/>Raport HTML</button><button onclick={()=>show('preview')}><Box size={16}/>Podgląd 3D</button><button onclick={()=>output('POROWNANIE_KOLORY.step')}><Download size={16}/>Kolorowy STEP</button><button onclick={()=>output('ZMIANY.csv')}>Zmiany CSV</button><button onclick={()=>output('BOM_A.csv')}>BOM A</button><button onclick={()=>output('BOM_B.csv')}>BOM B</button></div>{/if}
++ {#if frame&&(tab==='preview'||frameKind==='report')}<div class="viewer"><div class="viewer-bar"><span>{frameKind==='preview'?'Interaktywny model 3D':'Pełny raport HTML'}</span><button class="subtle" onclick={()=>frame=''}>Zamknij podgląd<X size={16}/></button></div><iframe title={frameKind==='preview'?'Podgląd modeli 3D':'Raport porównania'} src={frame} sandbox="allow-scripts allow-downloads"></iframe></div>{:else if summary&&tab==='results'}<section class="panel results-panel"><div class="table-tools"><div class="search"><Search size={17}/><input aria-label="Szukaj w wynikach" placeholder="Szukaj części, uwag, numeru…" bind:value={query} oninput={()=>page=0}/></div><select aria-label="Rodzaj zmiany" bind:value={filter} onchange={()=>page=0}><option value="">Wszystkie zmiany</option>{#each Object.entries(statuses) as [s,label]}<option value={s}>{label}</option>{/each}</select><span>{rows.length} pozycji</span></div><div class="table-scroll"><table><thead><tr><th>Elementy A → B</th><th>Rodzaj zmiany</th><th>Szczegóły</th></tr></thead><tbody>{#each pageRows as row,i}<tr class:selected={selected===page*100+i} onclick={()=>selected=page*100+i} onkeydown={(e)=>{if(e.key==='Enter')selected=page*100+i}} tabindex="0"><td>{rowTitle(row)}</td><td><span class="status-tag" style={`--status:${settings.palette[(row.status==='RENAMED'?'SAME':row.status).toLowerCase()]}`}>{statuses[row.status]||row.status}</span></td><td>{row.note||'—'}</td></tr>{/each}</tbody></table></div><div class="pagination"><span>{rows.length?`${page*100+1}–${Math.min((page+1)*100,rows.length)}`:'0'} z {rows.length}</span><button disabled={page===0} onclick={()=>page--}>Poprzednie</button><button disabled={(page+1)*100>=rows.length} onclick={()=>page++}>Następne</button></div>{#if selected!==null&&rows[selected]}<details open><summary>Szczegóły pozycji {rowTitle(rows[selected])}</summary><pre>{JSON.stringify(rows[selected],null,2)}</pre></details>{/if}</section>{:else if !summary}<div class="empty"><Layers3 size={44}/><h2>Wyniki pojawią się tutaj</h2><p>Raporty są zapisywane lokalnie i można otworzyć je ponownie.</p><button onclick={openResult}><FolderOpen size={17}/>Otwórz folder wyników</button></div>{:else}<div class="empty"><Box size={44}/><button onclick={()=>show('preview')}>Otwórz podgląd 3D</button></div>{/if}
++ {:else if tab==='mass'}
++ <div class="page-heading"><div><span class="eyebrow">OBJĘTOŚĆ I GĘSTOŚĆ</span><h1>Masa części i złożeń</h1><p>Oblicz masę jednego modelu lub zestawienia wielu plików STEP.</p></div><button disabled={running} onclick={()=>choose('mass')}><FolderOpen size={16}/>Dodaj modele</button></div><section class="panel"><div class="setting">Gęstość<Numeric bind:value={settings.density} min={1} step={50} label="Gęstość do obliczenia masy" unit="kg/m³" disabled={running}/></div>{#if massFiles.length}<ul class="file-list">{#each massFiles as f}<li><FileBox size={18}/><span title={f}>{fileName(f)}</span><button aria-label={`Usuń ${fileName(f)}`} disabled={running} onclick={()=>massFiles=massFiles.filter(x=>x!==f)}><X size={16}/></button></li>{/each}</ul>{:else}<div class="empty"><Scale size={40}/><p>Dodaj pliki do obliczenia masy.</p></div>{/if}<div class="start-row"><button disabled={running} onclick={()=>massFiles=[]}>Wyczyść listę</button><button class="primary" disabled={!native||!engineReady||!massFiles.length||running||busy} onclick={()=>run('mass')}><Play size={16}/>Oblicz masę</button></div>{#if job&&!job.running&&job.result?.podsumowanie}<button onclick={()=>output('RAPORT_MASY.html')}>Otwórz zestawienie mas</button>{/if}</section>
++ {:else if tab==='diagnostic'}
++ <div class="page-heading"><div><span class="eyebrow">KONTROLA DZIAŁANIA</span><h1>Diagnostyka lokalna</h1><p>Testy silnika tworzą własny folder wyników. Nie zmieniają Twoich modeli.</p></div><button class="primary" disabled={!native||!engineReady||running||busy} onclick={()=>run('diagnostic')}><Activity size={17}/>Uruchom testy</button></div><section class="panel"><h2>Ostatnie zdarzenia</h2><pre>{job?.events.join('\n')||'Brak zdarzeń.'}</pre>{#if job}<button onclick={()=>call('open_artifact',{folder:job?.folder,name:'folder'}).catch(fail)}><FolderOpen size={16}/>Folder diagnostyczny</button>{/if}</section>
++ {/if}
++ {#if job}<section class="job-panel" aria-live="polite"><div class="job-header"><span class:running-dot={running} class="job-indicator"></span><strong>{running?'Analiza w toku':job.cancelled?'Anulowano':job.error?'Analiza przerwana':'Operacja zakończona'}</strong><span class="muted">{Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,'0')}</span><button class="subtle" onclick={()=>logsOpen=!logsOpen}>{logsOpen?'Ukryj dziennik':'Dziennik analizy'}</button>{#if running}<button class="cancel-button" onclick={cancel}><Square size={13}/>Anuluj</button>{/if}</div><p class="job-message">{job.events.at(-1)||'Uruchamianie silnika…'}</p>{#if running}<div class="indeterminate" role="progressbar" aria-label="Analiza CAD w toku"><span></span></div>{/if}{#if logsOpen}<pre>{job.events.join('\n')}</pre>{/if}</section>{/if}
++ </main><footer><span>DS Compare · Desktop 04</span><span>STEP · OCCT · raporty offline</span></footer></div>
++ {#if job?.question}<div class="modal-backdrop"><div class="modal" use:focusDialog role="alertdialog" tabindex="-1" aria-modal="true" aria-labelledby="decision-title"><span class="modal-icon"><AlertTriangle size={27}/></span><h2 id="decision-title">{job.question.material_unverified?'Niepełna analiza geometrii':job.question.unrelated?'Sprawdź zgodność modeli':'Wykryto różnicę układów współrzędnych'}</h2>{#if job.question.material_unverified}<p>Nie udało się potwierdzić wszystkich różnic materiału.</p><div class="decision-counts"><span>A <strong>{job.question.unverified_A}</strong></span><span>B <strong>{job.question.unverified_B}</strong></span><span>elementów do sprawdzenia</span></div><p>Raport częściowy zachowa potwierdzone wyniki. Pozostałe elementy oznaczy jako wymagające weryfikacji.</p>{:else}<p>Proponowane przesunięcie B → A:</p><div class="translation">{#each ['X','Y','Z'] as axis,i}<span>{axis}<strong>{job.question.translation_mm[i]?.toFixed(4)} mm</strong></span>{/each}</div><p>Wybierz wyrównanie albo porównanie w oryginalnym położeniu.</p>{/if}<details><summary>Szczegóły techniczne</summary><pre>{job.question.reason}</pre></details><div class="modal-actions"><button disabled={busy} onclick={()=>answer('cancel')}>Przerwij</button>{#if job.question.material_unverified}<button class="primary" disabled={busy} onclick={()=>answer('review')}>Utwórz raport częściowy</button>{:else}<button disabled={busy} onclick={()=>answer('original')}>Oryginalne położenie</button>{#if !job.question.unrelated}<button class="primary" disabled={busy} onclick={()=>answer(job?.question?.unresolved?'search':'align')}>{job.question.unresolved?'Szukaj wyrównania':'Wyrównaj modele'}</button>{/if}{/if}</div></div></div>{/if}
++</div>
+--- /dev/null
++++ b/desktop/src/Numeric.svelte
+@@ -0,0 +1,5 @@
++<script lang="ts">
++ let {value=$bindable(0),step=1,min=0,max=1e9,label,unit='',disabled=false}:{value?:number;step?:number;min?:number;max?:number;label:string;unit?:string;disabled?:boolean}=$props();
++ function change(d:number){value=Math.min(max,Math.max(min,Number((value+d*step).toFixed(8))));}
++</script>
++<div class="numeric"><button type="button" aria-label={`Zmniejsz: ${label}`} disabled={disabled||value<=min} onclick={()=>change(-1)}>−</button><input aria-label={label} type="number" bind:value {min} {max} {step} {disabled}/>{#if unit}<span>{unit}</span>{/if}<button type="button" aria-label={`Zwiększ: ${label}`} disabled={disabled||value>=max} onclick={()=>change(1)}>+</button></div>
+--- /dev/null
++++ b/desktop/src/api.ts
+@@ -0,0 +1,8 @@
++import { invoke,convertFileSrc,isTauri } from '@tauri-apps/api/core';
++import { open } from '@tauri-apps/plugin-dialog';
++import type { Job,Settings } from './model';
++export const native=isTauri();
++export async function call<T>(command:string,args:Record<string,unknown>={}):Promise<T>{if(!native)throw Error('Ta funkcja wymaga aplikacji desktopowej. Podgląd WWW nie uruchamia silnika CAD.');return invoke<T>(command,args);}
++export async function pick(directory=false,multiple=false):Promise<string[]>{if(!native)throw Error('Wybór plików jest dostępny w aplikacji desktopowej.');const result=await open({directory,multiple,filters:directory?undefined:[{name:'Modele STEP',extensions:['step','stp']}]});return result?Array.isArray(result)?result:[result]:[];}
++export const start=(mode:string,files:string[],settings:Settings)=>call<Job>('start_job',{request:{mode,files,settings}});
++export const asset=(path:string)=>convertFileSrc(path);
+--- /dev/null
++++ b/desktop/src/main.ts
+@@ -0,0 +1,4 @@
++import { mount } from 'svelte';
++import App from './App.svelte';
++import './style.css';
++mount(App,{target:document.getElementById('app')!});
+--- /dev/null
++++ b/desktop/src/model.ts
+@@ -0,0 +1,10 @@
++export type Settings={tolerance:number;density:number;output:string;preview:boolean;step:boolean;bom:boolean;bomCsv:boolean;fastBom:boolean;align:boolean;oldAlpha:number;schema:string;verify:string;flat:boolean;bodyColors:boolean;diffStep:boolean;maxSolids:number;palette:Record<string,string>;theme:'dark'|'light'};
++export const defaults:Settings={tolerance:.01,density:7850,output:'',preview:true,step:true,bom:true,bomCsv:true,fastBom:false,align:true,oldAlpha:.4,schema:'AP214IS',verify:'auto',flat:false,bodyColors:false,diffStep:false,maxSolids:20000,palette:{same:'#94a3b8',moved:'#0072b2',changed:'#e5a000',added:'#009e73',removed:'#d55e00',uncertain:'#cc79a7'},theme:'dark'};
++export type Decision={token:string;material_unverified:boolean;unresolved?:boolean;unrelated?:boolean;reason:string;translation_mm:number[];unverified_A:number;unverified_B:number};
++export type Job={id:string;folder:string;running:boolean;cancelled:boolean;events:string[];question:Decision|null;result:Record<string,unknown>|null;summary:Summary|null;error:string|null};
++export type Row={a_index:number|null;b_index:number|null;status:string;name_a?:string;name_b?:string;note?:string;[key:string]:unknown};
++export type Summary={analysis_complete?:boolean;solids_A?:number;solids_B?:number;statuses?:Record<string,number>;records?:Row[];[key:string]:unknown};
++export const statuses:Record<string,string>={SAME:'Bez zmian',RENAMED:'Zmieniona nazwa',MOVED:'Przesunięte',CHANGED:'Zmieniona geometria',ADDED:'Dodane',REMOVED:'Usunięte',UNCERTAIN:'Do sprawdzenia'};
++export function visibleRows(rows:Row[],query:string,status:string){const q=query.trim().toLocaleLowerCase('pl');return rows.filter(r=>(!status||r.status===status||(status==='SAME'&&r.status==='RENAMED'))&&(!q||JSON.stringify(r).toLocaleLowerCase('pl').includes(q)));}
++export function validate(s:Settings){if(!Number.isFinite(s.tolerance)||s.tolerance<=0||s.tolerance>10)return 'Tolerancja musi być większa od 0 i nie większa niż 10 mm.';if(!Number.isFinite(s.density)||s.density<=0)return 'Podaj dodatnią gęstość.';if(!Number.isInteger(s.maxSolids)||s.maxSolids<1)return 'Limit brył musi być dodatnią liczbą całkowitą.';return '';}
++export function fileName(path:string){return path.split(/[\\/]/).pop()||path;}
+--- /dev/null
++++ b/desktop/src/style.css
+@@ -0,0 +1 @@
++:root{font-family:Inter,'Segoe UI',sans-serif;color-scheme:dark;font-size:14px;font-synthesis:none}*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border:1px solid var(--line);border-radius:7px;padding:9px 13px;color:var(--text);background:var(--surface);font-weight:500}button:hover:not(:disabled){background:var(--hover);border-color:var(--soft)}button:disabled{opacity:.4;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,tr:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.app{--bg:#0c1119;--rail:#101722;--surface:#151e2b;--raised:#192435;--hover:#202e42;--line:#2a384c;--soft:#5c718c;--text:#e4ebf5;--muted:#94a3b8;--accent:#67b9a6;--accent-ink:#092f2a;background:var(--bg);color:var(--text);display:flex;min-height:100vh}.app[data-theme=light]{color-scheme:light;--bg:#f3f6fa;--rail:#fff;--surface:#fff;--raised:#f6f8fb;--hover:#e9eff6;--line:#d6dfeb;--soft:#879bb3;--text:#17283c;--muted:#63758c;--accent:#177b69;--accent-ink:#fff}.rail{position:fixed;inset:0 auto 0 0;width:236px;background:var(--rail);border-right:1px solid var(--line);padding:30px 16px 19px;display:flex;flex-direction:column}.brand{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:650;letter-spacing:-.6px;margin:0 7px 47px}.brand-mark{color:var(--accent);border:1px solid #67b9a650;background:#67b9a610;border-radius:9px;width:37px;height:40px;display:grid;place-items:center}.brand small{display:block;font-size:8px;font-weight:500;letter-spacing:1.1px;color:var(--muted);margin-top:6px}.rail-caption,.eyebrow{font-size:10px;letter-spacing:1.6px;color:var(--muted);font-weight:650}.rail-caption{margin:0 14px 13px}nav{display:flex;flex-direction:column;gap:6px}nav button,.rail-bottom>button{justify-content:flex-start;border:0;background:transparent;padding:12px 14px;color:var(--muted);font-size:13px}nav button.active,.rail-bottom>button.active{background:#67b9a613;color:var(--accent)}.nav-count{margin-left:auto;background:#67b9a61a;font-size:11px;padding:2px 6px;border-radius:4px}.rail-bottom{margin-top:auto;display:flex;flex-direction:column;gap:5px}.engine-state{display:flex;gap:8px;align-items:center;margin:22px 12px 5px;color:var(--muted);font-size:11px}.engine-state i,.dot{background:#b68148;width:6px;height:6px;border-radius:50%}.engine-state i.ready,.dot{background:var(--accent)}.rail-bottom>small{color:var(--muted);font-size:10px;margin:0 12px}.workspace{width:calc(100% - 236px);margin-left:236px;min-height:100vh;display:flex;flex-direction:column}header{height:72px;display:flex;align-items:center;justify-content:space-between;padding:0 38px;border-bottom:1px solid var(--line)}.breadcrumb{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:12px}.breadcrumb strong{color:var(--text);font-weight:500}.header-actions{display:flex;align-items:center;gap:13px}.subtle{background:transparent;border-color:transparent;color:var(--muted);font-size:12px}.icon-button{padding:9px;border-color:transparent;background:transparent}main{padding:35px 38px 30px;max-width:1640px;width:100%;margin:0 auto;flex:1}.page-heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin:4px 0 30px}h1{font-size:28px;letter-spacing:-.8px;font-weight:600;margin:10px 0 11px}h2{font-size:14px;font-weight:600;margin:0 0 9px}p{font-size:12px;color:var(--muted);line-height:1.75;margin:0}.page-heading p{font-size:13px}.pill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:20px;font-size:11px;color:var(--muted);padding:7px 12px;white-space:nowrap}.compare-grid{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:28px}.file-card{min-width:0;position:relative;flex-direction:column;padding:29px 28px 24px;min-height:274px;text-align:center;background:linear-gradient(145deg,var(--surface),var(--bg));border-style:dashed;border-color:#42536d;gap:12px}.file-new{border-color:#67b9a655}.file-letter{position:absolute;top:18px;left:19px;display:grid;place-items:center;width:25px;height:25px;background:var(--hover);border-radius:5px;font-size:12px;color:var(--muted)}.file-new .file-letter{background:#67b9a61a;color:var(--accent)}.file-card-icon{display:grid;place-items:center;border-radius:11px;background:#94a3b80d;border:1px solid #94a3b81a;color:#a2b3ca;width:62px;height:66px;margin-bottom:4px}.file-new .file-card-icon{color:var(--accent);background:#67b9a608}.file-card strong{font-size:17px;font-weight:550;max-width:95%;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}.file-path{color:var(--muted);font-size:11px;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-pick{display:flex;align-items:center;gap:7px;font-size:11px;background:var(--raised);padding:8px 13px;border:1px solid var(--line);border-radius:5px;margin-top:3px}.swap{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1;width:39px;height:39px;padding:0;border-radius:50%;background:var(--rail);border-color:#42536d}.panel{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:23px}.analysis-options{margin-top:23px;display:flex;align-items:center;gap:20px}.analysis-options>div:first-child{flex:1}.analysis-options p{font-size:11px}.numeric{border:1px solid var(--line);border-radius:6px;display:flex;height:38px;align-items:center;background:var(--bg);width:192px;flex:none;overflow:hidden}.numeric button{border:0;border-radius:0;background:transparent;padding:0 11px;height:100%;font-size:17px;color:var(--muted)}.numeric input{border:0!important;min-width:0;padding:7px 0!important;width:100%;text-align:center;appearance:textfield;background:transparent!important;outline-offset:-3px}.numeric input::-webkit-inner-spin-button,.numeric input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.numeric span{font-size:10px;color:var(--muted);padding:0 7px;white-space:nowrap}.exports{margin-top:18px;display:grid;grid-template-columns:.8fr 1.2fr;gap:24px}.checkbox-grid{display:grid;grid-template-columns:1fr 1fr;gap:17px 20px}.checkbox-grid label,.check{font-size:12px;display:flex;gap:10px;align-items:center;color:var(--muted);line-height:1.4}input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);margin:0;cursor:pointer}.start-row{display:flex;justify-content:space-between;align-items:center;margin:24px 0;gap:15px}.muted{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px}.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);padding:12px 21px;font-weight:650}.primary:hover:not(:disabled){background:var(--accent);filter:brightness(1.08);border-color:var(--accent)}.legend-panel{padding:20px 0;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:17px;color:var(--muted);font-size:10px}.legend-panel span{display:inline-flex;gap:6px;align-items:center}.legend-panel>span:first-child{margin-right:auto}.legend-panel i{width:7px;height:7px;border-radius:2px}.banner{display:flex;gap:12px;align-items:flex-start;padding:15px 18px;border-radius:7px;border:1px solid;margin-bottom:20px;font-size:12px;line-height:1.6}.banner>div{flex:1}.banner button{margin-left:auto;padding:2px;background:transparent;border:0;color:inherit}.banner p{margin-top:3px;color:inherit;white-space:pre-wrap}.warning{background:#c6922510;border-color:#c692254d;color:#d9b968}.danger{background:#d7777710;border-color:#d7777750;color:#eaa5a5}.info{background:#67b9a608;border-color:#67b9a633;color:var(--muted)}.settings-grid{border:0;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:18px}.settings-grid h2{margin-bottom:24px}.setting{display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:12px;margin-bottom:20px;color:var(--muted)}.hint{font-size:10px;margin-top:-8px;margin-bottom:23px}.check{margin:17px 0}.stacked{display:block;font-size:12px;color:var(--muted);margin-bottom:22px}.input-action{display:flex;align-items:center;border:1px solid var(--line);border-radius:6px;background:var(--bg);margin-top:10px}.input-action input{border:0;background:transparent;min-width:0;flex:1}input:not([type=checkbox]):not([type=color]),select{color:var(--text);padding:9px 10px;background:var(--bg);border:1px solid var(--line);border-radius:5px}.colors{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:25px}.colors label{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--muted)}input[type=color]{width:29px;height:29px;border:1px solid var(--line);background:transparent;border-radius:5px;padding:2px;cursor:pointer}.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px}.stats button{flex-direction:column;align-items:flex-start;padding:15px;border-top:2px solid var(--status);min-width:0;gap:12px}.stats button.chosen{outline:1px solid var(--status)}.stats span{color:var(--muted);font-size:10px;white-space:nowrap}.stats strong{font-size:26px;font-weight:550}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:21px}.toolbar button{font-size:11px}.table-tools{display:flex;align-items:center;gap:15px;font-size:11px;color:var(--muted);margin-bottom:19px;padding:0 20px}.search{display:flex;align-items:center;flex:1;gap:8px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:0 12px}.search input{width:100%;border:0!important;background:transparent!important;min-width:0;font-size:12px}.results-panel{padding:20px 0 0;overflow:hidden}.table-scroll{overflow:auto;max-height:550px}table{border-collapse:collapse;width:100%;font-size:11px}th{text-align:left;background:var(--raised);color:var(--muted);font-size:10px;font-weight:550;position:sticky;top:0;z-index:1;padding:13px 20px}td{padding:15px 20px;border-bottom:1px solid var(--line);line-height:1.6}td:first-child{white-space:nowrap;color:var(--muted)}td:last-child{max-width:550px;color:var(--muted)}tr.selected td,tr:hover td{background:var(--hover)}.status-tag{display:inline-flex;gap:6px;align-items:center;white-space:nowrap}.status-tag::before{content:'';width:5px;height:5px;background:var(--status);border-radius:50%}.pagination{display:flex;gap:9px;align-items:center;padding:15px 20px;color:var(--muted);font-size:11px}.pagination>span{margin-right:auto}.pagination button{font-size:10px;padding:6px 9px}.results-panel details{padding:16px 20px;border-top:1px solid var(--line)}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:350px;overflow:auto;font:11px/1.75 'Cascadia Code',Consolas,monospace;color:var(--muted)}.viewer{border:1px solid var(--line);border-radius:8px;overflow:hidden;min-height:600px;background:var(--surface)}.viewer-bar{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;font-size:12px;border-bottom:1px solid var(--line)}iframe{border:0;width:100%;height:calc(100vh - 390px);min-height:580px;background:var(--bg)}.empty{min-height:310px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;color:var(--muted);text-align:center}.file-list{padding:0;list-style:none;margin:30px 0}.file-list li{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}.file-list li span{flex:1}.file-list button{border:0;background:transparent;padding:4px}.job-panel{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:18px 20px;margin-top:27px}.job-header{display:flex;align-items:center;gap:10px;font-size:11px}.job-header .subtle{margin-left:auto}.job-indicator{width:6px;height:6px;border-radius:50%;background:var(--muted)}.running-dot{background:var(--accent);box-shadow:0 0 0 4px #67b9a615}.job-message{font-size:11px;margin-top:12px}.indeterminate{overflow:hidden;height:3px;border-radius:3px;background:var(--line);margin-top:14px}.indeterminate span{display:block;width:35%;height:100%;background:var(--accent);animation:loading 2s ease-in-out infinite}.cancel-button{font-size:10px;padding:6px 10px}.job-panel pre{border-top:1px solid var(--line);padding-top:15px}footer{display:flex;justify-content:space-between;padding:16px 38px;border-top:1px solid var(--line);color:var(--muted);font-size:9px}.modal-backdrop{position:fixed;inset:0;background:#03070dbb;backdrop-filter:blur(5px);z-index:100;display:grid;place-items:center;padding:30px}.modal{width:min(610px,100%);padding:30px;background:var(--surface);border:1px solid var(--line);border-radius:13px;box-shadow:0 20px 100px #0005}.modal-icon{display:inline-flex;color:#d9b968;background:#c6922515;padding:13px;border-radius:10px;margin-bottom:20px}.modal h2{font-size:21px;letter-spacing:-.4px;margin-bottom:18px}.modal p{font-size:12px;line-height:1.9}.decision-counts{display:flex;gap:17px;align-items:center;background:var(--bg);border:1px solid var(--line);padding:15px;border-radius:7px;margin:20px 0;font-size:12px;color:var(--muted)}.decision-counts strong{color:var(--text);font-size:22px;margin-left:6px}.translation{display:flex;gap:15px;margin:20px 0}.translation span{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:12px;flex:1;font-size:10px;color:var(--muted)}.translation strong{display:block;color:var(--text);margin-top:8px;font-size:12px}.modal details{margin:23px 0;font-size:11px;color:var(--muted)}summary{cursor:pointer}.modal-actions{display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--line);padding-top:22px}.modal-actions button{font-size:11px}.modal-actions button:first-child{margin-right:auto}@keyframes loading{0%{transform:translateX(-100%)}100%{transform:translateX(390%)}}@media(prefers-reduced-motion:reduce){*{animation:none!important}}@media(max-width:1150px){.rail{width:200px}.workspace{margin-left:200px;width:calc(100% - 200px)}main{padding:25px}.brand{font-size:16px}.exports{grid-template-columns:1fr}.analysis-options{flex-wrap:wrap}.settings-grid{grid-template-columns:1fr}.stats{gap:7px}.stats button{padding:11px}}
+--- /dev/null
++++ b/desktop/src-tauri/Cargo.toml
+@@ -0,0 +1,22 @@
++[package]
++name = "dscompare-desktop"
++version = "0.4.0"
++edition = "2021"
++[lib]
++name = "dscompare_core"
++[features]
++default = []
++desktop = ["dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener", "dep:tauri-build"]
++[dependencies]
++serde = { version = "1", features = ["derive"] }
++serde_json = "1"
++libc = "0.2"
++tauri = { version = "2", features = ["protocol-asset"], optional = true }
++tauri-plugin-dialog = { version = "2", optional = true }
++tauri-plugin-opener = { version = "2", optional = true }
++[build-dependencies]
++tauri-build = { version = "2", features = [], optional = true }
++[[bin]]
++name = "DSCompareDesktop"
++path = "src/main.rs"
++required-features = ["desktop"]
+--- /dev/null
++++ b/desktop/src-tauri/build.rs
+@@ -0,0 +1 @@
++fn main() { #[cfg(feature="desktop")] tauri_build::build(); }
+--- /dev/null
++++ b/desktop/src-tauri/capabilities/default.json
+@@ -0,0 +1 @@
++{"identifier":"main","description":"Local desktop window; no shell execution exposed to web content","windows":["main"],"permissions":["core:default","dialog:allow-open"]}
+--- /dev/null
++++ b/desktop/src-tauri/src/lib.rs
+@@ -0,0 +1,98 @@
++//! Native process boundary. No CAD operation runs on the UI thread.
++use serde::{Deserialize,Serialize};
++use serde_json::{Value,json};
++use std::{fs,path::{Path,PathBuf},process::{Child,Command,Stdio},sync::Mutex,time::{SystemTime,UNIX_EPOCH}};
++#[derive(Deserialize)]
++pub struct Request { pub mode:String,pub files:Vec<String>,pub settings:Value }
++pub struct Job { pub id:String,pub folder:PathBuf,pub child:Child,pub cancelled:bool,pub answered:Option<String> }
++#[derive(Default)]
++pub struct Runtime { pub job:Mutex<Option<Job>>,pub roots:Mutex<Vec<PathBuf>> }
++#[derive(Serialize)]
++pub struct Snapshot { pub id:String,pub folder:String,pub running:bool,pub cancelled:bool,pub events:Vec<String>,pub question:Option<Value>,pub result:Option<Value>,pub summary:Option<Value>,pub error:Option<String> }
++pub fn read_json(p:&Path)->Option<Value>{fs::read(p).ok().and_then(|b|serde_json::from_slice(&b).ok())}
++pub fn number(v:&Value,k:&str,default:f64)->f64{v.get(k).and_then(Value::as_f64).unwrap_or(default)}
++fn flag(v:&Value,k:&str,default:bool)->bool{v.get(k).and_then(Value::as_bool).unwrap_or(default)}
++pub fn validate_settings(s:&Value)->Result<(),String>{
++ let tol=number(s,"tolerance",0.01);let density=number(s,"density",7850.);let alpha=number(s,"oldAlpha",0.4);let max=number(s,"maxSolids",20000.);
++ if !tol.is_finite()||tol<=0.||tol>10.{return Err("Tolerancja poza zakresem (0, 10] mm".into())}
++ if !density.is_finite()||density<=0.||density>1e9{return Err("Nieprawidłowa gęstość".into())}
++ if !alpha.is_finite()||!(0.0..=1.0).contains(&alpha){return Err("Nieprawidłowa przezroczystość".into())}
++ if max.fract()!=0.||!(1.0..=1000000.0).contains(&max){return Err("Nieprawidłowy limit brył".into())}
++ Ok(())
++}
++pub fn worker_args(r:&Request,out:&Path)->Result<Vec<String>,String>{
++ validate_settings(&r.settings)?;
++ if !["compare","mass","diagnostic"].contains(&r.mode.as_str()){return Err("Nieznany rodzaj analizy".into())}
++ if r.mode=="compare"&&r.files.len()!=2{return Err("Wybierz dwa pliki STEP".into())}
++ if r.mode=="mass"&&r.files.is_empty(){return Err("Wybierz modele do obliczenia masy".into())}
++ for file in &r.files{let path=Path::new(file);let ext=path.extension().and_then(|x|x.to_str()).unwrap_or("").to_lowercase();if !path.is_file()||!["step","stp"].contains(&ext.as_str()){return Err(format!("Nieprawidłowy plik STEP: {file}"))}}
++ let s=&r.settings;
++ let mut a=vec!["--worker".into(),r.mode.clone(),"--output".into(),out.to_string_lossy().into_owned(),"--tolerance".into(),number(s,"tolerance",0.01).to_string(),"--density".into(),number(s,"density",7850.).to_string(),"--max-solids".into(),number(s,"maxSolids",20000.).to_string()];
++ if r.mode=="compare"{
++  a.extend(["--a".into(),r.files[0].clone(),"--b".into(),r.files[1].clone(),"--revision-style".into(),"--allow-review-decision".into(),"--old-alpha".into(),number(s,"oldAlpha",0.4).to_string()]);
++  for (k,arg,default) in [("step","--generate-step",true),("preview","--preview3d",true),("align","--align-auto",true),("fastBom","--fast-bom",false),("flat","--flat-zw3d",false),("bodyColors","--body-colors",false),("diffStep","--diff-step",false)]{if flag(s,k,default){a.push(arg.into())}}
++  if !flag(s,"bom",true){a.push("--no-bom".into())}if !flag(s,"bomCsv",true){a.push("--no-bom-csv".into())}
++  let schema=s["schema"].as_str().unwrap_or("AP214IS");let verify=s["verify"].as_str().unwrap_or("auto");
++  if !["AP214IS","AP242DIS"].contains(&schema)||!["auto","full","fast"].contains(&verify){return Err("Nieprawidłowe ustawienia STEP".into())}
++  a.extend(["--schema".into(),schema.into(),"--step-verify".into(),verify.into()]);
++  let mut palette=serde_json::Map::new();if let Some(colors)=s["palette"].as_object(){for (key,val) in colors{if let Some(h)=val.as_str(){if h.len()!=7||!h.starts_with('#')||!h[1..].bytes().all(|b|b.is_ascii_hexdigit()){return Err("Nieprawidłowy kolor".into())}let rgb:Vec<f64>=(1..7).step_by(2).map(|i|u8::from_str_radix(&h[i..i+2],16).unwrap() as f64/255.).collect();palette.insert(key.to_uppercase(),json!(rgb));}}}
++  a.extend(["--palette".into(),Value::Object(palette).to_string()]);
++ }else if r.mode=="mass"{let list=out.join("inputs.json");fs::write(&list,serde_json::to_vec(&r.files).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;a.extend(["--inputs-file".into(),list.to_string_lossy().into_owned()]);}
++ Ok(a)
++}
++pub fn unique_folder(root:&Path)->Result<PathBuf,String>{fs::create_dir_all(root).map_err(|e|e.to_string())?;let stamp=SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e|e.to_string())?.as_nanos();let folder=root.join(format!("DSCompare_{stamp}"));fs::create_dir(&folder).map_err(|e|e.to_string())?;folder.canonicalize().map_err(|e|e.to_string())}
++pub fn start(runtime:&Runtime,r:Request,engine:Vec<String>,default_out:&Path)->Result<Snapshot,String>{
++ let mut guard=runtime.job.lock().map_err(|e|e.to_string())?;
++ if let Some(job)=guard.as_mut(){if job.child.try_wait().map_err(|e|e.to_string())?.is_none(){return Err("Analiza już trwa".into())}}
++ let root=r.settings["output"].as_str().filter(|x|!x.is_empty()).map(PathBuf::from).unwrap_or_else(||default_out.into());
++ let folder=unique_folder(&root)?;let args=worker_args(&r,&folder)?;
++ let first=engine.first().ok_or("Brak silnika CAD")?;let mut cmd=Command::new(first);cmd.args(&engine[1..]).args(args).env("PYTHONUTF8","1").env("QT_QPA_PLATFORM","offscreen");
++ cmd.stdout(Stdio::from(fs::File::create(folder.join("ENGINE_STDOUT.log")).map_err(|e|e.to_string())?));cmd.stderr(Stdio::from(fs::File::create(folder.join("ENGINE_STDERR.log")).map_err(|e|e.to_string())?));
++ #[cfg(windows)] {use std::os::windows::process::CommandExt;cmd.creation_flags(0x08000000);}
++ #[cfg(unix)] {use std::os::unix::process::CommandExt;cmd.process_group(0);}
++ let child=cmd.spawn().map_err(|e|format!("Nie można uruchomić silnika: {e}"))?;
++ let id=folder.file_name().unwrap().to_string_lossy().into_owned();runtime.roots.lock().map_err(|e|e.to_string())?.push(folder.clone());
++ *guard=Some(Job{id,folder,child,cancelled:false,answered:None});snapshot(guard.as_mut().unwrap())
++}
++pub fn snapshot(job:&mut Job)->Result<Snapshot,String>{
++ let status=job.child.try_wait().map_err(|e|e.to_string())?;let running=status.is_none();
++ let result=read_json(&job.folder.join("_WYNIK_V37.json"));
++ // Do not consume a report before the worker has committed its result.
++ let summary=if !running&&result.as_ref().and_then(|r|r["ok"].as_bool())==Some(true){read_json(&job.folder.join("PODSUMOWANIE.json"))}else{None};
++ let mut question=if running{read_json(&job.folder.join("_WYROWNANIE_PYTANIE.json"))}else{None};
++ if question.as_ref().and_then(|q|q["token"].as_str())==job.answered.as_deref(){question=None;}
++ let events=fs::read_to_string(job.folder.join("_POSTEP_V37.jsonl")).unwrap_or_default().lines().filter_map(|l|serde_json::from_str::<Value>(l).ok()).filter_map(|v|v["tekst"].as_str().map(str::to_owned)).rev().take(100).collect::<Vec<_>>().into_iter().rev().collect();
++ let error=if !running&&!job.cancelled&&result.as_ref().and_then(|r|r["ok"].as_bool())!=Some(true){Some(result.as_ref().and_then(|r|r["error"].as_str()).map(str::to_owned).unwrap_or_else(||format!("Proces zakończył się bez poprawnego wyniku ({status:?}). Sprawdź ENGINE_STDERR.log.")))}else{None};
++ Ok(Snapshot{id:job.id.clone(),folder:job.folder.to_string_lossy().into_owned(),running,cancelled:job.cancelled,events,question,result,summary,error})
++}
++pub fn answer(job:&mut Job,token:&str,decision:&str)->Result<(),String>{
++ if job.child.try_wait().map_err(|e|e.to_string())?.is_some(){return Err("Analiza już zakończona".into())}
++ let q=read_json(&job.folder.join("_WYROWNANIE_PYTANIE.json")).ok_or("Brak oczekującego pytania")?;
++ if q["token"].as_str()!=Some(token){return Err("Nieaktualne pytanie".into())}
++ let allowed=if q["material_unverified"].as_bool()==Some(true){vec!["review","cancel"]}else{vec!["align","original","search","cancel"]};if !allowed.contains(&decision){return Err("Nieprawidłowa decyzja".into())}
++ let tmp=job.folder.join("_ANSWER.tmp");let target=job.folder.join("_WYROWNANIE_ODPOWIEDZ.json");fs::write(&tmp,json!({"token":token,"decision":decision}).to_string()).map_err(|e|e.to_string())?;
++ if target.exists(){fs::remove_file(&target).map_err(|e|e.to_string())?;}fs::rename(tmp,target).map_err(|e|e.to_string())?;job.answered=Some(token.into());Ok(())
++}
++pub fn cancel(job:&mut Job)->Result<(),String>{
++ if job.child.try_wait().map_err(|e|e.to_string())?.is_none(){
++  #[cfg(windows)] {let result=Command::new("taskkill").args(["/F","/T","/PID",&job.child.id().to_string()]).output().map_err(|e|e.to_string())?;if !result.status.success(){job.child.kill().map_err(|e|e.to_string())?;}}
++  #[cfg(unix)] {unsafe{libc::kill(-(job.child.id() as i32),libc::SIGKILL);}}
++  let _=job.child.wait();job.cancelled=true;
++ }Ok(())
++}
++pub fn artifact(runtime:&Runtime,folder:&Path,name:&str)->Result<PathBuf,String>{
++ let root=folder.canonicalize().map_err(|e|e.to_string())?;
++ if !runtime.roots.lock().map_err(|e|e.to_string())?.contains(&root){return Err("Folder nie jest otwartym wynikiem".into())}
++ if name=="folder"{return Ok(root)}
++ let valid=["RAPORT.html","PODGLAD_KOLOROW_3D.html","POROWNANIE_KOLORY.step","ZMIANY.csv","BOM_A.csv","BOM_B.csv","PODSUMOWANIE.json","DIAGNOSTYKA_BLEDU.txt","ENGINE_STDERR.log","ANALIZA_NIEKOMPLETNA.txt","RAPORT_MASY.html","RAPORT_TESTOW.html"];
++ if !valid.contains(&name){return Err("Nieobsługiwany plik wyniku".into())}
++ let file=root.join(name).canonicalize().map_err(|_|format!("Brak pliku {name}. Sprawdź ustawienia eksportu."))?;
++ if !file.starts_with(&root)||!file.is_file(){return Err("Plik poza folderem wyników".into())}Ok(file)
++}
++impl Drop for Runtime{fn drop(&mut self){if let Ok(g)=self.job.get_mut(){if let Some(j)=g.as_mut(){let _=cancel(j);}}}}
++#[cfg(test)] mod tests {
++ use super::*;
++ #[test] fn invalid_tolerance(){assert!(validate_settings(&json!({"tolerance":0})).is_err());assert!(validate_settings(&json!({"oldAlpha":2})).is_err());}
++ #[test] fn traversal_and_foreign_folders_are_rejected(){let runtime=Runtime::default();assert!(artifact(&runtime,Path::new("."),"../Cargo.toml").is_err());}
++ #[test] fn exact_worker_flags_and_palette(){let out=std::env::temp_dir().join(format!("dscompare-test-{}",std::process::id()));fs::create_dir_all(&out).unwrap();let f=out.join("model.stp");fs::write(&f,"test").unwrap();let r=Request{mode:"compare".into(),files:vec![f.to_string_lossy().into(),f.to_string_lossy().into()],settings:json!({"tolerance":0.01,"oldAlpha":0.6,"palette":{"added":"#009e73"},"bomCsv":false})};let a=worker_args(&r,&out).unwrap();assert!(a.contains(&"--allow-review-decision".into()));assert!(a.contains(&"--no-bom-csv".into()));assert!(!a.contains(&"--align".into()));let p=a.iter().position(|x|x=="--palette").unwrap();let c:Value=serde_json::from_str(&a[p+1]).unwrap();assert_eq!(c["ADDED"][0],0.);fs::remove_dir_all(out).unwrap();}
++}
+--- /dev/null
++++ b/desktop/src-tauri/src/main.rs
+@@ -0,0 +1,32 @@
++#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
++use dscompare_core::{self as core,Runtime,Request,Snapshot};
++use serde_json::Value;
++use std::{fs,path::{Path,PathBuf}};
++use tauri::{Manager,State,AppHandle};
++use tauri_plugin_opener::OpenerExt;
++fn engine(app:&AppHandle)->Result<Vec<String>,String>{
++ if cfg!(debug_assertions){if let Ok(raw)=std::env::var("DSCOMPARE_ENGINE_COMMAND"){let args:Vec<String>=serde_json::from_str(&raw).map_err(|e|format!("DSCOMPARE_ENGINE_COMMAND: {e}"))?;if !args.is_empty(){return Ok(args)}}}
++ let path=app.path().resource_dir().map_err(|e|e.to_string())?.join("engine/DSCompare/DSCompare.exe");
++ if !path.is_file(){return Err("Nie znaleziono pakietu silnika CAD. Zainstaluj pełny pakiet DS Compare; sam plik EXE interfejsu nie wystarcza.".into())}Ok(vec![path.to_string_lossy().into_owned()])
++}
++#[tauri::command]
++fn environment(app:AppHandle)->Value{serde_json::json!({"engine_ready":engine(&app).is_ok(),"build":"Svelte 5 / Tauri 2 · 04","platform":std::env::consts::OS})}
++#[tauri::command]
++fn start_job(app:AppHandle,state:State<Runtime>,request:Request)->Result<Snapshot,String>{let out=app.path().document_dir().map_err(|e|e.to_string())?.join("DSCompare");core::start(&state,request,engine(&app)?,&out)}
++#[tauri::command]
++fn poll_job(state:State<Runtime>)->Result<Option<Snapshot>,String>{let mut g=state.job.lock().map_err(|e|e.to_string())?;g.as_mut().map(core::snapshot).transpose()}
++#[tauri::command]
++fn cancel_job(state:State<Runtime>)->Result<(),String>{let mut g=state.job.lock().map_err(|e|e.to_string())?;if let Some(j)=g.as_mut(){core::cancel(j)?;}Ok(())}
++#[tauri::command]
++fn answer_question(state:State<Runtime>,token:String,decision:String)->Result<(),String>{let mut g=state.job.lock().map_err(|e|e.to_string())?;core::answer(g.as_mut().ok_or("Brak analizy")?,&token,&decision)}
++#[tauri::command]
++fn load_settings(app:AppHandle)->Result<Option<Value>,String>{let p=app.path().app_config_dir().map_err(|e|e.to_string())?.join("settings.json");Ok(core::read_json(&p))}
++#[tauri::command]
++fn save_settings(app:AppHandle,settings:Value)->Result<(),String>{core::validate_settings(&settings)?;let dir=app.path().app_config_dir().map_err(|e|e.to_string())?;fs::create_dir_all(&dir).map_err(|e|e.to_string())?;let tmp=dir.join("settings.tmp");let path=dir.join("settings.json");fs::write(&tmp,serde_json::to_vec_pretty(&settings).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;fs::rename(tmp,path).map_err(|e|e.to_string())}
++#[tauri::command]
++fn load_result(app:AppHandle,state:State<Runtime>,folder:String)->Result<Value,String>{let path=PathBuf::from(folder).canonicalize().map_err(|e|e.to_string())?;let result=core::read_json(&path.join("PODSUMOWANIE.json")).ok_or("Brak poprawnego PODSUMOWANIE.json")?;state.roots.lock().map_err(|e|e.to_string())?.push(path.clone());app.asset_protocol_scope().allow_directory(&path,true).map_err(|e|e.to_string())?;Ok(result)}
++#[tauri::command]
++fn artifact_path(app:AppHandle,state:State<Runtime>,folder:String,name:String)->Result<String,String>{let p=core::artifact(&state,Path::new(&folder),&name)?;app.asset_protocol_scope().allow_directory(&folder,true).map_err(|e|e.to_string())?;Ok(p.to_string_lossy().into_owned())}
++#[tauri::command]
++fn open_artifact(app:AppHandle,state:State<Runtime>,folder:String,name:String)->Result<(),String>{let path=core::artifact(&state,Path::new(&folder),&name)?;app.opener().open_path(path.to_string_lossy().into_owned(),None::<&str>).map_err(|e|e.to_string())}
++fn main(){tauri::Builder::default().manage(Runtime::default()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init()).invoke_handler(tauri::generate_handler![environment,start_job,poll_job,cancel_job,answer_question,load_settings,save_settings,load_result,artifact_path,open_artifact]).build(tauri::generate_context!()).expect("DS Compare desktop startup").run(|app,event|{if let tauri::RunEvent::ExitRequested{..}=event{let state=app.state::<Runtime>();if let Ok(mut g)=state.job.lock(){if let Some(j)=g.as_mut(){let _=core::cancel(j);}};}});}
+--- /dev/null
++++ b/desktop/src-tauri/tauri.conf.json
+@@ -0,0 +1,55 @@
++{
++  "$schema": "https://schema.tauri.app/config/2",
++  "productName": "DS Compare",
++  "version": "0.4.0",
++  "identifier": "pl.dscompare.desktop",
++  "build": {
++    "beforeDevCommand": "npm run dev",
++    "devUrl": "http://localhost:1420",
++    "beforeBuildCommand": "npm run build",
++    "frontendDist": "../dist",
++    "features": [
++      "desktop"
++    ]
++  },
++  "app": {
++    "windows": [
++      {
++        "label": "main",
++        "title": "DS Compare \u00b7 Svelte 5 / Tauri 2",
++        "width": 1440,
++        "height": 960,
++        "minWidth": 980,
++        "minHeight": 680
++      }
++    ],
++    "security": {
++      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost; frame-src asset: http://asset.localhost; object-src 'none'",
++      "assetProtocol": {
++        "enable": true,
++        "scope": []
++      }
++    }
++  },
++  "bundle": {
++    "active": true,
++    "targets": [
++      "nsis"
++    ],
++    "resources": [
++      "engine/**/*"
++    ],
++    "windows": {
++      "nsis": {
++        "displayLanguageSelector": false,
++        "languages": [
++          "Polish"
++        ]
++      }
++    },
++    "icon": [
++      "../../assets/DSCompare.ico",
++      "../../assets/DSCompare.png"
++    ]
++  }
++}--- /dev/null
++++ b/desktop/tests/model.test.ts
+@@ -0,0 +1,7 @@
++import {describe,it,expect} from 'vitest';
++import {visibleRows,validate,defaults,fileName} from '../src/model';
++describe('results and geometry settings',()=>{
++ it('keeps unverified rows separate, searches notes and combines unchanged labels',()=>{const rows=[{a_index:0,b_index:0,status:'SAME',note:'base'},{a_index:1,b_index:1,status:'RENAMED',note:'renamed'},{a_index:2,b_index:null,status:'UNCERTAIN',note:'Osłona Molex'}];expect(visibleRows(rows,'','SAME')).toHaveLength(2);expect(visibleRows(rows,'molex','UNCERTAIN')).toHaveLength(1);expect(visibleRows(rows,'molex','SAME')).toHaveLength(0)});
++ it('rejects invalid precision and density before a native job starts',()=>{expect(validate(defaults)).toBe('');expect(validate({...defaults,tolerance:NaN})).not.toBe('');expect(validate({...defaults,density:-1})).not.toBe('')});
++ it('handles Windows and Unix filenames',()=>{expect(fileName('C:\\Models\\arm.step')).toBe('arm.step');expect(fileName('/tmp/arm.stp')).toBe('arm.stp')});
++});
+--- /dev/null
++++ b/desktop/tsconfig.json
+@@ -0,0 +1 @@
++{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"bundler","lib":["ES2022","DOM"],"strict":true,"skipLibCheck":true,"allowJs":true,"checkJs":false,"isolatedModules":true,"esModuleInterop":true,"resolveJsonModule":true},"include":["src/**/*.ts","src/**/*.svelte","vite.config.ts","tests/**/*.ts"]}
+--- /dev/null
++++ b/desktop/vite.config.ts
+@@ -0,0 +1,3 @@
++import { defineConfig } from 'vite';
++import { svelte } from '@sveltejs/vite-plugin-svelte';
++export default defineConfig({plugins:[svelte()],clearScreen:false,server:{port:1420,strictPort:true},envPrefix:['VITE_','TAURI_ENV_'],build:{target:'es2021'}});
