@@ -2,7 +2,9 @@ name: DS Compare RC9 corrected ZIP real CAD tests
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/rc9-corrected-real-cad.yml']
+    paths: ['.github/workflows/rc9-corrected-real-cad.yml', 'DSCompare_RC9_KOMPLET_ZRODLA.zip']
+  pull_request:
+    paths: ['.github/workflows/rc9-corrected-real-cad.yml', 'DSCompare_RC9_KOMPLET_ZRODLA.zip']
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,7 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-2022
-    timeout-minutes: 35
+    timeout-minutes: 60
     env:
       PYTHONUTF8: '1'
       PYTHONUNBUFFERED: '1'
@@ -27,19 +29,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Expand-Archive DSCompare_RC9_AUDYT_20261028_ZRODLA.zip -DestinationPath . -Force
-          $zip = Join-Path $env:RUNNER_TEMP 'corrected.zip'
-          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/damianink-png/test/86843ff1e30d39938a9015c85ea455a03eefd35b/DSCompare_RC9_POPRAWIONE_ZRODLA.zip' -OutFile $zip
-          Expand-Archive $zip -DestinationPath corrected -Force
-          foreach ($folder in @('dsac29','ci')) {
-            if (!(Test-Path "corrected/$folder")) { throw "Missing corrected folder: $folder" }
-            New-Item -ItemType Directory -Force "dscompare_rc9_manual/$folder" | Out-Null
-            Copy-Item "corrected/$folder/*" "dscompare_rc9_manual/$folder/" -Recurse -Force
-          }
-          if (Test-Path corrected/tests) {
-            New-Item -ItemType Directory -Force tests | Out-Null
-            Copy-Item corrected/tests/* tests/ -Recurse -Force
-          }
+          Expand-Archive -LiteralPath DSCompare_RC9_KOMPLET_ZRODLA.zip -DestinationPath . -Force
+          python dscompare_rc9_manual/ci/check_source_bundle.py dscompare_rc9_manual
+          if ($LASTEXITCODE -ne 0) { throw 'Incomplete or changed source bundle' }
+          Get-FileHash DSCompare_RC9_KOMPLET_ZRODLA.zip -Algorithm SHA256 | Format-List
           python -m compileall -q dscompare_rc9_manual/dsac29
           if ($LASTEXITCODE -ne 0) { throw 'Syntax validation failed' }
       - name: Upload patched Python sources for deterministic failure analysis
@@ -47,6 +40,9 @@ jobs:
         with:
           name: RC9-patched-source-snapshot
           path: |
+            dscompare_rc9_manual/SOURCE_MANIFEST.json
+            dscompare_rc9_manual/tests/**
+            dscompare_rc9_manual/dsac29/*.html
             dscompare_rc9_manual/dsac29/*.py
             dscompare_rc9_manual/ci/*.py
           if-no-files-found: error
@@ -60,10 +56,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Install failed' }
           python -m pip install pytest
           if ($LASTEXITCODE -ne 0) { throw 'pytest install failed' }
-          python -m pytest -q ../patches/rc9/test_robust_translation.py
-          if ($LASTEXITCODE -ne 0) { throw 'Translation regression failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'Corrected source regressions failed' }
+          python ci/test_rc9_original_boundary.py
+          if ($LASTEXITCODE -ne 0) { throw 'Original boundary regression failed' }
           ./BUDUJ_WINDOWS.ps1 -NoInstall
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           if (!(Test-Path dist/DSCompare/DSCompare.exe)) { throw 'Missing EXE' }
@@ -141,19 +137,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Expand-Archive DSCompare_RC9_AUDYT_20261028_ZRODLA.zip -DestinationPath . -Force
-          $zip = Join-Path $env:RUNNER_TEMP 'corrected.zip'
-          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/damianink-png/test/86843ff1e30d39938a9015c85ea455a03eefd35b/DSCompare_RC9_POPRAWIONE_ZRODLA.zip' -OutFile $zip
-          Expand-Archive $zip -DestinationPath corrected -Force
-          foreach ($folder in @('dsac29','ci')) {
-            if (!(Test-Path "corrected/$folder")) { throw "Missing corrected folder: $folder" }
-            New-Item -ItemType Directory -Force "dscompare_rc9_manual/$folder" | Out-Null
-            Copy-Item "corrected/$folder/*" "dscompare_rc9_manual/$folder/" -Recurse -Force
-          }
-          if (Test-Path corrected/tests) {
-            New-Item -ItemType Directory -Force tests | Out-Null
-            Copy-Item corrected/tests/* tests/ -Recurse -Force
-          }
+          Expand-Archive -LiteralPath DSCompare_RC9_KOMPLET_ZRODLA.zip -DestinationPath . -Force
+          python dscompare_rc9_manual/ci/check_source_bundle.py dscompare_rc9_manual
+          if ($LASTEXITCODE -ne 0) { throw 'Incomplete or changed source bundle' }
+          Get-FileHash DSCompare_RC9_KOMPLET_ZRODLA.zip -Algorithm SHA256 | Format-List
           python -m compileall -q dscompare_rc9_manual/dsac29
           if ($LASTEXITCODE -ne 0) { throw 'Syntax validation failed' }
       - uses: actions/download-artifact@v4
@@ -261,13 +248,13 @@ jobs:
         run: |
           # Captured A/B are the exact failed inputs; probes are never a CAD verdict.
           # Timeouts and invalid OCCT outputs remain explicit in the JSON artifact.
-          python ci/rc9_common_probe.py evidence/comparison/FAILED_BREP/common evidence/common-probe.json 12
+          python dscompare_rc9_manual/ci/rc9_common_probe.py evidence/comparison/FAILED_BREP/common evidence/common-probe.json 12
           if ($LASTEXITCODE -ne 0) { Write-Warning 'Common probe failed; original CAD failure remains authoritative' }
       - name: Summarize failure location and persisted diagnostics
         if: failure()
         shell: pwsh
         run: |
-          python ci/rc9_failure_summary.py evidence '${{ matrix.model }}' '${{ matrix.case }}'
+          python dscompare_rc9_manual/ci/rc9_failure_summary.py evidence '${{ matrix.model }}' '${{ matrix.case }}'
           if ($LASTEXITCODE -ne 0) { Write-Warning 'Diagnostic summary failed; preserve original CAD failure' }
       - name: Audit STEP HTML and BOM artifacts
         if: matrix.case != 'revision_repeat'
@@ -289,3 +276,4 @@ jobs:
             dscompare_rc9_manual/ci/models/**/comparison/**
           if-no-files-found: warn
           retention-days: 14
+
