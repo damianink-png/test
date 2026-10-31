@@ -1,7 +1,5 @@
 name: DS Compare Svelte Tauri desktop UI release
 on:
-  pull_request:
-    paths: ['DSCompare_DESKTOP_04_1_ZRODLA.zip', '.github/workflows/desktop-interface.yml']
   workflow_dispatch:
 permissions:
   contents: read
