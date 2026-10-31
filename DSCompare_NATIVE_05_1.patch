@@ -1,0 +1,430 @@
+--- a/dsac29/geometry_registry.py
++++ b/dsac29/geometry_registry.py
+@@ -82,6 +82,13 @@
+         self._rigid_checks[(min(l,r),max(l,r),float(tolerance))]=bool(same)
+         self.stats['proofs_shared']+=1
+ 
++    def has_rigid_proof(self, left, right, tolerance=0.01):
++        """Only an existing positive proof or native shared definition; no new test."""
++        l,r=self.definition(left),self.definition(right)
++        if l==r:return True
++        key=(min(l,r),max(l,r),float(tolerance))
++        return self._rigid_checks.get(key) is True
++
+     def rigid_equivalent(self, left, right, tolerance=0.01):
+         """Proof of rigid congruence, memoized only within this invocation.
+ 
+--- a/dsac29/revision_rules.py
++++ b/dsac29/revision_rules.py
+@@ -31,29 +31,36 @@
+             verified[ha,hb]=True
+             geometry_context.remember_equivalence(old[r.a_index],new[r.b_index],tolerance)
+ 
+-    def proof(ref, p):
+-        if not candidate(ref,p,tolerance):return False
+-        if ref.shape.IsPartner(p.shape):return True
+-        # Cache by shared native definition, NOT by occurrence: repeated STEP
+-        # instances must not trigger hundreds of equivalent_rigid Booleans.
+-        key=(id(handles[id(ref)]),id(handles[id(p)]))
+-        if key not in verified:
+-            comparisons[0]+=1
+-            if progress and comparisons[0]%8==0:
+-                progress(f'Weryfikacja liczby wystąpień: {comparisons[0]} różnych definicji B-Rep; {perf_counter()-begin:.1f} s')
+-            verified[key]=geometry_context.rigid_equivalent(ref,p,tolerance)
+-        return verified[key]
+-
+-    def same_population(a_part,b_part):
+-        name=canonical(a_part.name)
+-        if not geometry_first and (not name or name!=canonical(b_part.name)):return False
+-        if geometry_first:name=None  # STEP-generated labels are not part identity.
+-        key=(name,id(handles[id(a_part)]),id(handles[id(b_part)]))
+-        if key in populations:return populations[key]
+-        # Reject mismatched candidate counts *before* any expensive Booleans.
+-        # A candidate is only a cheap filter, never accepted as shape proof.
+-        ca=[p for p in (old if geometry_first else by_a[name]) if candidate(a_part,p,tolerance)]
+-        cb=[p for p in (new if geometry_first else by_b[name]) if candidate(a_part,p,tolerance)]
++    def eligible(ref,p):
++        # Numerical descriptors cannot veto a completed original-boundary proof.
++        # Unknown pairs retain the strict candidate filter and native verification.
++        return ((geometry_first and geometry_context.has_rigid_proof(ref,p,tolerance))
++                or candidate(ref,p,tolerance))
++
++    def proof(ref, p):
++        if geometry_first and geometry_context.has_rigid_proof(ref,p,tolerance):return True
++        if not candidate(ref,p,tolerance):return False
++        if ref.shape.IsPartner(p.shape):return True
++        # Cache by shared native definition, NOT by occurrence: repeated STEP
++        # instances must not trigger hundreds of equivalent_rigid Booleans.
++        key=(id(handles[id(ref)]),id(handles[id(p)]))
++        if key not in verified:
++            comparisons[0]+=1
++            if progress and comparisons[0]%8==0:
++                progress(f'Weryfikacja liczby wystąpień: {comparisons[0]} różnych definicji B-Rep; {perf_counter()-begin:.1f} s')
++            verified[key]=geometry_context.rigid_equivalent(ref,p,tolerance)
++        return verified[key]
++
++    def same_population(a_part,b_part):
++        name=canonical(a_part.name)
++        if not geometry_first and (not name or name!=canonical(b_part.name)):return False
++        if geometry_first:name=None  # STEP-generated labels are not part identity.
++        key=(name,id(handles[id(a_part)]),id(handles[id(b_part)]))
++        if key in populations:return populations[key]
++        # Reject mismatched candidate counts *before* any expensive Booleans.
++        # A candidate is only a cheap filter, never accepted as shape proof.
++        ca=[p for p in (old if geometry_first else by_a[name]) if eligible(a_part,p)]
++        cb=[p for p in (new if geometry_first else by_b[name]) if eligible(a_part,p)]
+         if len(ca)!=len(cb) or not ca:
+             populations[key]=False;return False
+         # Native identical instances are common in assemblies. No extra B-Rep
+--- a/dsac29/revision_overlap.py
++++ b/dsac29/revision_overlap.py
+@@ -82,72 +82,78 @@
+                            regions.added_mm3, regions.removed_mm3)
+ 
+ 
+-def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=None,review_approval=None):
+-    """Strict by default; an explicit review choice may preserve unknowns."""
+-    records=list(records)
+-    try:
+-        return _merge_material_revisions_strict(a,b,records,tolerance,progress,cancelled)
+-    except NativeGeometryFailure as exc:
+-        if review_approval is None:raise
+-        uncertain={'ADDED','REMOVED','CHANGED'}
+-        old_ids={r.a_index for r in records if r.status in uncertain and r.a_index is not None}
+-        new_ids={r.b_index for r in records if r.status in uncertain and r.b_index is not None}
+-        proposal={'status':'material_unverified','reason':str(exc),
+-                  'unverified_A':len(old_ids),'unverified_B':len(new_ids)}
+-        if review_approval(proposal)!='review':
+-            raise InterruptedError('Anulowano przygotowanie raportu częściowego.') from exc
+-        from dataclasses import replace
+-        reason='Niepotwierdzony wynik materiału w raporcie częściowym. Szczegóły: ANALIZA_NIEKOMPLETNA.txt.'
+-        result=[replace(r,status='UNCERTAIN',note=reason,confidence='Raport częściowy — wymaga sprawdzenia',
+-                        distance_mm=None,delta_x=None,delta_y=None,delta_z=None,
+-                        volume_delta_mm3=None,rotation_deg=None)
+-                if r.status in uncertain else r for r in records]
+-        stat={'accepted':0,'incomplete':True,'reason':str(exc),
+-              'unverified_A':len(old_ids),'unverified_B':len(new_ids)}
+-        trace.mark('revision_overlap_guard','PARTIAL_REVIEW',**stat)
+-        if progress:progress(f'Raport częściowy: do sprawdzenia {len(old_ids)} elementów A i {len(new_ids)} elementów B. Nie potwierdzono różnic materiału.')
+-        return result,{},stat
+-
+-
+-def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,cancelled=None):
+-    old_ids={r.a_index for r in records if r.status=='REMOVED' and r.a_index is not None and r.b_index is None}
+-    new_ids={r.b_index for r in records if r.status=='ADDED' and r.b_index is not None and r.a_index is None}
+-    stat=dict(candidate_pairs=0,boolean_checks=0,accepted=0,ambiguous=0,invalid_boolean=0,
+-              budget_exceeded=False,min_common_larger_same_name=SAME_NAME_MIN,
+-              min_common_larger_different_name=OTHER_NAME_MIN,min_iou=MIN_IOU)
+-    if not old_ids or not new_ids:return list(records),{},stat
+-    if progress:progress(f'Zmiany materiału: {len(old_ids)} starych i {len(new_ids)} nowych elementów; sprawdzanie geometrii…')
+-    ba={i:np.asarray(_precise_world_bounds(a[i].shape),float) for i in old_ids}
+-    bb={j:np.asarray(_precise_world_bounds(b[j].shape),float) for j in new_ids}
+-    sorted_b=sorted((bb[j][0],j) for j in new_ids)
+-    xstarts=[x for x,j in sorted_b]
+-    edges={}
+-    best_common={}
+-    common_cache=[]
+-    stat['common_proof_reuse']=0
+-    guarded_large = True  # every unresolved Common is isolated, including small assemblies
+-    guarded_started=perf_counter()
+-    guarded_budget_s=240.0
+-    trace.mark('revision_overlap_guard','BEGIN',guarded=guarded_large,unresolved=len(old_ids)+len(new_ids))
+-    for idx,i in enumerate(sorted(old_ids)):
+-        if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
+-        ref=a[i];bounds=ba[i]
+-        candidates=[]
+-        for _,j in sorted_b[:bisect_right(xstarts,bounds[3]+tolerance)]:
+-            other=b[j]
+-            if bb[j][3]+tolerance<bounds[0]:continue
+-            common_limit=SAME_NAME_MIN if _name_eq(ref,other) else OTHER_NAME_MIN
+-            if min(ref.volume,other.volume)/max(ref.volume,other.volume)<common_limit:continue
+-            boxvol=_bbox_intersect(bounds,bb[j])
+-            if boxvol+max(1e-3,tolerance**3)<common_limit*max(ref.volume,other.volume):continue
+-            bbox_larger=max(float(np.prod(np.maximum(bounds[3:]-bounds[:3],0))),
+-                            float(np.prod(np.maximum(bb[j][3:]-bb[j][:3],0))),1e-6)
+-            distance=np.linalg.norm(ref.center-other.center)/max(1.,sqrt(sum(d*d for d in ref.bbox)))
+-            priority=boxvol/bbox_larger+0.035*int(_name_eq(ref,other))-0.08*distance
+-            candidates.append((-priority,j))
+-        candidates.sort()
+-        stat['candidate_pairs']+=len(candidates)
+-        for _,j in candidates:
++def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=None,review_approval=None,geometry_context=None):
++    """Strict by default; an explicit review choice may preserve unknowns."""
++    records=list(records)
++    try:
++        return _merge_material_revisions_strict(a,b,records,tolerance,progress,cancelled,geometry_context=geometry_context)
++    except NativeGeometryFailure as exc:
++        if review_approval is None:raise
++        uncertain={'ADDED','REMOVED','CHANGED'}
++        old_ids={r.a_index for r in records if r.status in uncertain and r.a_index is not None}
++        new_ids={r.b_index for r in records if r.status in uncertain and r.b_index is not None}
++        proposal={'status':'material_unverified','reason':str(exc),
++                  'unverified_A':len(old_ids),'unverified_B':len(new_ids)}
++        if review_approval(proposal)!='review':
++            raise InterruptedError('Anulowano przygotowanie raportu częściowego.') from exc
++        from dataclasses import replace
++        reason='Niepotwierdzony wynik materiału w raporcie częściowym. Szczegóły: ANALIZA_NIEKOMPLETNA.txt.'
++        result=[replace(r,status='UNCERTAIN',note=reason,confidence='Raport częściowy — wymaga sprawdzenia',
++                        distance_mm=None,delta_x=None,delta_y=None,delta_z=None,
++                        volume_delta_mm3=None,rotation_deg=None)
++                if r.status in uncertain else r for r in records]
++        stat={'accepted':0,'incomplete':True,'reason':str(exc),
++              'unverified_A':len(old_ids),'unverified_B':len(new_ids)}
++        trace.mark('revision_overlap_guard','PARTIAL_REVIEW',**stat)
++        if progress:progress(f'Raport częściowy: do sprawdzenia {len(old_ids)} elementów A i {len(new_ids)} elementów B. Nie potwierdzono różnic materiału.')
++        return result,{},stat
++
++
++def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,cancelled=None,geometry_context=None):
++    old_ids={r.a_index for r in records if r.status=='REMOVED' and r.a_index is not None and r.b_index is None}
++    new_ids={r.b_index for r in records if r.status=='ADDED' and r.b_index is not None and r.a_index is None}
++    stat=dict(candidate_pairs=0,boolean_checks=0,accepted=0,ambiguous=0,invalid_boolean=0,
++              budget_exceeded=False,rigid_pairs_excluded=0,min_common_larger_same_name=SAME_NAME_MIN,
++              min_common_larger_different_name=OTHER_NAME_MIN,min_iou=MIN_IOU)
++    if not old_ids or not new_ids:return list(records),{},stat
++    if progress:progress(f'Zmiany materiału: {len(old_ids)} starych i {len(new_ids)} nowych elementów; sprawdzanie geometrii…')
++    ba={i:np.asarray(_precise_world_bounds(a[i].shape),float) for i in old_ids}
++    bb={j:np.asarray(_precise_world_bounds(b[j].shape),float) for j in new_ids}
++    sorted_b=sorted((bb[j][0],j) for j in new_ids)
++    xstarts=[x for x,j in sorted_b]
++    edges={}
++    best_common={}
++    common_cache=[]
++    stat['common_proof_reuse']=0
++    guarded_large = True  # every unresolved Common is isolated, including small assemblies
++    guarded_started=perf_counter()
++    guarded_budget_s=240.0
++    trace.mark('revision_overlap_guard','BEGIN',guarded=guarded_large,unresolved=len(old_ids)+len(new_ids))
++    for idx,i in enumerate(sorted(old_ids)):
++        if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
++        ref=a[i];bounds=ba[i]
++        candidates=[]
++        for _,j in sorted_b[:bisect_right(xstarts,bounds[3]+tolerance)]:
++            other=b[j]
++            if bb[j][3]+tolerance<bounds[0]:continue
++            common_limit=SAME_NAME_MIN if _name_eq(ref,other) else OTHER_NAME_MIN
++            if min(ref.volume,other.volume)/max(ref.volume,other.volume)<common_limit:continue
++            boxvol=_bbox_intersect(bounds,bb[j])
++            if boxvol+max(1e-3,tolerance**3)<common_limit*max(ref.volume,other.volume):continue
++            bbox_larger=max(float(np.prod(np.maximum(bounds[3:]-bounds[:3],0))),
++                            float(np.prod(np.maximum(bb[j][3:]-bb[j][:3],0))),1e-6)
++            distance=np.linalg.norm(ref.center-other.center)/max(1.,sqrt(sum(d*d for d in ref.bbox)))
++            priority=boxvol/bbox_larger+0.035*int(_name_eq(ref,other))-0.08*distance
++            candidates.append((-priority,j))
++        candidates.sort()
++        stat['candidate_pairs']+=len(candidates)
++        for _,j in candidates:
++            # A verified rigidly congruent definition is not changed material.
++            # If population changes kept these as separate ADDED/REMOVED
++            # occurrences, retain that classification; never invent a pairing.
++            if geometry_context is not None and geometry_context.has_rigid_proof(ref,b[j],tolerance):
++                stat['rigid_pairs_excluded']+=1
++                continue
+             if stat['boolean_checks']>=MAX_CHECKS:
+                 stat['budget_exceeded']=True;break
+             if perf_counter()-guarded_started>=guarded_budget_s:
+--- a/dsac29/cli.py
++++ b/dsac29/cli.py
+@@ -217,7 +217,7 @@
+         from .revision_rules import classify_revisions
+         rec=classify_revisions(a,b,rec,tolerance,progress=progress,geometry_context=geometry_context,geometry_first=True)
+         from .revision_overlap import merge_material_revisions
+-        rec,precomputed_regions,overlap_diagnostics=merge_material_revisions(a,b,rec,tolerance,progress,cancelled,review_approval=material_approval)
++        rec,precomputed_regions,overlap_diagnostics=merge_material_revisions(a,b,rec,tolerance,progress,cancelled,review_approval=material_approval,geometry_context=geometry_context)
+         trace.mark('revision_classification','END',pairs=len(rec),boolean_checks=(overlap_diagnostics or {}).get('boolean_checks'))
+         if progress:
+             same=sum(r.status in ("SAME","RENAMED") for r in rec)
+--- a/tests/test_registered_rigid_reexport.py
++++ b/tests/test_registered_rigid_reexport.py
+@@ -7,29 +7,64 @@
+ from dsac29.native_guard import _load_brep,guarded_rigid
+ from dsac29.geometry import describe,candidate
+ from dsac29.registered_rigid import prove_native_placement
+-from dsac29.compare import compare
+-
+-ROOT=Path(__file__).parent/'fixtures/moved_reexport_insert'
+-def pair():return [describe(_load_brep(ROOT/(r+'.brep')),'insert','insert-'+r) for r in ('A','B')]
+-
+-def test_real_reexport_insert_proves_original_boundaries_under_cad_placement():
+-    a,b=pair()
+-    assert not candidate(a,b,.01)
+-    assert abs(a.volume-b.volume)>.02
+-    ok,rotation,offset=guarded_rigid(a,b,.01,registered_reexport=True)
+-    assert ok and np.allclose(rotation.T@rotation,np.eye(3),atol=1e-9)
+-    assert abs(np.linalg.det(rotation)-1)<1e-9
+-    assert np.linalg.norm(a.center-b.center)>1
+-
+-def test_registered_assembly_classifies_captured_insert_as_moved_not_material():
+-    a,b=pair();stable=describe(BRepPrimAPI_MakeBox(20.,20.,20.).Shape(),'base','base')
+-    old=[stable]*600+[a];new=[stable]*600+[b]
+-    records=compare(old,new,.01,revision_only=True,certified_pairs=[(i,i) for i in range(600)])
+-    moved=[r for r in records if r.status=='MOVED']
+-    assert len(moved)==1 and moved[0].a_index==moved[0].b_index==600
+-    assert not any(r.status in ('ADDED','REMOVED','CHANGED','UNCERTAIN') for r in records)
+-
+-def test_native_pose_never_hides_a_real_size_change():
+-    a,b=pair();tr=gp_Trsf();tr.SetScale(gp_Pnt(*map(float,b.center)),1.05)
+-    changed=describe(BRepBuilderAPI_Transform(b.shape,tr,True).Shape(),'changed','changed')
+-    assert not prove_native_placement(a,changed,.01)[0]
++from dsac29.compare import compare,Record
++from dsac29.geometry_registry import GeometryRegistry
++from dsac29.revision_rules import classify_revisions
++from dsac29.revision_overlap import merge_material_revisions
++
++ROOT=Path(__file__).parent/'fixtures/moved_reexport_insert'
++def pair():return [describe(_load_brep(ROOT/(r+'.brep')),'insert','insert-'+r) for r in ('A','B')]
++
++def test_real_reexport_insert_proves_original_boundaries_under_cad_placement():
++    a,b=pair()
++    assert not candidate(a,b,.01)
++    assert abs(a.volume-b.volume)>.02
++    ok,rotation,offset=guarded_rigid(a,b,.01,registered_reexport=True)
++    assert ok and np.allclose(rotation.T@rotation,np.eye(3),atol=1e-9)
++    assert abs(np.linalg.det(rotation)-1)<1e-9
++    assert np.linalg.norm(a.center-b.center)>1
++
++def test_registered_assembly_classifies_captured_insert_as_moved_not_material():
++    a,b=pair();stable=describe(BRepPrimAPI_MakeBox(20.,20.,20.).Shape(),'base','base')
++    old=[stable]*600+[a];new=[stable]*600+[b]
++    context=GeometryRegistry()
++    records=compare(old,new,.01,revision_only=True,certified_pairs=[(i,i) for i in range(600)],geometry_context=context)
++    records=classify_revisions(old,new,records,.01,geometry_context=context,geometry_first=True)
++    records,regions,stats=merge_material_revisions(old,new,records,.01,geometry_context=context)
++    assert not regions and stats['boolean_checks']==0
++    moved=[r for r in records if r.status=='MOVED']
++    assert len(moved)==1 and moved[0].a_index==moved[0].b_index==600
++    assert not any(r.status in ('ADDED','REMOVED','CHANGED','UNCERTAIN') for r in records)
++
++def test_native_pose_never_hides_a_real_size_change():
++    a,b=pair();tr=gp_Trsf();tr.SetScale(gp_Pnt(*map(float,b.center)),1.05)
++    changed=describe(BRepBuilderAPI_Transform(b.shape,tr,True).Shape(),'changed','changed')
++    assert not prove_native_placement(a,changed,.01)[0]
++
++def test_population_change_keeps_separate_occurrences_without_material_common(monkeypatch):
++    a,b=pair()
++    assert prove_native_placement(a,b,.01)[0]
++    context=GeometryRegistry()
++    old=[a];new=[b,b]
++    initial=[Record(0,0,'MOVED','original boundaries proven'),Record(None,1,'ADDED','extra occurrence')]
++    records=classify_revisions(old,new,initial,.01,geometry_context=context,geometry_first=True)
++    assert sum(r.status=='REMOVED' for r in records)==1
++    assert sum(r.status=='ADDED' for r in records)==2
++    from dsac29 import native_guard
++    def forbidden(*args,**kwargs):
++        raise AssertionError('Congruent definitions must not enter material Common')
++    monkeypatch.setattr(native_guard,'guarded_common',forbidden)
++    result,regions,stats=merge_material_revisions(old,new,records,.01,geometry_context=context)
++    assert [vars(r) for r in result]==[vars(r) for r in records]
++    assert not regions and stats['boolean_checks']==0 and stats['rigid_pairs_excluded']>0
++
++def test_unproved_material_change_still_requires_common(monkeypatch):
++    import pytest
++    from dsac29 import native_guard
++    a=describe(BRepPrimAPI_MakeBox(10.,10.,10.).Shape(),'old','old')
++    b=describe(BRepPrimAPI_MakeBox(11.,10.,10.).Shape(),'new','new')
++    def failed(*args,**kwargs):
++        raise native_guard.NativeGeometryFailure('no material proof')
++    monkeypatch.setattr(native_guard,'guarded_common',failed)
++    with pytest.raises(native_guard.NativeGeometryFailure,match='no material proof'):
++        merge_material_revisions([a],[b],[Record(0,None,'REMOVED',''),Record(None,0,'ADDED','')],.01,geometry_context=GeometryRegistry())
+--- a/build_info.json
++++ b/build_info.json
+@@ -10,11 +10,11 @@
+   "alignment": "Comparison first; deferred B-Rep verified translation",
+   "geometry": "Full original surface/trim proofs with uniformly bounded collapsed micro-cylinder patches; independent native operations",
+   "base_commit": "2ae6b4fbca084dcf0c98eec55f6e938c67f1598c",
+-  "revision": "R22.3 native CAD pose and B-Rep transport 05 20261031",
+-  "performance": "Invocation-scoped frame proof cache; complete surface/trim validation",
+-  "import_timeout_seconds": 1800,
+-  "preview": "Offline WebGL; complete occurrences; removed-only filter and old-revision X-ray",
+-  "ui_revision": "Explicit partial-report decision, clear incomplete status, numeric +/- controls, visible build label",
+-  "validation_status": "Captured moved M3 insert: complete original boundary proof at0.01mm and negative size-change test PASS. Native filename transport stress and local regression groups verified separately; fresh Windows full CAD results required. Prior V2 shifted native crash remains a stability investigation, not a confirmed cause.",
+-  "build_label": "RC9 / Native 05"
++  "revision": "R22.3 original boundary proof propagation 05.1 20261031",
++  "performance": "Invocation-scoped frame proof cache; complete surface/trim validation",
++  "import_timeout_seconds": 1800,
++  "preview": "Offline WebGL; complete occurrences; removed-only filter and old-revision X-ray",
++  "ui_revision": "Explicit partial-report decision, clear incomplete status, numeric +/- controls, visible build label",
++  "validation_status": "Prior Native05: 333 Windows regressions and six CAD scenarios passed; V2 revision_shift still failed because downstream population filtering discarded proven congruence. New pipeline and negative regressions require Windows CI; local execution environment unavailable.",
++  "build_label": "RC9 / Native 05.1"
+ }
+--- a/desktop/package.json
++++ b/desktop/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "dscompare-desktop",
+-  "version": "0.4.2",
++  "version": "0.4.3",
+   "private": true,
+   "type": "module",
+   "scripts": {
+--- a/desktop/package-lock.json
++++ b/desktop/package-lock.json
+@@ -1,12 +1,12 @@
+ {
+   "name": "dscompare-desktop",
+-  "version": "0.4.2",
+-  "lockfileVersion": 3,
+-  "requires": true,
+-  "packages": {
+-    "": {
+-      "name": "dscompare-desktop",
+-      "version": "0.4.2",
++  "version": "0.4.3",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "dscompare-desktop",
++      "version": "0.4.3",
+       "dependencies": {
+         "@tauri-apps/api": "^2.8.0",
+         "@tauri-apps/plugin-dialog": "^2.4.0",
+--- a/desktop/src-tauri/tauri.conf.json
++++ b/desktop/src-tauri/tauri.conf.json
+@@ -1,7 +1,7 @@
+ {
+   "$schema": "https://schema.tauri.app/config/2",
+   "productName": "DS Compare",
+-  "version": "0.4.2",
++  "version": "0.4.3",
+   "identifier": "pl.dscompare.desktop",
+   "build": {
+     "beforeDevCommand": "npm run dev",
+--- a/desktop/src-tauri/Cargo.toml
++++ b/desktop/src-tauri/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "dscompare-desktop"
+-version = "0.4.2"
++version = "0.4.3"
+ edition = "2021"
+ [lib]
+ name = "dscompare_core"
+--- a/desktop/src-tauri/Cargo.lock
++++ b/desktop/src-tauri/Cargo.lock
+@@ -816,7 +816,7 @@
+ 
+ [[package]]
+ name = "dscompare-desktop"
+-version = "0.4.2"
++version = "0.4.3"
+ dependencies = [
+  "libc",
+  "serde",
+--- /dev/null
++++ b/POPRAWKI_TESTOW_NATIVE_05_1.md
+@@ -0,0 +1,13 @@
++# RC9 / Native 05.1 — Desktop 0.4.3
++
++Poprzednia poprawka potwierdzała dopasowanie przesuniętej wkładki M3, lecz pełna analiza nadal kończyła się błędem. Późniejsza klasyfikacja liczby wystąpień stosowała filtr objętości po pozytywnym pełnym dowodzie B-Rep i rozdzielała MOVED na REMOVED/ADDED. Teraz już potwierdzone definicje geometrii uczestniczą w liczeniu populacji niezależnie od tego filtra. Reguła jednakowej liczby wystąpień pozostaje zachowana.
++
++Gdy populacja się zmienia, pozostają osobne wystąpienia stare i nowe. Etap materiału nie kieruje udowodnionych geometrycznie równych definicji do Common i nie zgaduje ich tożsamości. Wszystkie niepotwierdzone zmiany nadal wymagają natywnego Common/Cut.
++
++Regresja obejmuje teraz pełny łańcuch compare → classify_revisions → merge_material_revisions na oryginalnej parze z artefaktu i złożeniu 601 wystąpień. Dodano kontrole dodatkowego wystąpienia i obowiązkowej operacji Common dla nieudowodnionej zmiany. Nie zwiększono tolerancji.
++
++Nie deklarujemy lokalnego zaliczenia tej poprawki: środowisko wykonawcze stało się niedostępne. Kod i spójność źródeł sprawdzono przy przygotowaniu pakietu; pełne testy Windows, CAD i instalatora muszą zakończyć się osobno na GitHubie.
++
++Poprzedni run41182141340: 333 testy Windows, budowanie instalatora, V2 shift, wszystkie scenariusze Trident, V2 bez przesunięcia i jawny raport częściowy OpenArm PASS; V2 revision_shift FAIL na M3. Ta aktualizacja naprawia utratę dowodu w dalszych etapach. Przyczyna wcześniejszej sporadycznej awarii Windows nie jest uznana za udowodnioną.
++
++Autorytatywne bieżące źródła: DSCompare_RC9_KOMPLET_ZRODLA.zip. Czytelny przyrost zmian względem Native05: DSCompare_NATIVE_05_1.patch i review/fix051/. Starszy DSCompare_RC9_KOMPLET.patch opisuje bazę Native05; do instalacji używaj pełnego aktualnego pakietu.
