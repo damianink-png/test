@@ -11,6 +11,8 @@ jobs:
   portable:
     runs-on: windows-2022
     timeout-minutes: 60
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -38,6 +40,7 @@ jobs:
         with:
           path: portable-src/desktop/src-tauri/target
           key: portable-ui-${{ runner.os }}-${{ hashFiles('portable/frontend/**', 'portable/prepare_source.py') }}
+          restore-keys: portable-ui-${{ runner.os }}-
       - name: Test and build desktop without installer
         shell: pwsh
         working-directory: portable-src/desktop
@@ -54,6 +57,24 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Core tests failed'}
           npm run tauri -- build --no-bundle
           if($LASTEXITCODE -ne 0){throw 'Desktop build failed'}
+      - name: Verify simplified interface interactions and responsive WebGL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item evidence -ItemType Directory -Force | Out-Null
+          python -m pip install playwright==1.64.1
+          if($LASTEXITCODE -ne 0){throw 'Browser test dependency failed'}
+          python -m playwright install chromium
+          if($LASTEXITCODE -ne 0){throw 'Browser installation failed'}
+          $vite=(Resolve-Path portable-src/desktop/node_modules/vite/bin/vite.js).Path
+          $server=Start-Process node.exe -ArgumentList @($vite,'--host','127.0.0.1','--port','8768') -WorkingDirectory portable-src/desktop -PassThru -RedirectStandardOutput evidence/vite.log -RedirectStandardError evidence/vite-error.log
+          try {
+            $ready=$false
+            foreach($i in 1..60){try{Invoke-WebRequest http://127.0.0.1:8768 -TimeoutSec 2 | Out-Null;$ready=$true;break}catch{Start-Sleep -Milliseconds 250}}
+            if(-not $ready){throw 'Browser test server unavailable'}
+            python portable/tests/browser_usability.py evidence/usability
+            if($LASTEXITCODE -ne 0){throw 'Interface interaction regression failed'}
+          } finally {Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue}
       - uses: actions/upload-artifact@v4
         with:
           name: DSCompare-Portable-native-UI-binary
@@ -121,13 +142,13 @@ jobs:
           Get-FileHash delivery/portable/DSCompare.exe,delivery/onefile/DSCompare.exe | Format-List | Out-File evidence/launcher-hashes.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-0.5.2-Portable-ZIP
+          name: DSCompare-0.6.0-Portable-ZIP
           path: delivery/portable/
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-0.5.2-Portable-OneEXE
+          name: DSCompare-0.6.0-Portable-OneEXE
           path: delivery/onefile/DSCompare.exe
           compression-level: 0
           if-no-files-found: error

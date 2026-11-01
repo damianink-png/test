@@ -1,0 +1,10 @@
+<script lang="ts">
+ import {onMount} from 'svelte';
+ import type {Job} from './model';
+ let {job,elapsed,oncancel}:{job:Job;elapsed:number;oncancel:()=>void}=$props();
+ let now=$state(Date.now()),logs=$state(false);
+ const progress=$derived(job.progress),age=$derived(progress?.timestamp_ms?Math.max(0,Math.floor((now-progress.timestamp_ms)/1000)):null);
+ const percent=$derived(progress?.total&&progress.completed!==undefined?Math.min(100,Math.max(0,100*progress.completed/progress.total)):null);
+ onMount(()=>{const timer=setInterval(()=>now=Date.now(),1000);return()=>clearInterval(timer)});
+</script>
+<section class="job-panel" aria-label="Postęp analizy"><div class="job-header"><span class="job-indicator" class:running-dot={job.running}></span><strong>{job.running?job.question?'Oczekiwanie na decyzję':'Analiza w toku':job.cancelled?'Anulowano':job.error?'Analiza przerwana':'Operacja zakończona'}</strong><span class="muted">{Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,'0')}</span><button class="subtle" onclick={()=>logs=!logs}>{logs?'Ukryj dziennik':'Dziennik analizy'}</button>{#if job.running}<button class="cancel-button" onclick={oncancel}>Anuluj</button>{/if}</div><div class="progress-facts"><span>{job.question?'Wybierz sposób dalszej analizy.':progress?.phase||'Przygotowywanie analizy…'}</span></div>{#if job.running}{#if percent!==null}<progress aria-label="Postęp bieżącego etapu" max="100" value={percent}></progress>{:else}<div class="indeterminate" role="progressbar" aria-label="Oczekiwanie na wynik bieżącej operacji"><span></span></div>{/if}{#if age!==null&&age>60&&!job.question}<p>Dłuższa operacja CAD może nie wysyłać komunikatów. Sam brak komunikatu nie potwierdza zawieszenia.</p>{/if}{/if}{#if logs}<pre>{job.events.join('\n')}</pre>{/if}</section>

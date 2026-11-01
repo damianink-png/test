@@ -1,0 +1,5 @@
+import {it,expect} from 'vitest';
+import {massSummary,stepPaths,hasTranslation,defaults} from '../src/model';
+it('formats the actual mass worker payload and rejects missing totals',()=>{expect(massSummary({masa_calosci_kg:44.931862,liczba_bryl:553,liczba_plikow:1,gestosc_kg_m3:7850})).toEqual({mass:44.931862,solids:553,models:1,density:7850});expect(massSummary(null)).toBeNull();expect(massSummary({masa_calosci_kg:Infinity})).toBeNull()});
+it('accepts Windows, Unicode and uppercase STEP drops but rejects folders and other files',()=>{expect(stepPaths(['C:\\Modele\\Osłona.STEP','C:\\Modele\\Osłona.STEP','D:\\B.stp'])).toHaveLength(2);expect(()=>stepPaths(['C:\\folder'])).toThrow();expect(()=>stepPaths(['A.step','B.exe'])).toThrow()});
+it('does not present unresolved placeholders as a measured zero shift',()=>{const q={token:'t',material_unverified:false,reason:'',unverified_A:0,unverified_B:0,translation_mm:[0,0,0]};expect(hasTranslation(q)).toBe(false);expect(hasTranslation({...q,translation_mm:[507.4569,-249.1752,524]})).toBe(true);expect(hasTranslation({...q,unresolved:true,translation_mm:[1,2,3]})).toBe(false);expect(defaults.bomCsv).toBe(false)});

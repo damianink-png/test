@@ -1,0 +1,304 @@
+{
+  "statuses": {
+    "SAME": 1,
+    "RENAMED": 1,
+    "MOVED": 1,
+    "CHANGED": 1,
+    "REMOVED": 1,
+    "ADDED": 1,
+    "UNCERTAIN": 1
+  },
+  "same_geometry_count": 2,
+  "renamed_geometry_count": 1,
+  "geometry_and_name_changed_count": 0,
+  "solids_A": 6,
+  "solids_B": 6,
+  "colors_hex": {
+    "SAME": "#94a3b8",
+    "RENAMED": "#94a3b8",
+    "MOVED": "#0072b2",
+    "CHANGED": "#e69f00",
+    "ADDED": "#009e73",
+    "REMOVED": "#d55e00",
+    "UNCERTAIN": "#cc79a7",
+    "MOVED_OLD": "#8cc5e3",
+    "CHANGED_NEW": "#e69f00",
+    "CHANGED_OLD": "#f3c977",
+    "CHANGED_COMMON": "#94a3b8",
+    "CHANGED_ADDED": "#009e73",
+    "CHANGED_REMOVED": "#d55e00",
+    "UNCERTAIN_NEW": "#cc79a7",
+    "UNCERTAIN_OLD": "#e7b8d0"
+  },
+  "density_kg_m3": 7850.0,
+  "mass_A_kg": 0.1562778,
+  "mass_B_kg": 0.148365,
+  "step_verification": "pelna_ponowny_import",
+  "step_export_error": null,
+  "optional_diff_errors": [],
+  "main_step_error": null,
+  "main_step_ready": true,
+  "step_ready": true,
+  "import_diagnostics": {},
+  "source_fingerprints": {},
+  "manual_pairs": [],
+  "alignment": {
+    "applied": true,
+    "translation_B_to_A_mm": [
+      -507.4569,
+      249.1752,
+      -524.0
+    ],
+    "rotation_B_to_A": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "analysis_complete": false,
+  "material_analysis_complete": false,
+  "revision_overlap": {
+    "incomplete": true,
+    "reason": "Demonstracyjny brak potwierdzenia Common — nie jest wynikiem testu źródeł użytkownika.",
+    "failed_pair": {
+      "a_index": 5,
+      "b_index": 5
+    }
+  },
+  "source_A": "",
+  "source_B": "",
+  "tolerance_mm": 0.01,
+  "export_style": "revision_A_B",
+  "old_alpha": 0.4,
+  "full_bom": true,
+  "bom_grouping_complete": true,
+  "bom_mode": "dokladny",
+  "bom_csv": true,
+  "bom_seconds": 0.0037151940000015315,
+  "bom_warnings": [],
+  "diff_step": {
+    "written": false,
+    "solids": 0,
+    "changes": [],
+    "errors": []
+  },
+  "material_regions": [
+    {
+      "record_index": 3,
+      "common_mm3": 3780.0,
+      "added_mm3": 0.0,
+      "removed_mm3": 1008.0
+    }
+  ],
+  "material_errors": {},
+  "preview_3d": {
+    "elementy": 13,
+    "wszystkie": 13,
+    "trojkaty": 156,
+    "pominiete": 0,
+    "dual_revisions": true,
+    "alignment": {
+      "applied": true,
+      "translation_B_to_A_mm": [
+        -507.4569,
+        249.1752,
+        -524.0
+      ],
+      "rotation_B_to_A": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ]
+    },
+    "world_origin": [
+      65.6923076923077,
+      10.846153846153847,
+      9.0
+    ],
+    "mesh_cache_hits": 1,
+    "unique_meshes": 12,
+    "ograniczony": false,
+    "limit_trojkatow": 300000,
+    "przekroczony_cel_siatki": false
+  },
+  "records": [
+    {
+      "a_index": 0,
+      "b_index": 0,
+      "status": "SAME",
+      "note": "Ta sama geometria",
+      "distance_mm": null,
+      "delta_x": null,
+      "delta_y": null,
+      "delta_z": null,
+      "volume_delta_mm3": null,
+      "rotation_deg": null,
+      "confidence": "B-Rep",
+      "name_changed": false,
+      "record_index": 0,
+      "name_a": "Wspornik 01",
+      "path_a": "Złożenie demonstracyjne/Wspornik 01",
+      "name_b": "Wspornik 01",
+      "path_b": "Złożenie demonstracyjne/Wspornik 01",
+      "verification": "confirmed",
+      "diagnostic_reason": "",
+      "blocked_operation_operand": false
+    },
+    {
+      "a_index": 1,
+      "b_index": 1,
+      "status": "RENAMED",
+      "note": "Zmiana nazwy",
+      "distance_mm": null,
+      "delta_x": null,
+      "delta_y": null,
+      "delta_z": null,
+      "volume_delta_mm3": null,
+      "rotation_deg": null,
+      "confidence": "B-Rep",
+      "name_changed": true,
+      "record_index": 1,
+      "name_a": "Pokrywa stara",
+      "path_a": "Złożenie demonstracyjne/Pokrywa stara",
+      "name_b": "Pokrywa nowa",
+      "path_b": "Złożenie demonstracyjne/Pokrywa nowa",
+      "verification": "confirmed",
+      "diagnostic_reason": "",
+      "blocked_operation_operand": false
+    },
+    {
+      "a_index": 2,
+      "b_index": 2,
+      "status": "MOVED",
+      "note": "Nowe położenie",
+      "distance_mm": 25,
+      "delta_x": null,
+      "delta_y": 25,
+      "delta_z": null,
+      "volume_delta_mm3": null,
+      "rotation_deg": null,
+      "confidence": "B-Rep",
+      "name_changed": false,
+      "record_index": 2,
+      "name_a": "Uchwyt",
+      "path_a": "Złożenie demonstracyjne/Uchwyt",
+      "name_b": "Uchwyt",
+      "path_b": "Złożenie demonstracyjne/Uchwyt",
+      "verification": "confirmed",
+      "diagnostic_reason": "",
+      "blocked_operation_operand": false
+    },
+    {
+      "a_index": 3,
+      "b_index": 3,
+      "status": "CHANGED",
+      "note": "Zmniejszono szerokość płyty",
+      "distance_mm": null,
+      "delta_x": null,
+      "delta_y": null,
+      "delta_z": null,
+      "volume_delta_mm3": -1008,
+      "rotation_deg": null,
+      "confidence": "B-Rep",
+      "name_changed": false,
+      "record_index": 3,
+      "name_a": "Płyta",
+      "path_a": "Złożenie demonstracyjne/Płyta",
+      "name_b": "Płyta",
+      "path_b": "Złożenie demonstracyjne/Płyta",
+      "verification": "confirmed",
+      "diagnostic_reason": "",
+      "blocked_operation_operand": false
+    },
+    {
+      "a_index": 4,
+      "b_index": null,
+      "status": "REMOVED",
+      "note": "Usunięto",
+      "distance_mm": null,
+      "delta_x": null,
+      "delta_y": null,
+      "delta_z": null,
+      "volume_delta_mm3": null,
+      "rotation_deg": null,
+      "confidence": "B-Rep",
+      "name_changed": false,
+      "record_index": 4,
+      "name_a": "Usuwany detal",
+      "path_a": "Złożenie demonstracyjne/Usuwany detal",
+      "name_b": "",
+      "path_b": "",
+      "verification": "confirmed",
+      "diagnostic_reason": "",
+      "blocked_operation_operand": false
+    },
+    {
+      "a_index": null,
+      "b_index": 4,
+      "status": "ADDED",
+      "note": "Dodano",
+      "distance_mm": null,
+      "delta_x": null,
+      "delta_y": null,
+      "delta_z": null,
+      "volume_delta_mm3": null,
+      "rotation_deg": null,
+      "confidence": "B-Rep",
+      "name_changed": false,
+      "record_index": 5,
+      "name_a": "",
+      "path_a": "",
+      "name_b": "Nowy detal",
+      "path_b": "Złożenie demonstracyjne/Nowy detal",
+      "verification": "confirmed",
+      "diagnostic_reason": "",
+      "blocked_operation_operand": false
+    },
+    {
+      "a_index": 5,
+      "b_index": 5,
+      "status": "UNCERTAIN",
+      "note": "Wymaga weryfikacji",
+      "distance_mm": null,
+      "delta_x": null,
+      "delta_y": null,
+      "delta_z": null,
+      "volume_delta_mm3": null,
+      "rotation_deg": null,
+      "confidence": "B-Rep",
+      "name_changed": false,
+      "record_index": 6,
+      "name_a": "Do kontroli A",
+      "path_a": "Złożenie demonstracyjne/Do kontroli A",
+      "name_b": "Do kontroli B",
+      "path_b": "Złożenie demonstracyjne/Do kontroli B",
+      "verification": "unverified",
+      "diagnostic_reason": "Demonstracyjny brak potwierdzenia Common — nie jest wynikiem testu źródeł użytkownika.",
+      "blocked_operation_operand": true
+    }
+  ]
+}

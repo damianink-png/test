@@ -232,7 +232,7 @@ mod win {
         );
         text(
             dc,
-            "PORTABLE 0.5.2",
+            "PORTABLE 0.6.0",
             526,
             331,
             120,
