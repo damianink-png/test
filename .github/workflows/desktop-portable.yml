@@ -34,6 +34,10 @@ jobs:
           artifact-ids: '13076929166'
           merge-multiple: true
           path: portable-src/desktop/src-tauri/engine/DSCompare
+      - uses: actions/cache@v4
+        with:
+          path: portable-src/desktop/src-tauri/target
+          key: portable-ui-${{ runner.os }}-${{ hashFiles('portable/frontend/**', 'portable/prepare_source.py') }}
       - name: Test and build desktop without installer
         shell: pwsh
         working-directory: portable-src/desktop
@@ -50,6 +54,11 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Core tests failed'}
           npm run tauri -- build --no-bundle
           if($LASTEXITCODE -ne 0){throw 'Desktop build failed'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-Portable-native-UI-binary
+          path: portable-src/desktop/src-tauri/target/release/DSCompareDesktop.exe
+          if-no-files-found: error
       - name: Stage tested engine and pinned Microsoft Fixed WebView2
         shell: pwsh
         run: |
@@ -123,11 +132,15 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 30
+      - name: Collect native startup logs
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item evidence/startup-logs -ItemType Directory -Force | Out-Null
+          Get-ChildItem "$env:LOCALAPPDATA/DSCompare/portable-webview" -Recurse -Filter startup.log -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName (Join-Path evidence/startup-logs ($_.Directory.Name+'.log')) }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: DSCompare-Portable-validation
-          path: |
-            evidence/
-            ~/AppData/Local/DSCompare/portable-webview/*/startup.log
+          path: evidence/
           if-no-files-found: warn

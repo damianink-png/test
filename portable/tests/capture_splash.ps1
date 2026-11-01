@@ -4,18 +4,24 @@ Add-Type -AssemblyName System.Drawing
 Add-Type @'
 using System;using System.Runtime.InteropServices;
 public class CaptureWindow {
- [DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern IntPtr FindWindow(string cls,string title);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern IntPtr FindWindow(string cls,IntPtr title);
  [DllImport("user32.dll")]public static extern bool GetWindowRect(IntPtr window,out RECT rect);
  public struct RECT {public int Left,Top,Right,Bottom;}
 }
 '@
 New-Item -ItemType Directory -Path $Output -Force | Out-Null
-$process=Start-Process -FilePath $Launcher -ArgumentList '--splash-demo-ms','4500' -PassThru
+$process=Start-Process -FilePath $Launcher -ArgumentList '--splash-demo-ms','6000' -PassThru
 try {
+ $deadline=[DateTime]::UtcNow.AddSeconds(20)
+ do {
+  $window=[CaptureWindow]::FindWindow('DSComparePortableSplash',[IntPtr]::Zero)
+  if($window -ne [IntPtr]::Zero){break}
+  if($process.HasExited){throw "Startup demo exited before capture: $($process.ExitCode)"}
+  Start-Sleep -Milliseconds 100
+ } while([DateTime]::UtcNow -lt $deadline)
+ if($window -eq [IntPtr]::Zero){throw 'Startup window not created within 20 seconds'}
  foreach($i in 0..2){
-  Start-Sleep -Milliseconds 500
-  $window=[CaptureWindow]::FindWindow('DSComparePortableSplash',$null)
-  if($window -eq [IntPtr]::Zero){throw 'Startup window not created'}
+  Start-Sleep -Milliseconds 400
   $rect=New-Object CaptureWindow+RECT
   if(-not [CaptureWindow]::GetWindowRect($window,[ref]$rect)){throw 'Cannot inspect startup window'}
   $bitmap=New-Object Drawing.Bitmap(($rect.Right-$rect.Left),($rect.Bottom-$rect.Top))
