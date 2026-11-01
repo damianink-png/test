@@ -85,32 +85,28 @@ def _translated_regions(regions, offset):
 def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=None,review_approval=None,geometry_context=None):
     """Strict by default; an explicit review choice may preserve unknowns."""
     records=list(records)
-    try:
-        return _merge_material_revisions_strict(a,b,records,tolerance,progress,cancelled,geometry_context=geometry_context)
-    except NativeGeometryFailure as exc:
-        if review_approval is None:raise
-        uncertain={'ADDED','REMOVED','CHANGED'}
-        old_ids={r.a_index for r in records if r.status in uncertain and r.a_index is not None}
-        new_ids={r.b_index for r in records if r.status in uncertain and r.b_index is not None}
-        proposal={'status':'material_unverified','reason':str(exc),
-                  'unverified_A':len(old_ids),'unverified_B':len(new_ids)}
-        if review_approval(proposal)!='review':
-            raise InterruptedError('Anulowano przygotowanie raportu częściowego.') from exc
-        from dataclasses import replace
-        reason='Niepotwierdzony wynik materiału w raporcie częściowym. Szczegóły: ANALIZA_NIEKOMPLETNA.txt.'
-        result=[replace(r,status='UNCERTAIN',note=reason,confidence='Raport częściowy — wymaga sprawdzenia',
-                        distance_mm=None,delta_x=None,delta_y=None,delta_z=None,
-                        volume_delta_mm3=None,rotation_deg=None)
-                if r.status in uncertain else r for r in records]
-        stat={'accepted':0,'incomplete':True,'reason':str(exc),
-              'unverified_A':len(old_ids),'unverified_B':len(new_ids),
-              'failed_pair':getattr(exc,'failed_pair',None)}
-        trace.mark('revision_overlap_guard','PARTIAL_REVIEW',**stat)
-        if progress:progress(f'Raport częściowy: do sprawdzenia {len(old_ids)} elementów A i {len(new_ids)} elementów B. Nie potwierdzono różnic materiału.')
-        return result,{},stat
+    # In the interactive workflow isolate failed B-Rep pairs, preserving all
+    # independent verified results. Strict non-interactive callers stay fail-closed.
+    result,regions,stat=_merge_material_revisions_strict(
+        a,b,records,tolerance,progress,cancelled,geometry_context=geometry_context,
+        recover_failures=review_approval is not None)
+    if not stat.get('incomplete'):
+        return result,regions,stat
+    proposal={'status':'material_unverified','reason':stat['reason'],
+              'unverified_A':stat['unverified_A'],
+              'unverified_B':stat['unverified_B'],
+              'failed_pair':stat.get('failed_pair')}
+    if review_approval(proposal)!='review':
+        raise InterruptedError('Anulowano przygotowanie raportu częściowego.')
+    trace.mark('revision_overlap_guard','PARTIAL_REVIEW',**stat)
+    if progress:progress(
+        f"Raport częściowy: do sprawdzenia {stat['unverified_A']} elementów A "
+        f"i {stat['unverified_B']} elementów B; potwierdzono "
+        f"{stat['accepted']} zmian geometrii mimo błędów innych par.")
+    return result,regions,stat
 
 
-def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,cancelled=None,geometry_context=None):
+def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,cancelled=None,geometry_context=None,recover_failures=False):
     old_ids={r.a_index for r in records if r.status=='REMOVED' and r.a_index is not None and r.b_index is None}
     new_ids={r.b_index for r in records if r.status=='ADDED' and r.b_index is not None and r.a_index is None}
     stat=dict(candidate_pairs=0,boolean_checks=0,accepted=0,ambiguous=0,invalid_boolean=0,
@@ -125,6 +121,13 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     edges={}
     best_common={}
     common_cache=[]
+    failed_old=set();failed_new=set();failures=[]
+    def mark_failure(i,j,error):
+        failed_old.add(i);failed_new.add(j)
+        entry={'a_index':i,'b_index':j,'error':str(error)}
+        failures.append(entry)
+        trace.mark('revision_material_pair','UNVERIFIED',**entry)
+        if progress:progress(f'Niepotwierdzona para A[{i}] / B[{j}]: {error}; kontynuuję inne pary.')
     stat['common_proof_reuse']=0
     guarded_large = True  # every unresolved Common is isolated, including small assemblies
     guarded_started=perf_counter()
@@ -155,10 +158,12 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             if geometry_context is not None and geometry_context.has_rigid_proof(ref,b[j],tolerance):
                 stat['rigid_pairs_excluded']+=1
                 continue
-            if stat['boolean_checks']>=MAX_CHECKS:
-                stat['budget_exceeded']=True;break
-            if perf_counter()-guarded_started>=guarded_budget_s:
-                raise NativeGeometryFailure('Limit czasu bezpiecznej analizy wspólnego materiału — nieukończone porównanie')
+            if stat['boolean_checks']>=MAX_CHECKS or perf_counter()-guarded_started>=guarded_budget_s:
+                stat['budget_exceeded']=True
+                if not recover_failures:
+                    raise NativeGeometryFailure('Limit czasu lub liczby testów materiału — analiza niekompletna')
+                mark_failure(i,j,'Nie wykonano testu: przekroczony limit czasu lub liczby operacji')
+                continue
             cached=next((entry for entry in common_cache
                          if _reuse_common_volume(ref,b[j],entry[0],entry[1])),None)
             shape=None
@@ -196,9 +201,14 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             except NativeGeometryFailure as exc:
                 failure=NativeGeometryFailure(f'Para A[{i}] „{ref.name}” / B[{j}] „{b[j].name}”: '+str(exc))
                 failure.failed_pair={'a_index':i,'b_index':j}
-                raise failure from exc
+                if not recover_failures:raise failure from exc
+                mark_failure(i,j,failure)
+                continue
             except Exception as exc:
-                raise NativeGeometryFailure('Niekompletna analiza wspólnego materiału: '+str(exc)) from exc
+                failure=NativeGeometryFailure('Niekompletna analiza wspólnego materiału: '+str(exc))
+                if not recover_failures:raise failure from exc
+                mark_failure(i,j,failure)
+                continue
             score=_score(common,ref,b[j],_name_eq(ref,b[j]))
             if score is not None:
                 edges[i,j]=score
@@ -206,9 +216,15 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                     if i not in best_common and len(best_common)>=64:
                         best_common.pop(next(iter(best_common)))
                     best_common[i]=(score,j,evidence,recovered_regions)
-        if stat['budget_exceeded']:raise NativeGeometryFailure('Limit liczby testów materiału — analiza niekompletna')
+        if stat['budget_exceeded'] and not recover_failures:
+            raise NativeGeometryFailure('Limit liczby testów materiału — analiza niekompletna')
         if progress and idx and idx%50==0:
             progress(f'R17: geometria rewizji {idx}/{len(old_ids)}; B-Rep {stat["boolean_checks"]}')
+    # Failed edges can change the winner among similar parts.
+    # Never accept a competing candidate involving an unverified operand.
+    if recover_failures:
+        edges={key:score for key,score in edges.items()
+               if key[0] not in failed_old and key[1] not in failed_new}
     by_a=defaultdict(list);by_b=defaultdict(list)
     for (i,j),score in edges.items():
         by_a[i].append((score,j));by_b[j].append((score,i))
@@ -245,10 +261,15 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 raise ValueError('Niewystarczający wspólny materiał')
             if reg.added_mm3+reg.removed_mm3<=max(1e-3,max(a[i].volume,b[j].volume)*1e-7):
                 raise ValueError('Brak różnicy')
-        except NativeGeometryFailure:
-            raise
+        except NativeGeometryFailure as exc:
+            if not recover_failures:raise
+            mark_failure(i,j,exc)
+            continue
         except Exception as exc:
-            raise NativeGeometryFailure('Niekompletna analiza różnic materiału: '+str(exc)) from exc
+            failure=NativeGeometryFailure('Niekompletna analiza różnic materiału: '+str(exc))
+            if not recover_failures:raise failure from exc
+            mark_failure(i,j,failure)
+            continue
         rename=_name_changed(a[i],b[j])
         d=b[j].center-a[i].center
         record=Record(i,j,'CHANGED',
@@ -257,18 +278,41 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             (f'; zmiana nazwy {a[i].name} → {b[j].name}' if rename else ''),
             float(np.linalg.norm(d)),float(d[0]),float(d[1]),float(d[2]),
             float(b[j].volume-a[i].volume),None,'Zweryfikowano OCC Common i Cut',name_changed=rename)
-        accepted[i]=(j,record);regions[i]=bind_regions(reg,a[i],b[j],tolerance)
+        try:
+            bound=bind_regions(reg,a[i],b[j],tolerance)
+        except Exception as exc:
+            if not recover_failures:raise NativeGeometryFailure('Niepoprawne dowody różnicy materiału: '+str(exc)) from exc
+            mark_failure(i,j,'Niepoprawne dowody różnicy materiału: '+str(exc))
+            continue
+        accepted[i]=(j,record);regions[i]=bound
     used_a=set(accepted);used_b={v[0] for v in accepted.values()}
     out=[r for r in records if not (
       (r.status=='REMOVED' and r.b_index is None and r.a_index in used_a) or
       (r.status=='ADDED' and r.a_index is None and r.b_index in used_b))]
     out.extend(record for j,record in accepted.values())
+    if recover_failures and (failed_old or failed_new):
+        from dataclasses import replace
+        reason='Niepotwierdzona geometria tej części (awaria operacji lub limit); inne pary są nadal analizowane.'
+        out=[replace(r,status='UNCERTAIN',note=reason,
+                     confidence='Raport częściowy — wymaga sprawdzenia',
+                     distance_mm=None,delta_x=None,delta_y=None,delta_z=None,
+                     volume_delta_mm3=None,rotation_deg=None)
+             if ((r.a_index in failed_old and r.a_index not in used_a) or
+                 (r.b_index in failed_new and r.b_index not in used_b))
+                and r.status in ('ADDED','REMOVED','CHANGED') else r for r in out]
     out.sort(key=lambda r:(r.b_index is None,r.b_index if r.b_index is not None else r.a_index))
     precalc={idx:regions[r.a_index] for idx,r in enumerate(out)
              if r.status=='CHANGED' and r.a_index in regions and r.b_index==accepted[r.a_index][0]}
     assert len({r.a_index for r in out if r.a_index is not None})==len(a)
     assert len({r.b_index for r in out if r.b_index is not None})==len(b)
     stat['accepted']=len(accepted)
-    trace.mark('revision_overlap_guard','END',guarded=guarded_large,checks=stat['boolean_checks'],seconds=round(perf_counter()-guarded_started,2))
+    stat['incomplete']=bool(failures)
+    if failures:
+        stat.update(reason=f"Niepotwierdzonych par: {len(failures)}; zachowano pozostałe zweryfikowane wyniki.",
+                    failed_pair={'a_index':failures[0]['a_index'],'b_index':failures[0]['b_index']},
+                    failed_pairs=failures[:100],failed_pairs_total=len(failures),
+                    unverified_A=len(failed_old-used_a),unverified_B=len(failed_new-used_b),
+                    recovered_verified=len(accepted))
+    trace.mark('revision_overlap_guard','END',guarded=guarded_large,checks=stat['boolean_checks'],seconds=round(perf_counter()-guarded_started,2),incomplete=stat['incomplete'])
     if progress:progress(f'R17: zmienione rewizje {len(accepted)}; nierozstrzygnięte {stat["ambiguous"]}.')
     return out,precalc,stat
