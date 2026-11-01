@@ -13,3 +13,5 @@ html,body,#app{min-width:0;width:100%;overflow-x:hidden}.app{min-width:0}.worksp
 @media(max-width:500px){.compare-grid{grid-template-columns:1fr}.swap{top:50%;transform:translate(-50%,-50%) rotate(90deg)}.file-card{min-height:180px}.file-card-icon{display:none}.stats{gap:6px}.stats button{padding:10px}.toolbar{gap:6px}.toolbar button{padding:8px}.settings-grid .panel{padding:16px}.modal-backdrop{padding:10px}.translation{gap:6px}.translation span{min-width:60px}.translation strong{font-size:11px}.header-actions .new-comparison{font-size:10px}}
 
 .brand{white-space:nowrap;font-size:17px}.stats button{flex-direction:row;align-items:center;justify-content:space-between;gap:6px;padding:11px}.stats strong{font-size:20px}.stats span{white-space:normal}.analysis-summary{margin-bottom:12px}.analysis-summary+.banner{padding:10px 14px;margin-bottom:14px}.alignment-panel{margin-top:20px}.page-heading{margin-bottom:18px}.breadcrumb{color:var(--text)}@media(max-width:760px){.brand{font-size:0}}
+
+.mass-result.panel{margin:0 0 18px;padding:20px;border:1px solid var(--line)}.file-list{max-height:34vh;overflow:auto}
