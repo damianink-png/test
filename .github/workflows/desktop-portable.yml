@@ -29,13 +29,37 @@ jobs:
           Invoke-WebRequest 'https://raw.githubusercontent.com/damianink-png/test/22b9e73746e8721e146b10d3e3656df67e77956c/DSCompare_RC9_KOMPLET_ZRODLA.zip' -OutFile baseline.zip
           python portable/prepare_source.py baseline.zip portable-src
           if($LASTEXITCODE -ne 0){throw 'Source baseline failed'}
+      - name: Overlay the exact source fixes that passed Simple Swerve CAD tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Copy-Item review/fix06/dsac29/revision_overlap.py portable-src/dsac29/revision_overlap.py -Force
+          Copy-Item review/fix06/dsac29/common_exclusion.py portable-src/dsac29/common_exclusion.py -Force
+          python review/fix06/ci/patch_common_exclusion_dispatch.py portable-src/dsac29/native_guard.py
+          if($LASTEXITCODE -ne 0){throw 'CAD patch provenance validation failed'}
+          python -m compileall -q portable-src/dsac29
+          if($LASTEXITCODE -ne 0){throw 'CAD source patch compile failed'}
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: '41291652234'
-          artifact-ids: '13076929166'
+          run-id: '41350311716'
+          artifact-ids: '13101081856'
           merge-multiple: true
-          path: portable-src/desktop/src-tauri/engine/DSCompare
+          path: validated-cad-artifact
+      - name: Install the fully tested Simple Swerve engine and verify its SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $source='validated-cad-artifact/dscompare_rc9_manual/dist/DSCompare'
+          $target='portable-src/desktop/src-tauri/engine/DSCompare'
+          if(!(Test-Path (Join-Path $source 'DSCompare.exe'))){throw 'Validated CAD binary missing'}
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item -Path "$source/*" -Destination $target -Recurse -Force
+          $hash=(Get-FileHash (Join-Path $target 'DSCompare.exe') -Algorithm SHA256).Hash.ToLower()
+          if($hash -ne '32f452cdaca5df57f1997fb908b7acdcbd1c516e8d7e03eff4dd6c860f592c9b'){
+            throw "CAD EXE differs from fully tested Simple Swerve engine: $hash"
+          }
+          Write-Host "PINNED_SWERVE_CAD_ENGINE_PASS SHA256=$hash run=41350311716"
       - uses: actions/cache@v4
         with:
           path: portable-src/desktop/src-tauri/target
@@ -47,6 +71,8 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           if(!(Test-Path src-tauri/engine/DSCompare/DSCompare.exe)){throw 'Pinned CAD engine missing'}
+          $cadSha=(Get-FileHash src-tauri/engine/DSCompare/DSCompare.exe -Algorithm SHA256).Hash.ToLower()
+          if($cadSha -ne '32f452cdaca5df57f1997fb908b7acdcbd1c516e8d7e03eff4dd6c860f592c9b'){throw 'Wrong shipped CAD engine'}
           npm ci --no-audit --no-fund
           if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
           npm run check
