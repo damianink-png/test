@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "platform": "Windows x64",
+  "ui": "Finished 1.0 centered fields, about responsive layout, settings cache/output atomic save",
+  "zw3d_launcher": "Macro VX via $tm=more, native ZW3D 2019 not verified",
+  "step_mode": "hierarchical native STEP default; flat without subassemblies optional",
+  "mass": "multi-file, folder, reset and final-only report actions",
+  "step_note": "Native assembly containers are necessary; cannot safely delete in exported STEP",
+  "absr": "Native STEP unchanged; experimental flat sidecar & diagnostic if requested",
+  "alignment": "Comparison first; deferred B-Rep verified translation",
+  "geometry": "Full original surface/trim proofs with uniformly bounded collapsed micro-cylinder patches; independent native operations",
+  "base_commit": "2ae6b4fbca084dcf0c98eec55f6e938c67f1598c",
+  "revision": "R22.3 review workspace 06 20261031",
+  "performance": "Exact B-Rep digest + identical relative placement reuses completed world proofs; mapped STEP verification; pinned fixture count oracles remove duplicate CI imports",
+  "import_timeout_seconds": 1800,
+  "preview": "Actual A and B occurrences; shared camera split, inverse original B placement, unfilled section planes",
+  "ui_revision": "Svelte 5 / Tauri 2 Desktop 0.5.0; linked part review, evidence diagnostics, registration and section/split preview",
+  "validation_status": "Native05.1: full Windows CI success (335 regressions, six strict CAD scenarios, explicit partial OpenArm, installer). Review06: local regressions, real WebGL/browser UI and Rust -> Python/OCCT smoke; repeated-connector benchmark 21.27s -> 2.16s with identical 624 pairs. Full Windows performance validation pending.",
+  "build_label": "RC9 / Review 06"
+}

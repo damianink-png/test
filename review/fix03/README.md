@@ -1,0 +1,1 @@
+Aktualna wersja: RC9 / OpenArm 03. Pełny kod i utrwalone przypadki testowe są w DSCompare_RC9_KOMPLET_ZRODLA.zip, czytelna różnica kodu w DSCompare_RC9_KOMPLET.patch. Szczegóły, ograniczenia oraz wyniki: OPENARM_I_TESTY_RC9_03.md. review/fix02 jest historycznym przeglądem poprzedniej wersji; nie instalować jako nakładki.
