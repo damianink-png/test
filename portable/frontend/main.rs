@@ -12,7 +12,7 @@ fn engine(app:&AppHandle)->Result<Vec<String>,String>{
 #[tauri::command]
 fn environment(app:AppHandle)->Value{serde_json::json!({"engine_ready":engine(&app).is_ok(),"build":format!("Desktop {} · RC9",env!("CARGO_PKG_VERSION")),"platform":std::env::consts::OS})}
 #[tauri::command]
-fn startup_ready(app:AppHandle)->Result<(),String>{core::startup::ready()?;if std::env::var("DSCOMPARE_PORTABLE_SMOKE").as_deref()==Ok("1"){std::thread::spawn(move||{std::thread::sleep(std::time::Duration::from_millis(300));app.exit(0);});}Ok(())}
+fn startup_ready(app:AppHandle)->Result<(),String>{engine(&app)?;core::startup::ready()?;if std::env::var("DSCOMPARE_PORTABLE_SMOKE").as_deref()==Ok("1"){std::thread::spawn(move||{std::thread::sleep(std::time::Duration::from_millis(300));app.exit(0);});}Ok(())}
 #[tauri::command]
 fn start_job(app:AppHandle,state:State<Runtime>,request:Request)->Result<Snapshot,String>{let out=app.path().document_dir().map_err(|e|e.to_string())?.join("DSCompare");core::start(&state,request,engine(&app)?,&out)}
 #[tauri::command]

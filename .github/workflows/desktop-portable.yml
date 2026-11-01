@@ -74,6 +74,14 @@ jobs:
           New-Item evidence -ItemType Directory -Force | Out-Null
           $source | ConvertTo-Json | Set-Content evidence/webview-source.json
           Get-FileHash delivery/portable/app/engine/DSCompare/DSCompare.exe | Format-List | Out-File evidence/engine-hash.txt
+          $diagnostic=(Join-Path (Resolve-Path evidence).Path 'cad-smoke')
+          $engine=(Resolve-Path delivery/portable/app/engine/DSCompare/DSCompare.exe).Path
+          $p=Start-Process $engine -ArgumentList @('--worker','diagnostic','--output',$diagnostic) -PassThru
+          if(-not $p.WaitForExit(180000)){Stop-Process -Id $p.Id -Force;throw 'Packaged CAD smoke timed out'}
+          if($p.ExitCode -ne 0){throw 'Packaged CAD engine failed'}
+          $result=Get-Content (Join-Path $diagnostic '_WYNIK_V37.json') -Raw | ConvertFrom-Json
+          if(-not $result.ok){throw 'Packaged CAD synthetic checks failed'}
+          Write-Host "PACKAGED_CAD_PASS $($result.passed)/$($result.total)"
           python portable/package.py payload delivery/portable/app work
           if($LASTEXITCODE -ne 0){throw 'Payload creation failed'}
           Copy-Item work/manifest.json evidence/manifest.json
@@ -81,6 +89,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
+          $env:RUSTFLAGS='-C target-feature=+crt-static'
           cargo test --manifest-path portable/launcher/Cargo.toml --lib --locked
           if($LASTEXITCODE -ne 0){throw 'Launcher tests failed'}
           $env:DSCOMPARE_PORTABLE_MANIFEST=(Resolve-Path work/manifest.json).Path
