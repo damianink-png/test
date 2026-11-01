@@ -318,8 +318,11 @@ mod tests {
         (bytes, serde_json::to_string(&manifest).unwrap())
     }
     fn temp() -> PathBuf {
+        // Windows wall-clock values can repeat across parallel test threads.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "dsc-portable-test-{}-{}",
+            "dsc-portable-test-{}-{}-{serial}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
