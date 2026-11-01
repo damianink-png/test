@@ -33,6 +33,27 @@ def apply(folder: Path) -> None:
         path.write_text(content, encoding="utf-8")
         print(f"DUAL_FAILURE_TEST_PATCH_PASS {filename} {expected}", flush=True)
 
+    # The old source-text test required the exact spelling
+    # "except NativeGeometryFailure:". The verified recovery uses
+    # "except NativeGeometryFailure as exc:"; validate the AST instead.
+    probe = folder.parent / "ci" / "test_rc9_isolated_pair_recovery.py"
+    body = probe.read_text(encoding="utf-8")
+    needle = ("assert 'except NativeGeometryFailure:' in a\n"
+              "assert 'except NativeGeometryFailure:' in b")
+    if body.count(needle) != 1:
+        raise RuntimeError("Unexpected frozen native exception probe")
+    replacement = ("def has_native_failure_handler(source):\n"
+                   "    return any(isinstance(node, ast.ExceptHandler) and\n"
+                   "               isinstance(node.type, ast.Name) and\n"
+                   "               node.type.id == 'NativeGeometryFailure'\n"
+                   "               for node in ast.walk(ast.parse(source)))\n"
+                   "assert has_native_failure_handler(a)\n"
+                   "assert has_native_failure_handler(b)")
+    body = body.replace(needle, replacement)
+    compile(body, str(probe), "exec")
+    probe.write_text(body, encoding="utf-8")
+    print("NATIVE_EXCEPTION_AST_PROBE_PASS", flush=True)
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
