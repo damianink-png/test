@@ -1,0 +1,95 @@
+name: DS Compare - isolated CAD failures and Simple Swerve
+on:
+  push:
+    branches: [codex/rc9-boundary-ui-ci-20261030]
+    paths:
+      - 'review/fix06/dsac29/revision_overlap.py'
+      - 'review/fix06/tests/test_partial_material_continue.py'
+      - 'review/fix06/ci/test_user_swerve.py'
+      - '.github/workflows/rc9-swerve-recovery.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dscompare-swerve-recovery
+  cancel-in-progress: true
+jobs:
+  patched-real-cad:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_IMPORT_CACHE: 'off'
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+      GIT_LFS_SKIP_SMUDGE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen source archive and apply isolated B-Rep fix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive -LiteralPath DSCompare_RC9_KOMPLET_ZRODLA.zip -DestinationPath . -Force
+          python dscompare_rc9_manual/ci/check_source_bundle.py dscompare_rc9_manual
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen source baseline invalid' }
+          Copy-Item review/fix06/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/revision_overlap.py -Force
+          Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
+          python -m compileall -q dscompare_rc9_manual/dsac29/revision_overlap.py
+          if ($LASTEXITCODE -ne 0) { throw 'Patch Python syntax failed' }
+          Get-FileHash dscompare_rc9_manual/dsac29/revision_overlap.py -Algorithm SHA256
+      - name: Install dependencies and run material recovery regressions
+        working-directory: dscompare_rc9_manual
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency install failed' }
+          python -m pip install pytest
+          python -m pytest -q tests/test_partial_material_review.py tests/test_partial_material_continue.py tests/test_revision_common_recovery.py tests/test_revision_r4.py tests/test_r15_material_renamed.py
+          if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
+      - name: Compile patched engine
+        working-directory: dscompare_rc9_manual
+        shell: pwsh
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -NoInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Patched engine build failed' }
+          if (!(Test-Path dist/DSCompare/DSCompare.exe)) { throw 'Missing patched EXE' }
+      - name: Download both authentic LFS archives
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git lfs version
+          if ($LASTEXITCODE -ne 0) { throw 'Git LFS is required' }
+          git clone --depth 1 https://github.com/AloeVeraZ/diffy-swerve.git swerve-source
+          if ($LASTEXITCODE -ne 0) { throw 'Could not clone source repository' }
+          git -C swerve-source lfs pull --include='cad/releases/simple-swerve-v1.zip,cad/releases/simple-swerve-v2-gobilda.zip' --exclude=''
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download STEP archive via Git LFS' }
+      - name: Compare actual user-selected CAD releases
+        shell: pwsh
+        timeout-minutes: 55
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH=(Resolve-Path dscompare_rc9_manual).Path
+          python review/fix06/ci/test_user_swerve.py swerve-source/cad/releases swerve-evidence
+          if ($LASTEXITCODE -ne 0) { throw 'Real Simple Swerve comparison failed' }
+      - name: Upload patched binary and diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-Swerve-recovery-evidence
+          path: |
+            swerve-evidence/SWERVE_TEST_RESULT.json
+            swerve-evidence/comparison/PODSUMOWANIE.json
+            swerve-evidence/comparison/ANALIZA_NIEKOMPLETNA.txt
+            swerve-evidence/comparison/DIAGNOSTYKA_DOPASOWANIA.json
+            swerve-evidence/comparison/CZASY_ANALIZY.json
+            swerve-evidence/comparison/FAILED_BREP/**/*
+            dscompare_rc9_manual/dist/DSCompare/**
+          if-no-files-found: warn
+          retention-days: 14
