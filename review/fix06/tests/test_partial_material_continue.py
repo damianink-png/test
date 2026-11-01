@@ -24,7 +24,11 @@ def test_recover_only_failed_pair(monkeypatch):
         if x<50:raise native_guard.NativeGeometryFailure('single failed native Common')
         return material_deltas.operate(material_deltas.BRepAlgoAPI_Common,old,new,tol)
     monkeypatch.setattr(native_guard,'guarded_common',common)
-    monkeypatch.setattr(revision_overlap,'calculate',material_deltas.calculate)
+    def alternative(old,new,tol,**kwargs):
+        if old.name=='bad_old':
+            raise native_guard.NativeGeometryFailure('alternative cannot prove bad pair')
+        return material_deltas.calculate(old,new,tol,**kwargs)
+    monkeypatch.setattr(revision_overlap,'calculate',alternative)
     proposals=[]
     out,regions,stat=revision_overlap.merge_material_revisions(
         a,b,records,review_approval=lambda p:proposals.append(p) or 'review')
@@ -42,6 +46,7 @@ def test_strict_and_refused_review(monkeypatch):
     a,b,records=dataset()
     def fail(*args,**kwargs):raise native_guard.NativeGeometryFailure('bad')
     monkeypatch.setattr(native_guard,'guarded_common',fail)
+    monkeypatch.setattr(revision_overlap,'calculate',fail)
     with pytest.raises(native_guard.NativeGeometryFailure,match='bad'):
         revision_overlap.merge_material_revisions(a,b,records)
     with pytest.raises(InterruptedError,match='raportu częściowego'):
@@ -56,3 +61,17 @@ def test_unchecked_candidates_are_not_labeled_as_new(monkeypatch):
     assert stat['budget_exceeded'] and stat['incomplete']
     assert stat['boolean_checks']==0 and not regions
     assert {r.status for r in out}=={'UNCERTAIN'} and len(proposals)==1
+
+
+def test_alternative_shared_filler_recovers_single_native_common_failure(monkeypatch):
+    a,b,records=dataset()
+    def failed_common(*args,**kwargs):
+        raise native_guard.NativeGeometryFailure('OCCT Common returned impossible signed volume -791 mm3')
+    monkeypatch.setattr(native_guard,'guarded_common',failed_common)
+    monkeypatch.setattr(revision_overlap,'calculate',material_deltas.calculate)
+    result,regions,stat=revision_overlap.merge_material_revisions(a,b,records)
+    assert stat['alternative_region_recovery']==2
+    assert stat['accepted']==2 and not stat['incomplete']
+    assert {r.status for r in result}=={'CHANGED'}
+    assert len(regions)==2
+    assert all(x.regions.common_mm3>900 for x in regions.values())

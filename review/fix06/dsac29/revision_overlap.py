@@ -129,6 +129,8 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
         trace.mark('revision_material_pair','UNVERIFIED',**entry)
         if progress:progress(f'Niepotwierdzona para A[{i}] / B[{j}]: {error}; kontynuuję inne pary.')
     stat['common_proof_reuse']=0
+    stat['alternative_region_recovery']=0
+    stat['alternative_region_failures']=0
     guarded_large = True  # every unresolved Common is isolated, including small assemblies
     guarded_started=perf_counter()
     guarded_budget_s=240.0
@@ -201,9 +203,29 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             except NativeGeometryFailure as exc:
                 failure=NativeGeometryFailure(f'Para A[{i}] „{ref.name}” / B[{j}] „{b[j].name}”: '+str(exc))
                 failure.failed_pair={'a_index':i,'b_index':j}
-                if not recover_failures:raise failure from exc
-                mark_failure(i,j,failure)
-                continue
+                # An independently isolated shared-filler Common+Cuts method
+                # can recover a malformed Common. Never accept it unless all
+                # source-bound material regions pass strict conservation.
+                if shape is None and cached is None and not stat['budget_exceeded']:
+                    try:
+                        recovered_regions=trace.brep_call('revision_common_alternative_regions',i,j,calculate,ref,b[j],tolerance)
+                        bind_regions(recovered_regions,ref,b[j],tolerance)
+                        common=volume(recovered_regions.common)
+                        stat['alternative_region_recovery']+=1
+                        trace.mark('revision_common_alternative_regions','RECOVERED',a_index=i,b_index=j,
+                                   common_mm3=common,reason=str(exc))
+                        if progress:progress(f'Alternatywna operacja Common/Cut poprawnie potwierdziła parę A[{i}] / B[{j}]')
+                    except (NativeGeometryFailure,ValueError,RuntimeError,OSError) as alternative_exc:
+                        stat['alternative_region_failures']+=1
+                        failure=NativeGeometryFailure(str(failure)+'; alternatywna operacja także nie potwierdziła materiału: '+str(alternative_exc))
+                        failure.failed_pair={'a_index':i,'b_index':j}
+                        if not recover_failures:raise failure from exc
+                        mark_failure(i,j,failure)
+                        continue
+                else:
+                    if not recover_failures:raise failure from exc
+                    mark_failure(i,j,failure)
+                    continue
             except Exception as exc:
                 failure=NativeGeometryFailure('Niekompletna analiza wspólnego materiału: '+str(exc))
                 if not recover_failures:raise failure from exc

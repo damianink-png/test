@@ -40,6 +40,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Frozen source baseline invalid' }
           Copy-Item review/fix06/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/revision_overlap.py -Force
           Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
+          # Legacy tests simulated failure of just one algorithm; to model
+          # an actually unproven part both independent methods must fail.
+          $reviewTest='dscompare_rc9_manual/tests/test_partial_material_review.py'
+          $reviewSource=Get-Content $reviewTest -Raw
+          $old="monkeypatch.setattr(native_guard,'guarded_common',fail)"
+          $new=$old+";monkeypatch.setattr(revision_overlap,'calculate',fail)"
+          if (!$reviewSource.Contains($old)) { throw 'Legacy regression test changed' }
+          [System.IO.File]::WriteAllText((Resolve-Path $reviewTest).Path,$reviewSource.Replace($old,$new))
           python -m compileall -q dscompare_rc9_manual/dsac29/revision_overlap.py
           if ($LASTEXITCODE -ne 0) { throw 'Patch Python syntax failed' }
           Get-FileHash dscompare_rc9_manual/dsac29/revision_overlap.py -Algorithm SHA256
