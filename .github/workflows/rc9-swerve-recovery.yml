@@ -4,6 +4,8 @@ on:
     branches: [codex/rc9-boundary-ui-ci-20261030]
     paths:
       - 'review/fix06/dsac29/revision_overlap.py'
+      - 'review/fix06/dsac29/common_exclusion.py'
+      - 'review/fix06/ci/patch_common_exclusion_dispatch.py'
       - 'review/fix06/tests/test_partial_material_continue.py'
       - 'review/fix06/ci/test_user_swerve.py'
       - '.github/workflows/rc9-swerve-recovery.yml'
@@ -39,6 +41,9 @@ jobs:
           python dscompare_rc9_manual/ci/check_source_bundle.py dscompare_rc9_manual
           if ($LASTEXITCODE -ne 0) { throw 'Frozen source baseline invalid' }
           Copy-Item review/fix06/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/revision_overlap.py -Force
+          Copy-Item review/fix06/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/common_exclusion.py -Force
+          python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native dispatch patch failed' }
           Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
           # Legacy tests simulated failure of just one algorithm; to model
           # an actually unproven part both independent methods must fail.
@@ -48,7 +53,7 @@ jobs:
           $new=$old+";monkeypatch.setattr(revision_overlap,'calculate',fail)"
           if (!$reviewSource.Contains($old)) { throw 'Legacy regression test changed' }
           [System.IO.File]::WriteAllText((Resolve-Path $reviewTest).Path,$reviewSource.Replace($old,$new))
-          python -m compileall -q dscompare_rc9_manual/dsac29/revision_overlap.py
+          python -m compileall -q dscompare_rc9_manual/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/native_guard.py
           if ($LASTEXITCODE -ne 0) { throw 'Patch Python syntax failed' }
           Get-FileHash dscompare_rc9_manual/dsac29/revision_overlap.py -Algorithm SHA256
       - name: Install dependencies and run material recovery regressions

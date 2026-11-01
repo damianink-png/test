@@ -75,3 +75,10 @@ def test_alternative_shared_filler_recovers_single_native_common_failure(monkeyp
     assert {r.status for r in result}=={'CHANGED'}
     assert len(regions)==2
     assert all(x.regions.common_mm3>900 for x in regions.values())
+
+
+def test_negative_only_screen_never_excludes_genuine_changed_parts():
+    from dsac29.common_exclusion import screen
+    a,b,_=dataset()
+    proof=screen(a[0].shape,b[0].shape,.01,.68*max(a[0].volume,b[0].volume))
+    assert not proof['excluded']

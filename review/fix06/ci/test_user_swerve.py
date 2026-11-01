@@ -64,6 +64,7 @@ try:
  status['summary']={key:summary.get(key) for key in ['solids_A','solids_B','statuses','analysis_complete','material_analysis_complete','step_ready','main_step_ready']}
  detail=summary.get('revision_overlap') or {}
  status['revision_overlap']=detail
+ status['excluded_after_common_failure']=int(detail.get('excluded_after_common_failure',0))
  status['result']=('PASS_COMPLETE' if summary.get('analysis_complete') else 'PASS_PARTIAL') if not err and summary.get('step_ready')!=False else 'FAIL'
  if status['result']=='FAIL':raise RuntimeError('Niekompletny eksport STEP: '+str(err))
  pair=output/'FAILED_BREP'/'common'

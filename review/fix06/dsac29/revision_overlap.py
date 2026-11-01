@@ -131,6 +131,8 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     stat['common_proof_reuse']=0
     stat['alternative_region_recovery']=0
     stat['alternative_region_failures']=0
+    stat['excluded_after_common_failure']=0
+    stat['exclusion_witnesses']=[]
     guarded_large = True  # every unresolved Common is isolated, including small assemblies
     guarded_started=perf_counter()
     guarded_budget_s=240.0
@@ -219,6 +221,23 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                         stat['alternative_region_failures']+=1
                         failure=NativeGeometryFailure(str(failure)+'; alternatywna operacja także nie potwierdziła materiału: '+str(alternative_exc))
                         failure.failed_pair={'a_index':i,'b_index':j}
+                        # Two independently checked translated partitions may
+                        # EXCLUDE a changed-revision candidate. Their displaced
+                        # geometry is never accepted as a positive comparison.
+                        try:
+                            from .common_exclusion import guarded_exclusion
+                            threshold=(SAME_NAME_MIN if _name_eq(ref,b[j]) else OTHER_NAME_MIN)*max(ref.volume,b[j].volume)
+                            proof=trace.brep_call('revision_common_exclusion',i,j,guarded_exclusion,
+                                                  ref.shape,b[j].shape,tolerance,threshold)
+                            if proof['excluded']:
+                                stat['excluded_after_common_failure']+=1
+                                if len(stat['exclusion_witnesses'])<30:
+                                    stat['exclusion_witnesses'].append({'a_index':i,'b_index':j,'proof':proof})
+                                trace.mark('revision_common_exclusion','EXCLUDED',a_index=i,b_index=j,threshold_mm3=threshold)
+                                if progress:progress(f'Wykluczono niezgodną rewizję A[{i}]/B[{j}] na podstawie niezależnych granic wspólnej objętości.')
+                                continue
+                        except (NativeGeometryFailure,ValueError,RuntimeError,OSError,KeyError) as rejected:
+                            trace.mark('revision_common_exclusion','UNRESOLVED',a_index=i,b_index=j,error=str(rejected))
                         if not recover_failures:raise failure from exc
                         mark_failure(i,j,failure)
                         continue
