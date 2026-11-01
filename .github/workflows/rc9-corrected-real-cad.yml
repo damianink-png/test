@@ -1,8 +1,13 @@
 name: DS Compare RC9 corrected ZIP real CAD tests
 on:
   push:
-    branches: [main]
-    paths: ['.github/workflows/rc9-corrected-real-cad.yml', 'DSCompare_RC9_KOMPLET_ZRODLA.zip']
+    branches: [main, codex/rc9-boundary-ui-ci-20261030]
+    paths:
+      - '.github/workflows/rc9-corrected-real-cad.yml'
+      - 'DSCompare_RC9_KOMPLET_ZRODLA.zip'
+      - 'review/fix06/dsac29/**'
+      - 'review/fix06/ci/patch_common_exclusion_dispatch.py'
+      - 'review/fix06/tests/test_partial_material_continue.py'
   pull_request:
     paths: ['.github/workflows/rc9-corrected-real-cad.yml', 'DSCompare_RC9_KOMPLET_ZRODLA.zip']
   workflow_dispatch:
@@ -35,6 +40,22 @@ jobs:
           Expand-Archive -LiteralPath DSCompare_RC9_KOMPLET_ZRODLA.zip -DestinationPath . -Force
           python dscompare_rc9_manual/ci/check_source_bundle.py dscompare_rc9_manual
           if ($LASTEXITCODE -ne 0) { throw 'Incomplete or changed source bundle' }
+          # The frozen ZIP is a baseline only. Test the same material-recovery
+          # source that was compiled and verified on the authentic Swerve pair.
+          Copy-Item review/fix06/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/revision_overlap.py -Force
+          Copy-Item review/fix06/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/common_exclusion.py -Force
+          python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
+          Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
+          $reviewTest='dscompare_rc9_manual/tests/test_partial_material_review.py'
+          $reviewSource=Get-Content $reviewTest -Raw
+          $old="monkeypatch.setattr(native_guard,'guarded_common',fail)"
+          $new=$old+";monkeypatch.setattr(revision_overlap,'calculate',fail)"
+          if (!$reviewSource.Contains($old)) { throw 'Legacy dual-failure regression test changed' }
+          [System.IO.File]::WriteAllText((Resolve-Path $reviewTest).Path,$reviewSource.Replace($old,$new))
+          python -m compileall -q dscompare_rc9_manual/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/native_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Patched CAD Python syntax failed' }
+          Write-Host 'PATCHED_SWERVE_ENGINE_SOURCE_PASS'
           Get-FileHash DSCompare_RC9_KOMPLET_ZRODLA.zip -Algorithm SHA256 | Format-List
           python -m compileall -q dscompare_rc9_manual/dsac29
           if ($LASTEXITCODE -ne 0) { throw 'Syntax validation failed' }
@@ -61,6 +82,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'pytest install failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'Corrected source regressions failed' }
+          python -m pytest -q tests/test_partial_material_review.py tests/test_partial_material_continue.py tests/test_revision_common_recovery.py tests/test_revision_r4.py tests/test_r15_material_renamed.py
+          if ($LASTEXITCODE -ne 0) { throw 'Patched material-recovery regressions failed' }
           python ci/test_rc9_original_boundary.py
           if ($LASTEXITCODE -ne 0) { throw 'Original boundary regression failed' }
           ./BUDUJ_WINDOWS.ps1 -NoInstall
@@ -146,6 +169,22 @@ jobs:
           Expand-Archive -LiteralPath DSCompare_RC9_KOMPLET_ZRODLA.zip -DestinationPath . -Force
           python dscompare_rc9_manual/ci/check_source_bundle.py dscompare_rc9_manual
           if ($LASTEXITCODE -ne 0) { throw 'Incomplete or changed source bundle' }
+          # The frozen ZIP is a baseline only. Test the same material-recovery
+          # source that was compiled and verified on the authentic Swerve pair.
+          Copy-Item review/fix06/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/revision_overlap.py -Force
+          Copy-Item review/fix06/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/common_exclusion.py -Force
+          python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
+          Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
+          $reviewTest='dscompare_rc9_manual/tests/test_partial_material_review.py'
+          $reviewSource=Get-Content $reviewTest -Raw
+          $old="monkeypatch.setattr(native_guard,'guarded_common',fail)"
+          $new=$old+";monkeypatch.setattr(revision_overlap,'calculate',fail)"
+          if (!$reviewSource.Contains($old)) { throw 'Legacy dual-failure regression test changed' }
+          [System.IO.File]::WriteAllText((Resolve-Path $reviewTest).Path,$reviewSource.Replace($old,$new))
+          python -m compileall -q dscompare_rc9_manual/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/native_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Patched CAD Python syntax failed' }
+          Write-Host 'PATCHED_SWERVE_ENGINE_SOURCE_PASS'
           Get-FileHash DSCompare_RC9_KOMPLET_ZRODLA.zip -Algorithm SHA256 | Format-List
           python -m compileall -q dscompare_rc9_manual/dsac29
           if ($LASTEXITCODE -ne 0) { throw 'Syntax validation failed' }
