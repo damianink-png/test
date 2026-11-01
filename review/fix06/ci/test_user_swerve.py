@@ -65,7 +65,10 @@ try:
  detail=summary.get('revision_overlap') or {}
  status['revision_overlap']=detail
  status['excluded_after_common_failure']=int(detail.get('excluded_after_common_failure',0))
- status['result']=('PASS_COMPLETE' if summary.get('analysis_complete') else 'PASS_PARTIAL') if not err and summary.get('step_ready')!=False else 'FAIL'
+ complete=(not err and all(summary.get(key) is True for key in
+   ('analysis_complete','material_analysis_complete','step_ready','main_step_ready'))
+   and int((summary.get('statuses') or {}).get('UNCERTAIN',0))==0)
+ status['result']='PASS_COMPLETE' if complete else ('PASS_PARTIAL' if not err and summary.get('step_ready') is not False else 'FAIL')
  if status['result']=='FAIL':raise RuntimeError('Niekompletny eksport STEP: '+str(err))
  pair=output/'FAILED_BREP'/'common'
  if summary.get('analysis_complete') is False:
@@ -79,5 +82,11 @@ try:
   if experiment.returncode!=0:raise RuntimeError('Common diagnostic probe did not complete')
  save()
  print('SWERVE_RESULT '+json.dumps({'result':status['result'],'summary':status['summary'],'revision_overlap':detail,'seconds':status['seconds']},ensure_ascii=False),flush=True)
+ # A partial comparison is useful diagnostic evidence, never a green CI gate.
+ if status['result']=='PASS_PARTIAL':
+  status['ci_gate']='FAIL_PARTIAL'
+  save()
+  raise RuntimeError('Simple Swerve analysis incomplete: preserve UNCERTAIN and fail CI')
 except BaseException:
- status['result']='FAIL';status['error']=traceback.format_exc();save();raise
+ if status.get('ci_gate')!='FAIL_PARTIAL':status['result']='FAIL'
+ status['error']=traceback.format_exc();save();raise
