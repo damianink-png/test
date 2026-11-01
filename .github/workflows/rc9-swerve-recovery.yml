@@ -90,6 +90,8 @@ jobs:
             swerve-evidence/comparison/DIAGNOSTYKA_DOPASOWANIA.json
             swerve-evidence/comparison/CZASY_ANALIZY.json
             swerve-evidence/comparison/FAILED_BREP/**/*
+            swerve-evidence/comparison/COMMON_VARIANTS.json
+            swerve-evidence/comparison/_ETAPY_DIAGNOSTYKA.jsonl
             dscompare_rc9_manual/dist/DSCompare/**
           if-no-files-found: warn
           retention-days: 14

@@ -37,6 +37,7 @@ try:
  status['stage']='core_comparison'
  save()
  from dsac29.cli import process
+ from dsac29 import trace_r22
  decisions=[]
  def choose_material(proposal):
   decisions.append({'type':'material','status':proposal.get('status'),'unverified_A':proposal.get('unverified_A'),'unverified_B':proposal.get('unverified_B'),'failed_pair':proposal.get('failed_pair')})
@@ -49,6 +50,10 @@ try:
   return choice
  started=time.monotonic()
  output=root/'comparison';output.mkdir(exist_ok=True)
+ # Native failed Common evidence must survive the subprocess and be replayable.
+ # The CI harness runs process() directly, unlike the desktop worker, so it
+ # MUST initialize the journal to enable _preserve_failure().
+ trace_r22.setup(output)
  folder,records,err=process(str(selected[0]),str(selected[1]),str(output),tolerance=.01,
    step=True,preview3d=False,diff_step=False,full_bom=False,
    revision_style=True,auto_align=True,alignment_approval=choose_alignment,
@@ -59,8 +64,18 @@ try:
  status['summary']={key:summary.get(key) for key in ['solids_A','solids_B','statuses','analysis_complete','material_analysis_complete','step_ready','main_step_ready']}
  detail=summary.get('revision_overlap') or {}
  status['revision_overlap']=detail
- status['result']='PASS' if not err and summary.get('step_ready')!=False else 'FAIL'
+ status['result']=('PASS_COMPLETE' if summary.get('analysis_complete') else 'PASS_PARTIAL') if not err and summary.get('step_ready')!=False else 'FAIL'
  if status['result']=='FAIL':raise RuntimeError('Niekompletny eksport STEP: '+str(err))
+ pair=output/'FAILED_BREP'/'common'
+ if summary.get('analysis_complete') is False:
+  status['failed_brep_captured']=(pair/'A.brep').is_file() and (pair/'B.brep').is_file()
+  if not status['failed_brep_captured']:
+   raise RuntimeError('Incomplete analysis but no reproducible failed Common B-Rep captured')
+  from subprocess import run
+  command=[sys.executable,'dscompare_rc9_manual/ci/rc9_common_probe.py',str(pair),str(output/'COMMON_VARIANTS.json'),'20']
+  experiment=run(command,check=False,timeout=150)
+  status['common_probe_exit_code']=experiment.returncode
+  if experiment.returncode!=0:raise RuntimeError('Common diagnostic probe did not complete')
  save()
  print('SWERVE_RESULT '+json.dumps({'result':status['result'],'summary':status['summary'],'revision_overlap':detail,'seconds':status['seconds']},ensure_ascii=False),flush=True)
 except BaseException:
