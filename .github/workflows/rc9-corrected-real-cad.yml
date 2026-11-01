@@ -8,6 +8,7 @@ on:
       - 'review/fix06/dsac29/**'
       - 'review/fix06/ci/patch_common_exclusion_dispatch.py'
       - 'review/fix06/ci/patch_legacy_dual_failure_tests.py'
+      - 'review/fix06/ci/patch_partial_audit.py'
       - 'review/fix06/tests/test_partial_material_continue.py'
   pull_request:
     paths: ['.github/workflows/rc9-corrected-real-cad.yml', 'DSCompare_RC9_KOMPLET_ZRODLA.zip']
@@ -50,6 +51,8 @@ jobs:
           Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
           python review/fix06/ci/patch_legacy_dual_failure_tests.py dscompare_rc9_manual/tests
           if ($LASTEXITCODE -ne 0) { throw 'Frozen dual-failure regression patch failed' }
+          python review/fix06/ci/patch_partial_audit.py dscompare_rc9_manual/ci/audit_partial_artifacts.py
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen OpenArm partial audit patch failed' }
           python -m compileall -q dscompare_rc9_manual/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/native_guard.py
           if ($LASTEXITCODE -ne 0) { throw 'Patched CAD Python syntax failed' }
           Write-Host 'PATCHED_SWERVE_ENGINE_SOURCE_PASS'
@@ -175,6 +178,8 @@ jobs:
           Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
           python review/fix06/ci/patch_legacy_dual_failure_tests.py dscompare_rc9_manual/tests
           if ($LASTEXITCODE -ne 0) { throw 'Frozen dual-failure regression patch failed' }
+          python review/fix06/ci/patch_partial_audit.py dscompare_rc9_manual/ci/audit_partial_artifacts.py
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen OpenArm partial audit patch failed' }
           python -m compileall -q dscompare_rc9_manual/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/native_guard.py
           if ($LASTEXITCODE -ne 0) { throw 'Patched CAD Python syntax failed' }
           Write-Host 'PATCHED_SWERVE_ENGINE_SOURCE_PASS'
