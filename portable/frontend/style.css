@@ -15,3 +15,12 @@ html,body,#app{min-width:0;width:100%;overflow-x:hidden}.app{min-width:0}.worksp
 .brand{white-space:nowrap;font-size:17px}.stats button{flex-direction:row;align-items:center;justify-content:space-between;gap:6px;padding:11px}.stats strong{font-size:20px}.stats span{white-space:normal}.analysis-summary{margin-bottom:12px}.analysis-summary+.banner{padding:10px 14px;margin-bottom:14px}.alignment-panel{margin-top:20px}.page-heading{margin-bottom:18px}.breadcrumb{color:var(--text)}@media(max-width:760px){.brand{font-size:0}}
 
 .mass-result.panel{margin:0 0 18px;padding:20px;border:1px solid var(--line)}.file-list{max-height:34vh;overflow:auto}
+
+/* Results appear immediately below the compare button, replacing the progress panel. */
+.inline-results{margin-top:18px;padding-top:22px;border-top:1px solid var(--line);scroll-margin-top:20px}
+.inline-results .page-heading{margin-bottom:15px}
+.inline-results .page-heading h2{font-size:20px;font-weight:650;margin:0 0 8px}
+.inline-results .review-workspace.list-mode{grid-template-columns:minmax(0,1fr)}
+.inline-results .part-list{max-height:min(52vh,550px)}
+.inline-results .part-details{max-height:none}
+@media(max-width:760px){.inline-results .stats{grid-template-columns:repeat(2,minmax(0,1fr))}}

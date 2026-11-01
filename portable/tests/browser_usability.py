@@ -35,13 +35,14 @@ with sync_playwright() as p:
  assert 'masa_calosci_kg' not in page.locator('main').inner_text();page.get_by_role('button',name='Otwórz zestawienie HTML').click()
  assert page.evaluate("window.__calls.some(c=>c.cmd==='open_artifact'&&c.args.name==='RAPORT_MASY.html')")
  page.screenshot(path=str(out/'mass-1280.png'))
- page.get_by_role('button',name='Otwórz wyniki',exact=True).click();assert page.get_by_role('heading',name='Wyniki porównania',exact=True).is_visible();assert page.locator('iframe').count()==0
- page.get_by_role('button',name='BOM A · HTML',exact=True).click();assert page.evaluate("window.__calls.some(c=>c.cmd==='artifact_path'&&c.args.name==='BOM_A.html')")
- page.get_by_role('button',name='BOM B · HTML',exact=True).click();assert page.evaluate("window.__calls.some(c=>c.cmd==='artifact_path'&&c.args.name==='BOM_B.html')")
- page.get_by_role('button',name='Zamknij raport').click();assert page.locator('iframe').count()==0
+ page.get_by_role('button',name='Otwórz wyniki',exact=True).click();assert page.get_by_role('heading',name='Wyniki porównania',exact=True).is_visible();assert page.get_by_label('Wyniki porównania').count()==1;assert page.locator('aside.rail nav button').count()==2;assert page.locator('iframe').count()==0
+ page.get_by_role('button',name='BOM A · HTML',exact=True).click();assert page.evaluate("window.__calls.some(c=>c.cmd==='open_artifact'&&c.args.name==='BOM_A.html')")
+ page.get_by_role('button',name='BOM B · HTML',exact=True).click();assert page.evaluate("window.__calls.some(c=>c.cmd==='open_artifact'&&c.args.name==='BOM_B.html')")
+ assert page.locator('iframe').count()==0
  page.screenshot(path=str(out/'results-1280.png'))
- page.get_by_role('button',name='Podgląd 3D',exact=True).first.click();page.get_by_role('heading',name='Podgląd 3D',exact=True).wait_for();page.frame_locator('iframe').locator('#cad').wait_for();page.wait_for_timeout(400)
- assert not page.frame_locator('iframe').locator('#err').is_visible();page.screenshot(path=str(out/'preview-1280.png'))
+ page.get_by_role('button',name='Podgląd 3D · HTML').click()
+ assert page.evaluate("window.__calls.some(c=>c.cmd==='open_artifact'&&c.args.name==='PODGLAD_KOLOROW_3D.html')")
+ assert page.locator('iframe').count()==0;page.screenshot(path=str(out/'preview-link-1280.png'))
  for width,height in [(1920,1080),(1366,768),(1024,600),(800,600),(640,480),(480,360)]:
   page.set_viewport_size({'width':width,'height':height});page.wait_for_timeout(100)
   assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),('preview overflow',width,page.evaluate('document.documentElement.scrollWidth'))
@@ -52,7 +53,13 @@ with sync_playwright() as p:
  drop(['A.step','B.step'],'a');page.get_by_role('button',name='Porównaj rewizje',exact=True).click();assert page.get_by_role('button',name='Nowe porównanie',exact=True).is_disabled()
  page.evaluate("window.__job.question={token:'t',unresolved:true,material_unverified:false,translation_mm:[0,0,0],reason:'No anchor',unverified_A:0,unverified_B:0}")
  page.get_by_role('alertdialog').wait_for();assert 'Czy modele mają wspólne położenie?' in page.get_by_role('alertdialog').inner_text();assert page.locator('.translation').count()==0
- page.screenshot(path=str(out/'alignment-unresolved.png'));page.get_by_role('button',name='Oryginalne położenie',exact=True).click();page.get_by_role('button',name='Anuluj',exact=True).click();page.wait_for_timeout(900)
+ page.screenshot(path=str(out/'alignment-unresolved.png'));page.get_by_role('button',name='Oryginalne położenie',exact=True).click()
+ page.evaluate("window.__job={...window.__job,running:false,summary:window.__fixture}")
+ page.get_by_role('heading',name='Wyniki porównania',exact=True).wait_for(timeout=5000)
+ assert page.get_by_label('Postęp analizy').count()==0
+ assert page.get_by_label('Wyniki porównania').count()==1
+ page.get_by_role('button',name='Nowe porównanie',exact=True).click();page.wait_for_timeout(200)
+ assert page.get_by_label('Wyniki porównania').count()==0
  assert not errors,errors
- print('USABILITY_BROWSER_PASS: native SDK drop events at 125% DPI, A/B and batch drops, dedup/rejection, formatted mass, HTML BOM routing, separate results/real WebGL, fresh comparison/stale job reset, 480–1920px layouts, unresolved alignment, active-job guard',flush=True)
+ print('USABILITY_BROWSER_PASS: native SDK drop events at 125% DPI, A/B and batch drops, dedup/rejection, formatted mass, HTML BOM routing, inline results/external HTML 3D, fresh comparison/stale job reset, 480–1920px layouts, unresolved alignment, active-job guard',flush=True)
  browser.close()
