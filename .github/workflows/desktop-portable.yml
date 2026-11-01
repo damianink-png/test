@@ -1,0 +1,124 @@
+name: DS Compare portable Windows ZIP and single EXE
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/rc9-boundary-ui-ci-20261030']
+    paths: ['portable/**', '.github/workflows/desktop-portable.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  portable:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Prepare UI around exact Windows-tested CAD source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Invoke-WebRequest 'https://raw.githubusercontent.com/damianink-png/test/22b9e73746e8721e146b10d3e3656df67e77956c/DSCompare_RC9_KOMPLET_ZRODLA.zip' -OutFile baseline.zip
+          python portable/prepare_source.py baseline.zip portable-src
+          if($LASTEXITCODE -ne 0){throw 'Source baseline failed'}
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: '41291652234'
+          artifact-ids: '13076929166'
+          merge-multiple: true
+          path: portable-src/desktop/src-tauri/engine/DSCompare
+      - name: Test and build desktop without installer
+        shell: pwsh
+        working-directory: portable-src/desktop
+        run: |
+          $ErrorActionPreference='Stop'
+          if(!(Test-Path src-tauri/engine/DSCompare/DSCompare.exe)){throw 'Pinned CAD engine missing'}
+          npm ci --no-audit --no-fund
+          if($LASTEXITCODE -ne 0){throw 'npm ci failed'}
+          npm run check
+          if($LASTEXITCODE -ne 0){throw 'Svelte check failed'}
+          npm test
+          if($LASTEXITCODE -ne 0){throw 'Frontend tests failed'}
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
+          if($LASTEXITCODE -ne 0){throw 'Core tests failed'}
+          npm run tauri -- build --no-bundle
+          if($LASTEXITCODE -ne 0){throw 'Desktop build failed'}
+      - name: Stage tested engine and pinned Microsoft Fixed WebView2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item delivery/portable/app/engine -ItemType Directory -Force | Out-Null
+          Copy-Item portable-src/desktop/src-tauri/target/release/DSCompareDesktop.exe delivery/portable/app/DSCompareDesktop.exe
+          Move-Item portable-src/desktop/src-tauri/engine/DSCompare delivery/portable/app/engine/DSCompare
+          $source=Get-Content portable/webview-source.json -Raw | ConvertFrom-Json
+          Invoke-WebRequest $source.url -OutFile webview.cab
+          if((Get-FileHash webview.cab -Algorithm SHA256).Hash.ToLower() -ne $source.sha256){throw 'WebView2 CAB hash mismatch'}
+          New-Item webview-expanded -ItemType Directory -Force | Out-Null
+          expand.exe -F:* webview.cab webview-expanded | Out-Null
+          if($LASTEXITCODE -ne 0){throw 'WebView2 extraction failed'}
+          $exe=@(Get-ChildItem webview-expanded -Recurse -Filter msedgewebview2.exe)
+          if($exe.Count -ne 1){throw 'Ambiguous WebView2 runtime'}
+          $signature=Get-AuthenticodeSignature $exe[0].FullName
+          if($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft'){throw 'WebView2 signature invalid'}
+          Move-Item $exe[0].Directory.FullName delivery/portable/app/WebView2
+          Remove-Item webview.cab -Force
+          Remove-Item webview-expanded -Recurse -Force
+          Copy-Item portable/README.md delivery/portable/README.txt
+          New-Item evidence -ItemType Directory -Force | Out-Null
+          $source | ConvertTo-Json | Set-Content evidence/webview-source.json
+          Get-FileHash delivery/portable/app/engine/DSCompare/DSCompare.exe | Format-List | Out-File evidence/engine-hash.txt
+          python portable/package.py payload delivery/portable/app work
+          if($LASTEXITCODE -ne 0){throw 'Payload creation failed'}
+          Copy-Item work/manifest.json evidence/manifest.json
+      - name: Test and build native animated launchers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo test --manifest-path portable/launcher/Cargo.toml --lib --locked
+          if($LASTEXITCODE -ne 0){throw 'Launcher tests failed'}
+          $env:DSCOMPARE_PORTABLE_MANIFEST=(Resolve-Path work/manifest.json).Path
+          $env:DSCOMPARE_ICON=(Resolve-Path portable-src/assets/DSCompare.ico).Path
+          cargo build --manifest-path portable/launcher/Cargo.toml --release --locked
+          if($LASTEXITCODE -ne 0){throw 'Folder launcher build failed'}
+          Copy-Item portable/launcher/target/release/dscompare-portable.exe delivery/portable/DSCompare.exe
+          cargo build --manifest-path portable/launcher/Cargo.toml --release --features onefile --locked
+          if($LASTEXITCODE -ne 0){throw 'Single-file launcher build failed'}
+          python portable/package.py onefile portable/launcher/target/release/dscompare-portable.exe work/payload.zip delivery/onefile/DSCompare.exe
+          if($LASTEXITCODE -ne 0){throw 'Single-file packaging failed'}
+          Remove-Item work/payload.zip -Force
+      - name: Verify both complete portable deliveries and real native GUI startup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          ./portable/tests/verify_delivery.ps1 -Launcher (Resolve-Path delivery/portable/DSCompare.exe).Path -Output evidence/folder
+          ./portable/tests/verify_delivery.ps1 -Launcher (Resolve-Path delivery/onefile/DSCompare.exe).Path -Output evidence/onefile
+          ./portable/tests/capture_splash.ps1 -Launcher (Resolve-Path delivery/portable/DSCompare.exe).Path -Output evidence/splash
+          Get-FileHash delivery/portable/DSCompare.exe,delivery/onefile/DSCompare.exe | Format-List | Out-File evidence/launcher-hashes.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-0.5.2-Portable-ZIP
+          path: delivery/portable/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-0.5.2-Portable-OneEXE
+          path: delivery/onefile/DSCompare.exe
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DSCompare-Portable-validation
+          path: |
+            evidence/
+            ~/AppData/Local/DSCompare/portable-webview/*/startup.log
+          if-no-files-found: warn
