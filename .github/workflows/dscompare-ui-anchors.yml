@@ -49,7 +49,8 @@ jobs:
         run: |
           python -m zipfile -e DSCompare_RC9_KOMPLET_ZRODLA.zip .
           python review/fix06/ci/patch_gui_minimal.py dscompare_rc9_manual
-          python -m py_compile dscompare_rc9_manual/dsac29/gui_modern.py dscompare_rc9_manual/dsac29/gui45.py
+          python review/fix06/ci/patch_step_polish_names.py dscompare_rc9_manual
+          python -m py_compile dscompare_rc9_manual/dsac29/gui_modern.py dscompare_rc9_manual/dsac29/gui45.py dscompare_rc9_manual/dsac29/step_io.py
           python - <<'PY'
           from pathlib import Path
           p=Path('dscompare_rc9_manual/dsac29/gui_modern.py').read_text(encoding='utf-8')
