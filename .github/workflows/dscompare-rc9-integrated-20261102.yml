@@ -1,0 +1,131 @@
+name: DS Compare RC9 - integrated Windows build and real CAD
+on:
+  push:
+    branches: [codex/rc9-palette-20261102]
+    paths:
+      - 'review/fix06/apply_rc9_20261102.py'
+      - '.github/workflows/dscompare-rc9-integrated-20261102.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: rc9-integrated-20261102
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 100
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch original build root and latest pinned source snapshot
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git fetch origin main --depth=1
+          git checkout origin/main -- DSCompare_RC9_AUDYT_20261028_ZRODLA.zip
+          Expand-Archive -LiteralPath DSCompare_RC9_AUDYT_20261028_ZRODLA.zip -DestinationPath baseline -Force
+          gh run download 41419934404 --repo "$env:GITHUB_REPOSITORY" --name RC9-patched-source-snapshot --dir snapshot
+          if (!(Test-Path snapshot/dsac29/revision_overlap.py)) { throw 'Source snapshot missing revision_overlap.py' }
+          if (!(Test-Path baseline/dscompare_rc9_manual/BUDUJ_WINDOWS.ps1)) { throw 'Build root missing BUDUJ_WINDOWS.ps1' }
+          foreach ($folder in @('dsac29','ci','tests')) {
+            New-Item -ItemType Directory -Force "baseline/dscompare_rc9_manual/$folder" | Out-Null
+            Copy-Item "snapshot/$folder/*" "baseline/dscompare_rc9_manual/$folder/" -Recurse -Force
+          }
+          python review/fix06/apply_rc9_20261102.py baseline/dscompare_rc9_manual
+          if ($LASTEXITCODE -ne 0) { throw 'Source patch failed' }
+      - name: Build real Windows executable from patched sources
+        shell: pwsh
+        working-directory: baseline/dscompare_rc9_manual
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./BUDUJ_WINDOWS.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Build script failed' }
+          if (!(Test-Path dist/DSCompare/DSCompare.exe)) { throw 'DSCompare.exe missing' }
+      - name: Run strict geometry and output regressions
+        shell: pwsh
+        working-directory: baseline/dscompare_rc9_manual
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install pytest cadquery-ocp numpy
+          python -m pytest -q --junitxml=unit-results.xml tests/test_revision_overlap_policy.py tests/test_revision_common_recovery.py tests/test_output_palette.py tests/test_stability.py
+          if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
+      - name: Upload tested executable and source
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RC9-20261102-integrated-Windows-and-evidence
+          path: |
+            baseline/dscompare_rc9_manual/dist/DSCompare/**
+            baseline/dscompare_rc9_manual/unit-results.xml
+            baseline/dscompare_rc9_manual/dsac29/revision_overlap.py
+            baseline/dscompare_rc9_manual/dsac29/gui45.py
+            baseline/dscompare_rc9_manual/dsac29/gui46.py
+          if-no-files-found: warn
+          retention-days: 30
+  real-cad:
+    needs: build
+    if: ${{ needs.build.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: v2
+            case: shift
+          - model: v2
+            case: revision_shift
+          - model: trident
+            case: shift
+          - model: trident
+            case: revision_shift
+          - model: openarm
+            case: review
+    runs-on: windows-2022
+    timeout-minutes: 75
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: RC9-20261102-integrated-Windows-and-evidence
+          path: build-artifact
+      - name: Download matching test scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh run download 41419934404 --repo "$env:GITHUB_REPOSITORY" --name RC9-patched-source-snapshot --dir snapshot
+          Copy-Item snapshot/ci -Destination ci -Recurse -Force
+          python -m pip install cadquery-ocp numpy
+      - name: Run actual frozen EXE against public STEP assembly
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path 'build-artifact/dist/DSCompare/DSCompare.exe').Path
+          if ('${{ matrix.model }}' -eq 'openarm') {
+            python ci/real_openarm_review.py "$exe"
+          } else {
+            python ci/large_exe.py "$exe" '${{ matrix.model }}' '${{ matrix.case }}'
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Real CAD test failed' }
+      - name: Upload real CAD results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC9-integrated-${{ matrix.model }}-${{ matrix.case }}
+          path: evidence/**
+          if-no-files-found: warn
+          retention-days: 14
