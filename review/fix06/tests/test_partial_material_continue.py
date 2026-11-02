@@ -32,7 +32,9 @@ def test_recover_only_failed_pair(monkeypatch):
     proposals=[]
     out,regions,stat=revision_overlap.merge_material_revisions(
         a,b,records,review_approval=lambda p:proposals.append(p) or 'review')
-    assert len(checks)==2 and len(proposals)==1
+    assert len(checks)==3 and len(proposals)==1
+    assert stat['retry_failure_attempted']==1
+    assert stat['retry_failure_failed']==1
     assert stat['accepted']==1 and stat['incomplete']
     assert stat['unverified_A']==stat['unverified_B']==1
     assert stat['failed_pair']=={'a_index':0,'b_index':0}
