@@ -101,6 +101,8 @@ jobs:
       PYTHONUTF8: '1'
       PYTHONFAULTHANDLER: '1'
       GH_TOKEN: ${{ github.token }}
+      PYTHONPATH: ${{ github.workspace }}
+      GIT_LFS_SKIP_SMUDGE: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -115,24 +117,51 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           gh run download 41419934404 --repo "$env:GITHUB_REPOSITORY" --name RC9-patched-source-snapshot --dir snapshot
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned source snapshot download failed' }
+          if (!(Test-Path snapshot/dsac29/step_io.py)) { throw 'Missing patched STEP importer in pinned snapshot' }
+          Copy-Item snapshot/dsac29 -Destination dsac29 -Recurse -Force
           Copy-Item snapshot/ci -Destination ci -Recurse -Force
+          # Keep the test scripts in this commit, rather than assuming the older
+          # artifact contains scripts that were introduced in later revisions.
+          Copy-Item review/fix06/ci/large_exe.py ci/large_exe.py -Force
+          Copy-Item review/fix06/ci/fixture_oracles.py ci/fixture_oracles.py -Force
           Copy-Item review/fix06/ci/real_swerve.py ci/real_swerve.py -Force
-          # OpenArm partial reporting is now automatic, not approval-gated.
-          if (Test-Path ci/real_openarm_review.py) {
+          if ('${{ matrix.model }}' -eq 'openarm') {
+            # The full frozen source bundle includes the original OpenArm test.
+            # Preserve its real geometry assertions; only update the obsolete
+            # approval-dialog assertion to require noninteractive reporting.
+            Expand-Archive -LiteralPath DSCompare_RC9_KOMPLET_ZRODLA.zip -DestinationPath legacy -Force
+            $openarm = 'legacy/dscompare_rc9_manual/ci/real_openarm_review.py'
+            if (!(Test-Path $openarm)) { throw 'Missing original OpenArm audit in complete source ZIP' }
+            Copy-Item $openarm ci/real_openarm_review.py -Force
             $test = Get-Content ci/real_openarm_review.py -Raw
-            $test = $test.Replace("    assert any(x['decision']=='review' for x in decisions),'Review was not explicitly approved'", "    # Partial output is automatic: no approval prompt is required.")
-            Set-Content ci/real_openarm_review.py $test -Encoding utf8
-          } elseif ('${{ matrix.model }}' -eq 'openarm') {
-            throw 'Missing OpenArm test script in source snapshot: ci/real_openarm_review.py'
+            if ($test.Contains('Review was not explicitly approved')) {
+              python review/fix06/ci/patch_openarm_auto_partial.py ci/real_openarm_review.py
+              if ($LASTEXITCODE -ne 0) { throw 'OpenArm audit patch failed' }
+            } elseif (!$test.Contains('Partial report unexpectedly requested')) {
+              throw 'OpenArm audit assertion changed unexpectedly'
+            }
           }
           $required = if ('${{ matrix.model }}' -eq 'openarm') { 'ci/real_openarm_review.py' } elseif ('${{ matrix.model }}' -eq 'swerve') { 'ci/real_swerve.py' } else { 'ci/large_exe.py' }
           if (!(Test-Path $required)) { throw "Missing required CAD test script: $required" }
+          python -m py_compile $required ci/fixture_oracles.py
+          if ($LASTEXITCODE -ne 0) { throw 'CAD test script syntax failed' }
           python -m pip install cadquery-ocp numpy
+          if ($LASTEXITCODE -ne 0) { throw 'CAD test dependencies failed' }
       - name: Run actual frozen EXE against public STEP assembly
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = (Resolve-Path 'build-artifact/dist/DSCompare/DSCompare.exe').Path
+          if ('${{ matrix.model }}' -eq 'swerve') {
+            git lfs version
+            if ($LASTEXITCODE -ne 0) { throw 'git-lfs missing on runner' }
+            git clone --depth 1 https://github.com/AloeVeraZ/diffy-swerve.git swerve-source
+            if ($LASTEXITCODE -ne 0) { throw 'Simple Swerve source clone failed' }
+            git -C swerve-source lfs pull --include='cad/releases/simple-swerve-v1.zip,cad/releases/simple-swerve-v2-gobilda.zip' --exclude=''
+            if ($LASTEXITCODE -ne 0) { throw 'Simple Swerve LFS download failed' }
+            $env:SWERVE_RELEASE_DIR = (Resolve-Path 'swerve-source/cad/releases').Path
+          }
           if ('${{ matrix.model }}' -eq 'openarm') {
             python ci/real_openarm_review.py "$exe"
           } elseif ('${{ matrix.model }}' -eq 'swerve') {
