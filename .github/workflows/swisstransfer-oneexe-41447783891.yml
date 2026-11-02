@@ -1,0 +1,90 @@
+name: SwissTransfer - DSCompare OneEXE run 41447783891
+
+on:
+  push:
+    branches:
+      - codex/swisstransfer-oneexe-20261102
+    paths:
+      - .github/workflows/swisstransfer-oneexe-41447783891.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  upload-oneexe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Identify exactly the requested GitHub artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/41447783891/artifacts" \
+            --jq '.artifacts[] | select(.name=="DSCompare-0.6.0-Portable-OneEXE") | "Artifact id: \(.id), bytes: \(.size_in_bytes), expired: \(.expired)"'
+          echo "Requested run: https://github.com/$GITHUB_REPOSITORY/actions/runs/41447783891" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download exactly OneEXE from run 41447783891 on GitHub runner
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          gh run download 41447783891 --repo "$GITHUB_REPOSITORY" \
+            --name "DSCompare-0.6.0-Portable-OneEXE" --dir payload
+          test -s payload/DSCompare.exe
+          file payload/DSCompare.exe
+          sha256sum payload/DSCompare.exe | tee executable-sha256.txt
+          stat -c 'EXE size (bytes): %s' payload/DSCompare.exe
+          echo "Downloaded EXE on GitHub runner (not on user's phone)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build pinned open-source Swissfer transfer client
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+          swissfer/target/release/swissfer --version
+
+      - name: Try upload of actual executable to SwissTransfer
+        shell: bash
+        timeout-minutes: 17
+        run: |
+          set -uo pipefail
+          # Swissfer may request an interactive sender verification code or
+          # SwissTransfer may reject scripted uploads via its ALTCHA defense.
+          # In CI, stdin is closed; never hang or pretend a successful upload.
+          timeout 900s swissfer/target/release/swissfer payload/DSCompare.exe \
+            --email damianink@gmail.com \
+            --duration 30 \
+            --message 'DSCompare 0.6.0 portable OneEXE - original GitHub Actions 41447783891' \
+            < /dev/null 2>&1 | tee swissfer-upload.log
+          status=${PIPESTATUS[0]}
+          echo "Swissfer exit status: $status" | tee -a swissfer-upload.log
+          url=$(grep -Eo 'https://(www\.)?swisstransfer\.com/dl/[a-zA-Z0-9-]+' swissfer-upload.log | tail -n 1 || true)
+          if [ "$status" -eq 0 ] && [ -n "$url" ]; then
+            echo "## Transfer succeeded" >> "$GITHUB_STEP_SUMMARY"
+            echo "SwissTransfer link: $url" >> "$GITHUB_STEP_SUMMARY"
+            echo "NOTE: Swissfer creates a link; it does not send recipient email." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "## Transfer NOT completed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Swissfer returned exit $status; no verified transfer link was produced." >> "$GITHUB_STEP_SUMMARY"
+          echo "Email verification or SwissTransfer ALTCHA may require a browser." >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Save diagnostic logs (without the 506 MB EXE)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwissTransfer-OneEXE-diagnostics
+          path: |
+            swissfer-upload.log
+            executable-sha256.txt
+          if-no-files-found: warn
+          retention-days: 7
