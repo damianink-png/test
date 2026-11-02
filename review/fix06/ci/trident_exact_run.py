@@ -34,6 +34,9 @@ def main():
             from trident_exact_audit import preflight
             proof=preflight(args.a,args.b)
             progress("EXACT_INPUT_SHA256_VERIFIED "+json.dumps(proof))
+            from dsac29 import trace_r22 as trace
+            trace.setup(args.out)
+            progress('BRep trace initialized; failed pairs and native stages are preserved')
             from dsac29.cli import process
             folder,records,export_error=process(
                 str(args.a),str(args.b),str(args.out),
