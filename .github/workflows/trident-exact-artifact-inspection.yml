@@ -1,0 +1,52 @@
+name: Trident exact crash artifact inspection
+on:
+  push:
+    branches: [codex/rc9-palette-20261102]
+    paths:
+      - '.github/workflows/trident-exact-artifact-inspection.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download failed exact-pair run evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/trident_evidence /tmp/trident_brep
+          gh run download 41538362160 --repo ${{ github.repository }} --name Trident-R1-2025-vs-R2-2026-EXACT-diagnostics --dir /tmp/trident_evidence
+          gh run download 41538362160 --repo ${{ github.repository }} --name Trident-R1-2025-vs-R2-2026-FAILED-BREP --dir /tmp/trident_brep
+      - name: Summarize crash stack and active BRep pair without exposing huge geometry
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, pathlib, json
+          for base in ('/tmp/trident_evidence','/tmp/trident_brep'):
+            print('EVIDENCE_TREE',base,flush=True)
+            for p in sorted(pathlib.Path(base).rglob('*')):
+              if p.is_file(): print(str(p.relative_to(base)),p.stat().st_size,flush=True)
+          root=pathlib.Path('/tmp/trident_evidence')
+          for p in sorted(root.rglob('*')):
+            if not p.is_file():continue
+            if p.suffix not in ('.log','.json','.jsonl','.txt'):continue
+            if p.stat().st_size>10000000:continue
+            name=p.name.lower()
+            if any(s in name for s in ('native_watchdog','faulthandler','trace','progress','runner_stdout','execution','exit_code','strict_final','brep')):
+              text=p.read_text(encoding='utf-8',errors='replace').splitlines()
+              print('EVIDENCE_FILE',p.name,'TOTAL_LINES',len(text),flush=True)
+              if 'watchdog' in name or 'faulthandler' in name:
+                print('\n'.join(text[-135:]),flush=True)
+              elif 'runner_stdout' in name or 'progress' in name:
+                print('\n'.join(text[-110:]),flush=True)
+              elif 'trace' in name:
+                print('\n'.join(text[-70:]),flush=True)
+              else:
+                print('\n'.join(text[-45:]),flush=True)
+          for p in sorted(pathlib.Path('/tmp/trident_brep').rglob('*')):
+            if p.is_file() and p.suffix in ('.json','.txt','.log') and p.stat().st_size<100000:
+              print('FAILED_BREP_METADATA',p.name,p.read_text(encoding='utf-8',errors='replace')[:5000],flush=True)
+          PY
