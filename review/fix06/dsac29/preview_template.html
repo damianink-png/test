@@ -41,7 +41,7 @@ footer.panel{position:relative;order:3;top:auto;bottom:auto;left:auto;max-width:
 <canvas id="cad" aria-label="Model 3D porównania rewizji"></canvas>
 <header class="panel"><h1>DS Compare <span style="color:#6ca9ff">/ Podgląd 3D</span></h1>
 <p>Kliknij część w modelu lub w drzewie · obrót: przeciągnij · przesuwanie: Shift + przeciągnij / prawy przycisk · zoom: rolka</p>
-<nav><button data-view="iso">Izometria</button><button data-view="front">Przód</button><button data-view="top">Góra</button><button data-view="right">Bok</button><button id="reset">Dopasuj</button><button id="zoomIn" aria-label="Przybliż model">+</button><button id="zoomOut" aria-label="Oddal model">−</button></nav></header>
+<nav><button data-view="iso">Izometria</button><button data-view="front">Przód</button><button data-view="top">Góra</button><button data-view="right">Bok</button><button id="reset">Dopasuj całość</button><button id="fitVisible" title="Dopasuj kamerę do aktualnie widocznych części i różnic">Dopasuj widoczne</button><button id="zoomIn" aria-label="Przybliż model">+</button><button id="zoomOut" aria-label="Oddal model">−</button></nav></header>
 <aside id="sidebar" class="panel">
 <details open><summary>Widoczność części</summary><div id="legend"></div><nav>
 <button id="all">Wszystkie</button><button id="changes">Tylko zmiany</button><button id="material" title="Tylko zweryfikowany materiał dodany i usunięty, bez geometrii wspólnej">Materiał +/−</button><button id="removed">Stare / usunięte A</button>
@@ -230,7 +230,7 @@ function selectPreviewMode(mode){
    (mode==='material'&&['CHANGED_ADDED','CHANGED_REMOVED'].includes(status));
   visible[status]=check.checked;
  }
- if(mode==='material')focusVisible();
+ if(mode!=='all')focusVisible();
  syncTree();schedule();
 }
 function showRevisionPair(){
@@ -282,7 +282,9 @@ function focusVisible(){
  fitScale=2.8/Math.max(...high.map((v,k)=>v-low[k]),.001);
  scale=1;panX=panY=0;schedule();
 }
-document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{[yaw,pitch]=({iso:[-.65,.45],front:[0,0],top:[0,Math.PI/2],right:[-Math.PI/2,0]})[b.dataset.view];reset();});
+// Keep the camera on the filtered material when changing viewing direction.
+document.getElementById('fitVisible').onclick=focusVisible;
+document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{[yaw,pitch]=({iso:[-.65,.45],front:[0,0],top:[0,Math.PI/2],right:[-Math.PI/2,0]})[b.dataset.view];if(isolation||itemVisible.some(v=>!v)||checks.some(c=>!c.checked))focusVisible();else reset();});
 for(const mode of ['all','changes','removed','material'])document.getElementById(mode).onclick=()=>selectPreviewMode(mode);
 document.getElementById('focus').onclick=focusSelected;
 document.getElementById('isolate').onclick=()=>{if(selectedId<0)return;isolation=!isolation;document.getElementById('isolate').textContent=isolation?'Pokaż pozostałe':'Izoluj';syncTree();schedule();};

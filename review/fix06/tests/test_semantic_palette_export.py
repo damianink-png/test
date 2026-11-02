@@ -93,6 +93,9 @@ def test_verified_material_only_preview_is_available_and_focuses_small_deltas(tm
     assert 'id="material"' in page
     assert "mode==='material'&&['CHANGED_ADDED','CHANGED_REMOVED'].includes(status)" in page
     assert "function focusVisible()" in page
-    assert "if(mode==='material')focusVisible()" in page
     assert "disabled=!chunks.some(c=>['CHANGED_ADDED','CHANGED_REMOVED'].includes(c.status))" in page
     assert "['all','changes','removed','material']" in page
+    assert 'id="fitVisible"' in page
+    assert "if(mode!=='all')focusVisible()" in page
+    assert "checks.some(c=>!c.checked)" in page
+    assert "document.getElementById('fitVisible').onclick=focusVisible" in page
