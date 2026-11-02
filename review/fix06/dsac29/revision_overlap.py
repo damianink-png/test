@@ -291,7 +291,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     # result, failed shape, or negative cache entry is reused.
     # A successful Common can EXCLUDE an unrelated pair; a positive CHANGED
     # still requires an independently validated Common/Cut partition.
-    if recover_failures and failures:
+    if recover_failures and failures and MAX_CHECKS>0:
         retry_started=perf_counter()
         budget_pending=[f for f in failures if f['error'].startswith('Nie wykonano testu:')]
         geometry_pending=[f for f in failures if not f['error'].startswith('Nie wykonano testu:')]
