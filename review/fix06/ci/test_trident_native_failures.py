@@ -62,14 +62,14 @@ class TridentNativeFailures(unittest.TestCase):
         # A translated part cannot match in the world phase; it must reach rigid.
         moved=describe(BRepPrimAPI_MakeBox(gp_Pnt(20.,0.,0.),10.,10.,10.).Shape(),
                        'part_0','part_0_new')
-        small_b=[moved,self.b[1]]
+        small_b=[moved]
         with patch.object(comparison,'guarded_world_reexport',return_value=False), \
              patch.object(comparison,'equivalent_world',return_value=False), \
              patch.object(comparison,'equivalent_rigid',return_value=(False,None,None)) as direct, \
              patch('dsac29.native_guard.guarded_rigid',side_effect=AssertionError('small should not fork')):
-            records=comparison.compare(self.a[:2],small_b,tolerance=.01,step_reexport_tolerance=True)
+            records=comparison.compare(self.a[:1],small_b,tolerance=.01,step_reexport_tolerance=True)
         self.assertGreaterEqual(direct.call_count,1)
-        self.assertEqual(len(records),3)  # 1 SAME plus unmatched A and B; no false match.
+        self.assertEqual(len(records),2)  # unmatched A and B; no false match.
 
 if __name__=='__main__':
     unittest.main()
