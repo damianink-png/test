@@ -20,6 +20,20 @@ jobs:
           mkdir -p /tmp/trident_evidence /tmp/trident_brep
           gh run download 41538362160 --repo ${{ github.repository }} --name Trident-R1-2025-vs-R2-2026-EXACT-diagnostics --dir /tmp/trident_evidence
           gh run download 41538362160 --repo ${{ github.repository }} --name Trident-R1-2025-vs-R2-2026-FAILED-BREP --dir /tmp/trident_brep
+      - name: Inspect frozen RC9 geometry and native worker interfaces
+        run: |
+          python - <<'PY'
+          import zipfile
+          z=zipfile.ZipFile('DSCompare_RC9_KOMPLET_ZRODLA.zip')
+          for target,spans in [('geometry.py',[(1,260)]),('native_guard.py',[(1,145),(300,460)]),('compare.py',[(1,55),(285,350)]),('trace_r22.py',[(100,145)])]:
+            matches=[x for x in z.namelist() if x.endswith('/dsac29/'+target)]
+            if not matches:
+              print('MISSING',target);continue
+            lines=z.read(matches[0]).decode('utf-8').splitlines()
+            print('SOURCE',matches[0],len(lines))
+            for a,b in spans:
+              for i in range(a,min(b,len(lines))+1): print(f'{i:04d}: {lines[i-1]}')
+          PY
       - name: Summarize crash stack and active BRep pair without exposing huge geometry
         shell: bash
         run: |
