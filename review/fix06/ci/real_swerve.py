@@ -1,5 +1,5 @@
 """Real public Simple Swerve revision pair, using the frozen Windows EXE."""
-import hashlib,json,subprocess,time,traceback,urllib.request,zipfile
+import hashlib,json,os,shutil,subprocess,time,traceback,zipfile
 from pathlib import Path
 import sys
 exe=Path(sys.argv[1]).resolve()
@@ -9,12 +9,31 @@ report={'model':'Simple Swerve','case':'v1_to_v2_gobilda','exe_sha256':hashlib.s
 def save():(root/'TEST_RESULT.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
 try:
     sources=[]
-    for name in ('simple-swerve-v1.zip','simple-swerve-v2-gobilda.zip'):
+    releases = os.environ.get('SWERVE_RELEASE_DIR')
+    if not releases:
+        raise RuntimeError('SWERVE_RELEASE_DIR must point to archives fetched with git lfs pull')
+    expected = {
+        'simple-swerve-v1.zip': ('670d7a0a75e7d8b76eda5c5638e6ecf536c1e3b5343a666c47ed84f251835f87', 65633040),
+        'simple-swerve-v2-gobilda.zip': ('37697da25928d9287cccacc1e354e877c28dc800db270e33e348db6e679f62c6', 37814925),
+    }
+    for name in expected:
         url='https://raw.githubusercontent.com/AloeVeraZ/diffy-swerve/main/cad/releases/'+name
         folder=Path('models')/name.replace('.zip','');folder.mkdir(parents=True,exist_ok=True)
         archive=folder/name
-        urllib.request.urlretrieve(url,archive)
-        with zipfile.ZipFile(archive) as z:z.extractall(folder)
+        original = Path(releases)/name
+        if not original.is_file():
+            raise FileNotFoundError('Missing git-lfs archive: '+str(original))
+        digest = hashlib.sha256(original.read_bytes()).hexdigest()
+        sha, size = expected[name]
+        if original.stat().st_size != size or digest != sha:
+            raise RuntimeError('LFS archive size/hash mismatch: '+name)
+        shutil.copyfile(original,archive)
+        if not zipfile.is_zipfile(archive):
+            raise RuntimeError('Invalid LFS ZIP archive: '+name)
+        with zipfile.ZipFile(archive) as z:
+            if z.testzip() is not None:
+                raise RuntimeError('Corrupted ZIP entry in '+name)
+            z.extractall(folder)
         candidates=[p for p in folder.rglob('*') if p.suffix.lower() in ('.step','.stp')]
         if not candidates:raise RuntimeError('No STEP model in '+name)
         source=max(candidates,key=lambda p:p.stat().st_size).resolve()
