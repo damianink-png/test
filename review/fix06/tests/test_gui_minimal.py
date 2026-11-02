@@ -9,7 +9,8 @@ def test_frozen_gui_has_no_partial_report_modal():
 
 def test_existing_reset_button_is_below_compare_and_results_table_is_hidden():
     from PySide6.QtWidgets import QApplication
-    from dsac29.gui_modern import ModernWindow
+    # Import through the production entrypoint: gui46 installs its modern alias.
+    from dsac29.gui46 import Window as ModernWindow
     app=QApplication.instance() or QApplication([])
     w=ModernWindow()
     try:
