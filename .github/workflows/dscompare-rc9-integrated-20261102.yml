@@ -118,9 +118,15 @@ jobs:
           Copy-Item snapshot/ci -Destination ci -Recurse -Force
           Copy-Item review/fix06/ci/real_swerve.py ci/real_swerve.py -Force
           # OpenArm partial reporting is now automatic, not approval-gated.
-          $test = Get-Content ci/real_openarm_review.py -Raw
-          $test = $test.Replace("    assert any(x['decision']=='review' for x in decisions),'Review was not explicitly approved'", "    # Partial output is automatic: no approval prompt is required.")
-          Set-Content ci/real_openarm_review.py $test -Encoding utf8
+          if (Test-Path ci/real_openarm_review.py) {
+            $test = Get-Content ci/real_openarm_review.py -Raw
+            $test = $test.Replace("    assert any(x['decision']=='review' for x in decisions),'Review was not explicitly approved'", "    # Partial output is automatic: no approval prompt is required.")
+            Set-Content ci/real_openarm_review.py $test -Encoding utf8
+          } elseif ('${{ matrix.model }}' -eq 'openarm') {
+            throw 'Missing OpenArm test script in source snapshot: ci/real_openarm_review.py'
+          }
+          $required = if ('${{ matrix.model }}' -eq 'openarm') { 'ci/real_openarm_review.py' } elseif ('${{ matrix.model }}' -eq 'swerve') { 'ci/real_swerve.py' } else { 'ci/large_exe.py' }
+          if (!(Test-Path $required)) { throw "Missing required CAD test script: $required" }
           python -m pip install cadquery-ocp numpy
       - name: Run actual frozen EXE against public STEP assembly
         shell: pwsh
