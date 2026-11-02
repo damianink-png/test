@@ -29,7 +29,7 @@
         autoReviewTokens.add(token);
         try{
           await call('answer_question',{token,decision:'review'});
-          notice='Zapisuję automatycznie raport częściowy. Niepotwierdzone części pozostaną oznaczone jako „Do sprawdzenia”.';
+          notice='Raport częściowy jest tworzony automatycznie. Niepotwierdzone części pozostają oznaczone jako „Do sprawdzenia”.';
         }catch(e){autoReviewTokens.delete(token);fail(e)}
       }
       // Never display the partial-report confirmation dialog.
@@ -62,7 +62,7 @@
  <details class="comparison-options"><summary>Opcje porównania</summary> <div class="analysis-options panel"><div><h2>Dokładność analizy</h2><p>Tolerancja geometryczna używana do weryfikacji modeli.</p></div><Numeric bind:value={settings.tolerance} step={.001} min={.000001} max={10} label="Tolerancja geometryczna" unit="mm" disabled={running}/><button class="subtle" onclick={()=>tab='settings'}>Wszystkie ustawienia<ChevronRight size={15}/></button></div>
  <div class="panel exports"><div><h2>Wyniki porównania</h2><p>Raport zmian powstaje przy każdej ukończonej analizie.</p></div><div class="checkbox-grid">{#each controls as c}<label><input type="checkbox" bind:checked={settings[c.id]} disabled={running}/>{c.label}</label>{/each}</div></div>
 </details>
- <div class="start-row"><div class="muted"><Box size={17}/>Oryginalne pliki pozostają bez zmian.</div><div class="compare-actions"><button class="primary" disabled={!native||!engineReady||!a||!b||running||busy} onclick={()=>run()}><Play size={17}/>Porównaj rewizje</button><button class="subtle new-comparison" disabled={running||busy} onclick={newComparison}><Plus size={16}/>Nowe porównanie</button></div></div>
+ <div class="start-row"><div class="muted"><Box size={17}/>Oryginalne pliki pozostają bez zmian.</div><div class="compare-actions"><button class="primary" disabled={!native||!engineReady||!a||!b||running||busy} onclick={()=>run()}><Play size={17}/>Rozpocznij analizę</button><button class="subtle new-comparison" disabled={running||busy} onclick={newComparison}><Plus size={16}/>Nowe porównanie</button></div></div>
  {#if job && running && activeMode==='compare'}
   <ProgressPanel {job} {elapsed} oncancel={cancel}/>
  {:else if summary && resultFolder}
