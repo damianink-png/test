@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: ['codex/rc9-boundary-ui-ci-20261030', 'codex/rc9-palette-20261102']
-    paths: ['portable/**', 'review/fix06/ci/patch_material_worker_failclosed.py', 'review/fix06/tests/test_material_worker_failclosed.py', 'review/fix06/dsac29/**', '.github/workflows/desktop-portable.yml']
+    paths: ['portable/**', 'review/fix06/ci/patch_material_worker_failclosed.py', 'review/fix06/ci/patch_gui_minimal.py', 'review/fix06/tests/test_material_worker_failclosed.py', 'review/fix06/dsac29/**', '.github/workflows/desktop-portable.yml']
 permissions:
   contents: read
   actions: read
