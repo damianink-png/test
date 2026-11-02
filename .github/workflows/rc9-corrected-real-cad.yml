@@ -18,6 +18,7 @@ on:
       - 'review/fix06/tests/test_gui_minimal.py'
       - 'review/fix06/tests/test_material_worker_failclosed.py'
       - 'review/fix06/tests/test_partial_material_continue.py'
+      - 'review/fix06/tests/test_revision_overlap_policy.py'
   pull_request:
     paths: ['.github/workflows/rc9-corrected-real-cad.yml', 'DSCompare_RC9_KOMPLET_ZRODLA.zip']
   workflow_dispatch:
