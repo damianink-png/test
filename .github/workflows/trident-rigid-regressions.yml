@@ -23,6 +23,6 @@ jobs:
           python review/fix06/ci/patch_trident_native_failures.py dscompare_rc9_manual/dsac29/compare.py
           python review/fix06/ci/patch_trident_rigid_isolation.py dscompare_rc9_manual/dsac29/compare.py
           python -m py_compile review/fix06/ci/patch_trident_rigid_isolation.py dscompare_rc9_manual/dsac29/compare.py
-      - name: Assert isolated large rigid and translated small rigid paths
+      - name: Assert isolated large rigid and one-part translated small rigid paths
         run: |
           PYTHONPATH=dscompare_rc9_manual:review/fix06/ci python -m unittest -v test_trident_native_failures
