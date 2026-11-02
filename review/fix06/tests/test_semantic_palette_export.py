@@ -14,7 +14,7 @@ from OCP.gp import gp_Pnt
 
 from dsac29.compare import Record
 from dsac29.geometry import describe
-from dsac29.palette import HEX, COLORS, MATERIAL_COLORS, REVISION_COLORS, semantic_overrides
+from dsac29.palette import HEX, COLORS, MATERIAL_COLORS, REVISION_COLORS, EXPORT_COLOR_CHOICES, semantic_overrides
 from dsac29.report import produce
 from dsac29.step_io import inspect_step_colors
 
@@ -40,6 +40,21 @@ def test_palette_semantics_and_custom_overrides():
     assert custom['CHANGED_ADDED'] == (.1, .2, .3)
     assert custom['CHANGED_REMOVED'] == (.4, .5, .6)
     assert semantic_overrides({'CHANGED_REMOVED': (.9, .8, .7), 'REMOVED': (.4, .5, .6)})['CHANGED_REMOVED'] == (.9, .8, .7)
+
+
+def test_ten_visual_categories_are_five_related_pairs():
+    expected = ('SAME', 'CHANGED_COMMON', 'CHANGED_ADDED', 'CHANGED_REMOVED',
+                'ADDED', 'REMOVED', 'MOVED_OLD', 'MOVED',
+                'UNCERTAIN_OLD', 'UNCERTAIN_NEW')
+    assert tuple(key for key, _, _ in EXPORT_COLOR_CHOICES) == expected
+    assert len({key for key, _, _ in EXPORT_COLOR_CHOICES}) == 10
+    overrides = semantic_overrides({'SAME': (.1, .2, .3),
+                                    'CHANGED_COMMON': (.4, .5, .6),
+                                    'CHANGED_ADDED': (.2, .3, .4),
+                                    'CHANGED_REMOVED': (.6, .5, .4)})
+    assert overrides['CHANGED_COMMON'] == (.4, .5, .6)
+    assert overrides['CHANGED_ADDED'] == (.2, .3, .4)
+    assert overrides['CHANGED_REMOVED'] == (.6, .5, .4)
 
 
 def _box(name, x, length):

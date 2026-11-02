@@ -2,7 +2,7 @@ name: DS Compare portable Windows ZIP and single EXE
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/rc9-boundary-ui-ci-20261030']
+    branches: ['codex/rc9-boundary-ui-ci-20261030', 'codex/rc9-palette-20261102']
     paths: ['portable/**', '.github/workflows/desktop-portable.yml']
 permissions:
   contents: read

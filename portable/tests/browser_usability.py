@@ -20,6 +20,14 @@ with sync_playwright() as p:
  page.add_init_script(script);page.goto('http://127.0.0.1:8768');page.wait_for_function("window.__listeners['tauri://drag-drop']!==undefined")
  assert page.get_by_label('Tolerancja geometryczna',exact=True).count()==1
  assert not page.get_by_label('Tolerancja geometryczna',exact=True).is_visible()
+ page.get_by_role('button',name='Ustawienia',exact=True).click()
+ expected=['Bez zmian','Bez zmian w detalu','Dodany materiał','Usunięty materiał',
+           'Nowe B','Usunięte A','Przesunięte — stare A','Przesunięte — nowe B',
+           'Do sprawdzenia — A','Do sprawdzenia — B']
+ assert page.locator('.colors label').all_inner_texts()==expected
+ assert page.locator('.colors input[type="color"]').count()==10
+ page.screenshot(path=str(out/'palette-10.png'))
+ page.get_by_role('button',name='Porównanie',exact=True).click()
  def drop(paths,role):
   box=page.locator('[data-drop-role="'+role+'"]').bounding_box();assert box
   page.evaluate('(v)=>window.__drop(v.paths,v.x,v.y)',{'paths':paths,'x':box['x']+box['width']/2,'y':box['y']+box['height']/2});page.wait_for_timeout(100)

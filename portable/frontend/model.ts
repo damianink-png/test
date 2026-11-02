@@ -1,27 +1,38 @@
 export type Settings={tolerance:number;density:number;output:string;preview:boolean;step:boolean;bom:boolean;bomCsv:boolean;fastBom:boolean;align:boolean;oldAlpha:number;schema:string;verify:string;flat:boolean;bodyColors:boolean;diffStep:boolean;maxSolids:number;palette:Record<string,string>;theme:'dark'|'light'};
-export const defaults:Settings={tolerance:.01,density:7850,output:'',preview:true,step:true,bom:true,bomCsv:false,fastBom:false,align:true,oldAlpha:.4,schema:'AP214IS',verify:'auto',flat:false,bodyColors:false,diffStep:false,maxSolids:20000,palette:{same:'#249b60',moved:'#a855f7',changed:'#f5b82e',added:'#168bff',removed:'#ff4050',changed_common:'#7d899a',uncertain:'#e879c3'},theme:'dark'};
+export const paletteKeys=['same','changed_common','changed_added','changed_removed','added','removed','moved_old','moved','uncertain_old','uncertain_new'] as const;
+export const defaults:Settings={tolerance:.01,density:7850,output:'',preview:true,step:true,bom:true,bomCsv:false,fastBom:false,align:true,oldAlpha:.4,schema:'AP214IS',verify:'auto',flat:false,bodyColors:false,diffStep:false,maxSolids:20000,palette:{same:'#249b60',changed_common:'#7d899a',changed_added:'#168bff',changed_removed:'#ff4050',added:'#168bff',removed:'#ff4050',moved_old:'#d1aafa',moved:'#a855f7',uncertain_old:'#f4c4e3',uncertain_new:'#e879c3'},theme:'dark'};
 export type Decision={token:string;material_unverified:boolean;unresolved?:boolean;unrelated?:boolean;reason:string;translation_mm:number[];unverified_A:number;unverified_B:number};
 export type Job={id:string;folder:string;running:boolean;cancelled:boolean;events:string[];progress?:{timestamp_ms?:number;phase?:string;completed?:number;total?:number;checks?:number};question:Decision|null;result:Record<string,unknown>|null;summary:Summary|null;error:string|null};
 export type Row={a_index:number|null;b_index:number|null;status:string;name_a?:string;name_b?:string;note?:string;[key:string]:unknown};
 export type Summary={analysis_complete?:boolean;solids_A?:number;solids_B?:number;statuses?:Record<string,number>;records?:Row[];[key:string]:unknown};
 export const statuses:Record<string,string>={SAME:'Bez zmian',RENAMED:'Zmieniona nazwa',MOVED:'Przesunięte',CHANGED:'Zmieniona geometria',ADDED:'Dodane',REMOVED:'Usunięte',UNCERTAIN:'Do sprawdzenia'};
-export const paletteLabels:Record<string,string>={same:'Bez zmian',moved:'Przesunięte',changed:'Zmieniona geometria',added:'Dodane',removed:'Usunięte',changed_common:'Wspólna',uncertain:'Do sprawdzenia'};
+export const paletteLabels:Record<string,string>={same:'Bez zmian',changed_common:'Bez zmian w detalu',changed_added:'Dodany materiał',changed_removed:'Usunięty materiał',added:'Nowe B',removed:'Usunięte A',moved_old:'Przesunięte — stare A',moved:'Przesunięte — nowe B',uncertain_old:'Do sprawdzenia — A',uncertain_new:'Do sprawdzenia — B'};
 
-// Separate "Wspólna" is sent as CHANGED_COMMON, keeping the OCCT Common operation unchanged.
-// Migrate only untouched legacy default colors; preserve users' custom selections.
+// A saved seven-color palette must not override explicit colors of the ten layers.
+// Migrate legacy values only when they were customized, retaining separate A/B
+// and Common/Cut controls and ignoring retired full-body CHANGED setting.
 const legacyPalette:Record<string,string>={same:'#94a3b8',moved:'#0072b2',changed:'#e69f00',added:'#009e73',removed:'#d55e00',uncertain:'#cc79a7'};
 export function restorePalette(stored?:Record<string,string>):Record<string,string>{
  const palette={...defaults.palette};
  if(!stored)return palette;
  const common=stored.changed_common??stored.CHANGED_COMMON??stored.common;
- for(const [key,value] of Object.entries(stored)){
-  if(key==='common'||key==='CHANGED_COMMON')continue;
-  if(legacyPalette[key]&&value.toLowerCase()===legacyPalette[key])palette[key]=defaults.palette[key];
-  else palette[key]=value;
+ const isCustomized=(key:string,value:string)=>value.toLowerCase()!==(legacyPalette[key]||defaults.palette[key]||'').toLowerCase();
+ for(const key of paletteKeys){
+  const value=stored[key];
+  if(typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value)){
+   if(isCustomized(key,value))palette[key]=value;
+  }
  }
- if(common&&!stored.changed_common)palette.changed_common=common;
+ if(typeof common==='string'&&/^#[0-9a-f]{6}$/i.test(common)&&!stored.changed_common)palette.changed_common=common;
+ // Earlier desktop versions had one color for both changed material and
+ // whole added/removed parts. Preserve customized selections on upgrade.
+ for(const [oldKey,newKey] of [['added','changed_added'],['removed','changed_removed'],['moved','moved_old'],['uncertain','uncertain_old'],['uncertain','uncertain_new']] as const){
+  const value=stored[oldKey];
+  if(!stored[newKey]&&typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value)&&isCustomized(oldKey,value))palette[newKey]=value;
+ }
  return palette;
 }
+
 export function needsReview(r:Row){return r.status==='UNCERTAIN'||r.verification==='unverified';}
 export function indexedRows(summary:Summary):Array<Row & {record_index:number}>{return (summary.records||[]).map((r,i)=>({...r,record_index:i}));}
 export function visibleRows(rows:Row[],query:string,status:string){const q=query.trim().toLocaleLowerCase('pl');return rows.filter(r=>(!status||r.status===status||(status==='SAME'&&r.status==='RENAMED')||(status==='CHANGES'&&!['SAME','RENAMED'].includes(r.status))||(status==='DIAGNOSTIC'&&needsReview(r)))&&(!q||JSON.stringify(r).toLocaleLowerCase('pl').includes(q)));}

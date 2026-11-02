@@ -17,15 +17,16 @@ def rgb(value):
 COLORS = {k:rgb(HEX[k]) for k in ('SAME','RENAMED','MOVED','CHANGED','ADDED','REMOVED','UNCERTAIN')}
 REVISION_COLORS = {k:rgb(v) for k,v in HEX.items()}
 MATERIAL_COLORS = {k:rgb(v) for k,v in HEX.items() if k.startswith('CHANGED_') and k not in ('CHANGED_OLD','CHANGED_NEW')}
+# Ten independently configurable visual layers, in five related pairs.
+# Full CHANGED_OLD/NEW fallback remains amber but is not a separate visual
+# layer when certified Common/Cut regions exist.
 EXPORT_COLOR_CHOICES = tuple((key,label,HEX[key]) for key,label in (
-    ('SAME','Bez zmian / zmiana nazwy'),('ADDED','Nowe elementy B'),
-    ('REMOVED','Usunięte elementy A'),('MOVED','Przesunięte — nowe B'),
-    ('MOVED_OLD','Przesunięte — stare A'),('CHANGED_NEW','Zmieniona geometria — B'),
-    ('CHANGED_OLD','Zmieniona geometria — A'),('CHANGED_COMMON','Materiał wspólny'),
-    ('CHANGED_ADDED','Materiał dodany'),('CHANGED_REMOVED','Materiał usunięty'),
-    ('UNCERTAIN_NEW','Wymaga weryfikacji — B'),('UNCERTAIN_OLD','Wymaga weryfikacji — A'),
+    ('SAME','Bez zmian'),('CHANGED_COMMON','Bez zmian w detalu'),
+    ('CHANGED_ADDED','Dodany materiał'),('CHANGED_REMOVED','Usunięty materiał'),
+    ('ADDED','Nowe B'),('REMOVED','Usunięte A'),
+    ('MOVED_OLD','Przesunięte — stare A'),('MOVED','Przesunięte — nowe B'),
+    ('UNCERTAIN_OLD','Do sprawdzenia — A'),('UNCERTAIN_NEW','Do sprawdzenia — B'),
 ))
-
 
 def semantic_overrides(colors):
     """Propagate user colors to corresponding STEP/material/preview statuses."""
