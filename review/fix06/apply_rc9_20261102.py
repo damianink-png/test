@@ -27,7 +27,7 @@ change("revision_overlap.py",
                 try:
                     common_shape=trace.brep_call('revision_isolated_retry_common',i,j,guarded_common,
                                                  a[i].shape,b[j].shape,tolerance)
-                    bind_common(common_shape,a[i].shape,b[j].shape,tolerance)
+                    common_shape=bind_common(common_shape,a[i].shape,b[j].shape,tolerance)
                 except (NativeGeometryFailure,ValueError,RuntimeError,OSError) as common_exc:
                     common_shape=None
                     trace.mark('revision_isolated_retry_common','FALLBACK_REGIONS',
