@@ -1,0 +1,71 @@
+name: Trident official CAD ZIP - exact SHA256 provenance probe
+on:
+  push:
+    branches: [codex/rc9-palette-20261102]
+    paths:
+      - '.github/workflows/trident-public-source-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe-exact-bytes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe official public CAD archives, never substitute revisions
+        shell: bash
+        run: |
+          mkdir -p evidence
+          python - <<'PY'
+          import hashlib,io,json,urllib.request,zipfile
+          from pathlib import Path
+          expected={
+            'Trident_Assembly1.step':('e26006c887004d1dcacac36e08ca083268336d80668ea2d868a16e2b20aee370',192710725),
+            'trident_assembly.step':('416eda4e9212b894ed6f78ad3a6af55757115ebfcc4c18db933743d97dd48ccf',185183500),
+          }
+          sources=[
+            ('Voron-Trident R2 2026-06-25','https://raw.githubusercontent.com/VoronDesign/Voron-Trident/1a49bdc2c524cd6f4491a01e8fd566d0bd6acd0a/CAD/trident_assembly.step.zip'),
+            ('Voron-Trident R2 2026-06-13','https://raw.githubusercontent.com/VoronDesign/Voron-Trident/9d9223311f2b0fce72484023d6a755e13a733319/CAD/trident_assembly.step.zip'),
+            ('Voron-Trident R1 2023-07-18','https://raw.githubusercontent.com/VoronDesign/Voron-Trident/79750725c457ceb16260322cf83922eb3b04ed33/CAD/Trident_Assembly.step.zip'),
+          ]
+          result={'expected':expected,'sources':[],'exact_matches':{}}
+          for label,url in sources:
+            item={'label':label,'url':url,'step_entries':[]}
+            try:
+              with urllib.request.urlopen(url,timeout=120) as response:
+                archive=response.read()
+              with zipfile.ZipFile(io.BytesIO(archive)) as z:
+                for name in z.namelist():
+                  if not name.lower().endswith(('.step','.stp')): continue
+                  with z.open(name) as stream:
+                    h=hashlib.sha256();size=0
+                    while chunk:=stream.read(4*1024*1024):
+                      h.update(chunk);size+=len(chunk)
+                  digest=h.hexdigest()
+                  matches=[k for k,(sha,n) in expected.items() if digest==sha and size==n]
+                  item['step_entries'].append({'name':name,'bytes':size,'sha256':digest,'matches_exact_uploaded':matches})
+                  for k in matches:result['exact_matches'][k]={'label':label,'url':url,'zip_entry':name}
+            except Exception as exc:
+              item['error']=repr(exc)
+            result['sources'].append(item)
+          Path('evidence/trident_public_provenance.json').write_text(json.dumps(result,indent=2,ensure_ascii=False))
+          for name in expected:
+            if name in result['exact_matches']:
+              Path('evidence/exact_'+name+'.flag').touch()
+          print(json.dumps(result,indent=2,ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trident-official-source-sha256-probe
+          path: evidence/**
+      - name: Enforce both exact SHA256 matches (not a geometry test)
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -f evidence/exact_Trident_Assembly1.step.flag ] || [ ! -f evidence/exact_trident_assembly.step.flag ]; then
+            echo "::error::Original pair not both found byte-identical in official CAD archives. No geometry test or PASS."
+            exit 4
+          fi
+          echo "EXACT_PUBLIC_SOURCES_VERIFIED_ONLY: no geometry comparison run."
