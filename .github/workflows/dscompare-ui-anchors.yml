@@ -57,3 +57,13 @@ jobs:
           assert 'self._details_toggle.setVisible(done)' not in p
           print('GUI_PATCH_SOURCE_ASSERTIONS_PASS')
           PY
+      - name: Compare frozen and overlay STEP geometry naming anchors
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('dscompare_rc9_manual/dsac29/step_io.py')
+          s=p.read_text(encoding='utf-8')
+          for line in s.splitlines():
+              if 'cad_product_name(name,number,kind,role)' in line or "'podzlozenie':['02_ZMIENIONE'" in line:
+                  print('STEP_NAME_ANCHOR',line.strip())
+          PY
