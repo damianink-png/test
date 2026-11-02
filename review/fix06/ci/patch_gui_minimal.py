@@ -10,6 +10,10 @@ root=Path(sys.argv[1])
 def change(filename,old,new):
     path=root/"dsac29"/filename
     data=path.read_text(encoding="utf-8")
+    if filename=="gui_modern.py":
+        # The frozen Qt source uses two-space method indentation.
+        old="\\n".join(line[1:] if line.startswith("   ") else line for line in old.split("\\n"))
+        new="\\n".join(line[1:] if line.startswith("   ") else line for line in new.split("\\n"))
     count=data.count(old)
     if count!=1:
         raise RuntimeError(f"UI patch anchor missing or duplicated: {filename}: {count}: {old[:80]!r}")
