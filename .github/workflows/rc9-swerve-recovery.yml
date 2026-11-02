@@ -6,6 +6,7 @@ on:
       - 'review/fix06/dsac29/revision_overlap.py'
       - 'review/fix06/dsac29/candidate_policy.py'
       - 'review/fix06/ci/patch_gui_minimal.py'
+      - 'review/fix06/ci/patch_legacy_ui_tests.py'
       - 'review/fix06/ci/patch_step_polish_names.py'
       - 'review/fix06/tests/test_gui_minimal.py'
       - 'review/fix06/ci/patch_material_worker_failclosed.py'
@@ -59,6 +60,7 @@ jobs:
           python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
           python review/fix06/ci/patch_material_worker_failclosed.py dscompare_rc9_manual
           python review/fix06/ci/patch_gui_minimal.py dscompare_rc9_manual
+          python review/fix06/ci/patch_legacy_ui_tests.py dscompare_rc9_manual
           python review/fix06/ci/patch_step_polish_names.py dscompare_rc9_manual
           if ($LASTEXITCODE -ne 0) { throw 'Material guard patch failed' }
           if ($LASTEXITCODE -ne 0) { throw 'Native dispatch patch failed' }
