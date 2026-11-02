@@ -92,6 +92,9 @@ def test_verified_changed_regions_match_step_html_table_and_transparency(tmp_pat
     assert 'Materiał dodany' in report and 'Materiał usunięty' in report
     assert 'background:#168bff' in report and 'background:#ff4050' in report
     step = inspect_step_colors(str(tmp_path/'POROWNANIE_KOLORY.step'))
+    step_products=(tmp_path/'POROWNANIE_KOLORY.step').read_text(encoding='latin-1')
+    for polish_name in ('WSPOLNA_GEOMETRIA','MATERIAL_DODANY','MATERIAL_USUNIETY'):
+        assert polish_name in step_products, polish_name
     assert 0.4 in step['alfy_powierzchni']
     for key in ('CHANGED_COMMON', 'CHANGED_ADDED', 'CHANGED_REMOVED', 'REMOVED', 'ADDED', 'SAME'):
         rgb = tuple(round(x, 4) for x in REVISION_COLORS[key])
