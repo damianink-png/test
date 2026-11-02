@@ -141,3 +141,24 @@ console.log('PAIR_VIEW_TEST_PASS');
     result = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stdout + '\n' + result.stderr
     assert 'PAIR_VIEW_TEST_PASS' in result.stdout
+
+
+def test_xray_picking_keeps_depth_for_new_revision():
+    """X-ray A must not steal every click from visible B in the A/B overlay."""
+    template = (Path(__file__).parents[1] / 'dsac29' / 'preview_template.html').read_text(encoding='utf-8')
+    assert "if(xray.checked&&!picking)gl.disable(gl.DEPTH_TEST);" in template
+    assert "if(xray.checked)gl.disable(gl.DEPTH_TEST);" not in template
+    if not shutil.which('node'):
+        pytest.skip('Node.js not installed')
+    script = """
+const assert=require('node:assert/strict');
+let picking=false, xray={checked:true}, calls=[];
+const gl={DEPTH_TEST:1,disable:(x)=>calls.push(x)};
+function test(){if(xray.checked&&!picking)gl.disable(gl.DEPTH_TEST);}
+test();assert.deepEqual(calls,[gl.DEPTH_TEST]);
+calls=[];picking=true;test();assert.deepEqual(calls,[]);
+console.log('XRAY_PICK_DEPTH_PASS');
+"""
+    result = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stdout + '\\n' + result.stderr
+    assert 'XRAY_PICK_DEPTH_PASS' in result.stdout
