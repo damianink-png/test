@@ -12,6 +12,7 @@ on:
       - 'review/fix06/ci/patch_partial_audit.py'
       - 'review/fix06/ci/patch_openarm_auto_partial.py'
       - 'review/fix06/ci/patch_material_worker_failclosed.py'
+      - 'review/fix06/ci/patch_gui_minimal.py'
       - 'review/fix06/tests/test_material_worker_failclosed.py'
       - 'review/fix06/tests/test_partial_material_continue.py'
   pull_request:
@@ -58,6 +59,7 @@ jobs:
           Copy-Item review/fix06/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/common_exclusion.py -Force
           python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
           python review/fix06/ci/patch_material_worker_failclosed.py dscompare_rc9_manual
+          python review/fix06/ci/patch_gui_minimal.py dscompare_rc9_manual
           if ($LASTEXITCODE -ne 0) { throw 'Isolated material fail-closed patch failed' }
           if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
           Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
@@ -66,6 +68,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'OpenArm automatic partial audit patch failed' }
           Copy-Item review/fix06/tests/test_overlap_evidence.py dscompare_rc9_manual/tests/test_overlap_evidence.py -Force
           Copy-Item review/fix06/tests/test_candidate_policy.py dscompare_rc9_manual/tests/test_candidate_policy.py -Force
+          Copy-Item review/fix06/tests/test_gui_minimal.py dscompare_rc9_manual/tests/test_gui_minimal.py -Force
           Copy-Item review/fix06/tests/test_revision_overlap_policy.py dscompare_rc9_manual/tests/test_revision_overlap_policy.py -Force
           Copy-Item review/fix06/tests/test_semantic_palette_export.py dscompare_rc9_manual/tests/test_semantic_palette_export.py -Force
           python review/fix06/ci/patch_legacy_palette_test.py dscompare_rc9_manual/tests/test_output_palette.py
@@ -103,7 +106,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'pytest install failed' }
           python ci/run_manual_regressions.py
           if ($LASTEXITCODE -ne 0) { throw 'Corrected source regressions failed' }
-          python -m pytest -q tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_semantic_palette_export.py tests/test_material_worker_failclosed.py tests/test_partial_material_review.py tests/test_partial_material_continue.py tests/test_revision_common_recovery.py tests/test_revision_r4.py tests/test_r15_material_renamed.py
+          python -m pytest -q tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_gui_minimal.py tests/test_semantic_palette_export.py tests/test_material_worker_failclosed.py tests/test_partial_material_review.py tests/test_partial_material_continue.py tests/test_revision_common_recovery.py tests/test_revision_r4.py tests/test_r15_material_renamed.py
           if ($LASTEXITCODE -ne 0) { throw 'Patched material-recovery regressions failed' }
           python ci/test_rc9_original_boundary.py
           if ($LASTEXITCODE -ne 0) { throw 'Original boundary regression failed' }
@@ -202,6 +205,7 @@ jobs:
           Copy-Item review/fix06/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/common_exclusion.py -Force
           python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
           python review/fix06/ci/patch_material_worker_failclosed.py dscompare_rc9_manual
+          python review/fix06/ci/patch_gui_minimal.py dscompare_rc9_manual
           if ($LASTEXITCODE -ne 0) { throw 'Isolated material fail-closed patch failed' }
           if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
           Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
@@ -210,6 +214,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'OpenArm automatic partial audit patch failed' }
           Copy-Item review/fix06/tests/test_overlap_evidence.py dscompare_rc9_manual/tests/test_overlap_evidence.py -Force
           Copy-Item review/fix06/tests/test_candidate_policy.py dscompare_rc9_manual/tests/test_candidate_policy.py -Force
+          Copy-Item review/fix06/tests/test_gui_minimal.py dscompare_rc9_manual/tests/test_gui_minimal.py -Force
           Copy-Item review/fix06/tests/test_revision_overlap_policy.py dscompare_rc9_manual/tests/test_revision_overlap_policy.py -Force
           Copy-Item review/fix06/tests/test_semantic_palette_export.py dscompare_rc9_manual/tests/test_semantic_palette_export.py -Force
           python review/fix06/ci/patch_legacy_palette_test.py dscompare_rc9_manual/tests/test_output_palette.py
