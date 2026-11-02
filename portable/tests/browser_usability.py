@@ -72,7 +72,7 @@ with sync_playwright() as p:
  page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='material-case'&&c.args.decision==='review')",timeout=5000)
  assert page.get_by_role('alertdialog').count()==0
  assert 'Niepełna analiza geometrii' not in page.locator('body').inner_text()
- assert 'Zapisuję automatycznie raport częściowy' in page.locator('main').inner_text()
+ assert 'Raport częściowy jest tworzony automatycznie.' in page.locator('main').inner_text()
  page.evaluate("window.__job={...window.__job,running:false,summary:window.__fixture}")
  page.get_by_role('heading',name='Wyniki porównania',exact=True).wait_for(timeout=5000)
  assert page.get_by_label('Postęp analizy').count()==0
