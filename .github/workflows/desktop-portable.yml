@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: ['codex/rc9-boundary-ui-ci-20261030', 'codex/rc9-palette-20261102']
-    paths: ['portable/**', 'review/fix06/ci/patch_material_worker_failclosed.py', 'review/fix06/ci/patch_gui_minimal.py', 'review/fix06/ci/patch_step_polish_names.py', 'review/fix06/tests/test_gui_minimal.py', 'review/fix06/tests/test_material_worker_failclosed.py', 'review/fix06/dsac29/**', '.github/workflows/desktop-portable.yml']
+    paths: ['portable/**', 'review/fix06/ci/patch_material_worker_failclosed.py', 'review/fix06/ci/patch_gui_minimal.py', 'review/fix06/ci/patch_legacy_ui_tests.py', 'review/fix06/ci/patch_step_polish_names.py', 'review/fix06/tests/test_gui_minimal.py', 'review/fix06/tests/test_material_worker_failclosed.py', 'review/fix06/dsac29/**', '.github/workflows/desktop-portable.yml']
 permissions:
   contents: read
   actions: read
@@ -40,6 +40,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Common exclusion patch failed'}
           python review/fix06/ci/patch_material_worker_failclosed.py portable-src
           python review/fix06/ci/patch_gui_minimal.py portable-src
+          python review/fix06/ci/patch_legacy_ui_tests.py portable-src
           python review/fix06/ci/patch_step_polish_names.py portable-src
           if($LASTEXITCODE -ne 0){throw 'Material worker no-popup patch failed'}
           foreach($file in @('test_overlap_evidence.py','test_candidate_policy.py','test_revision_overlap_policy.py','test_gui_minimal.py','test_partial_material_continue.py','test_material_worker_failclosed.py')){
