@@ -282,35 +282,66 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             raise NativeGeometryFailure('Limit liczby testów materiału — analiza niekompletna')
         if progress and idx and idx%50==0:
             progress(f'R17: geometria rewizji {idx}/{len(old_ids)}; B-Rep {stat["boolean_checks"]}')
-    # Give candidates skipped ONLY by the global budget a small, separate
-    # recovery budget. Never retry a native crash/invalid B-Rep blindly.
-    # Every positive retry still needs independent Common/Cut conservation.
-    if recover_failures and MAX_CHECKS>0:
+    # Post-pass: retry independently after the large-assembly candidate scan.
+    # A pair that fails in a large assembly may pass as an isolated STEP pair.
+    # Every retry runs a NEW guarded Common subprocess; no previous invalid
+    # result, failed shape, or negative cache entry is reused.
+    # A successful Common can EXCLUDE an unrelated pair; a positive CHANGED
+    # still requires an independently validated Common/Cut partition.
+    if recover_failures and failures:
         retry_started=perf_counter()
-        pending=[f for f in failures if f['error'].startswith('Nie wykonano testu:')]
-        for failure in pending[:16]:
-            if perf_counter()-retry_started>=60.0:break
+        budget_pending=[f for f in failures if f['error'].startswith('Nie wykonano testu:')]
+        geometry_pending=[f for f in failures if not f['error'].startswith('Nie wykonano testu:')]
+        pending=budget_pending[:16]+geometry_pending[:4]
+        seen=set()
+        stat['retry_failure_attempted']=0
+        stat['retry_failure_recovered']=0
+        stat['retry_failure_excluded']=0
+        stat['retry_failure_failed']=0
+        for failure in pending:
+            if perf_counter()-retry_started>=90.0:break
             if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
             i,j=failure['a_index'],failure['b_index']
-            stat['retry_budget_attempted']+=1
+            if (i,j) in seen:continue
+            seen.add((i,j))
+            is_budget=failure in budget_pending
+            stat['retry_budget_attempted' if is_budget else 'retry_failure_attempted']+=1
             try:
-                reg=trace.brep_call('revision_budget_retry_regions',i,j,calculate,a[i],b[j],tolerance)
-                bind_regions(reg,a[i],b[j],tolerance)
-                common=reg.common_mm3
+                if is_budget:
+                    reg=trace.brep_call('revision_budget_retry_regions',i,j,calculate,a[i],b[j],tolerance)
+                    bind_regions(reg,a[i],b[j],tolerance)
+                    common=reg.common_mm3
+                else:
+                    from .native_guard import guarded_common
+                    shape=trace.brep_call('revision_failed_pair_fresh_common',i,j,guarded_common,
+                                          a[i].shape,b[j].shape,tolerance)
+                    bind_common(shape,a[i].shape,b[j].shape,tolerance)
+                    common=volume(shape)
+                    reg=None
                 proof=classify_overlap(a[i].volume,b[j].volume,common,valid_boolean=True)
                 if proof.decision=='UNKNOWN':
-                    continue
+                    raise ValueError('Niepotwierdzona wspólna objętość po ponowieniu')
                 if proof.decision=='REJECT_CANDIDATE':
                     stat['low_overlap_rejected_pairs']+=1
+                    if not is_budget:stat['retry_failure_excluded']+=1
                 else:
                     score=_score(common,a[i],b[j],_name_eq(a[i],b[j]))
                     if score is not None:
+                        if reg is None:
+                            reg=trace.brep_call('revision_failed_pair_fresh_regions',i,j,
+                                                calculate,a[i],b[j],tolerance)
+                            bind_regions(reg,a[i],b[j],tolerance)
+                            if _score(reg.common_mm3,a[i],b[j],_name_eq(a[i],b[j])) is None:
+                                raise ValueError('Wspólna objętość nie potwierdziła rewizji')
                         edges[i,j]=score
                         best_common[i]=(score,j,None,reg)
                 failures.remove(failure)
-                stat['retry_budget_recovered']+=1
+                stat['retry_budget_recovered' if is_budget else 'retry_failure_recovered']+=1
+                trace.mark('revision_postpass_retry','VERIFIED',a_index=i,b_index=j,
+                           common_mm3=common,decision=proof.decision)
             except (NativeGeometryFailure,ValueError,RuntimeError,OSError) as exc:
-                trace.mark('revision_budget_retry','UNRESOLVED',a_index=i,b_index=j,error=str(exc))
+                if not is_budget:stat['retry_failure_failed']+=1
+                trace.mark('revision_postpass_retry','UNRESOLVED',a_index=i,b_index=j,error=str(exc))
         failed_old={f['a_index'] for f in failures}
         failed_new={f['b_index'] for f in failures}
     # Failed edges can change the winner among similar parts.
