@@ -1,0 +1,26 @@
+name: DS Compare candidate matching regression
+on:
+  push:
+    branches: [codex/rc9-palette-20261102]
+    paths:
+      - 'review/fix06/dsac29/overlap_evidence.py'
+      - 'review/fix06/dsac29/candidate_policy.py'
+      - 'review/fix06/tests/test_overlap_evidence.py'
+      - 'review/fix06/tests/test_candidate_policy.py'
+      - '.github/workflows/dscompare-candidate-policy-tests.yml'
+  workflow_dispatch:
+jobs:
+  candidate-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run actual committed matching tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd review/fix06
+          PYTHONPATH=. python -m unittest discover -s tests -p 'test_overlap_evidence.py' -v
+          PYTHONPATH=. python -m unittest discover -s tests -p 'test_candidate_policy.py' -v
