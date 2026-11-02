@@ -41,6 +41,13 @@ def test_recover_only_failed_pair(monkeypatch):
     assert [(r.a_index,r.b_index,r.status) for r in out]==[
         (None,0,'UNCERTAIN'),(1,1,'CHANGED'),(0,None,'UNCERTAIN')]
     assert regions[1].regions.common_mm3>900
+    # Diagnostics must identify the exact unresolved pair in both A and B
+    # while preserving the independently verified CHANGED occurrence.
+    uncertain=[r for r in out if r.status=='UNCERTAIN']
+    assert len(uncertain)==2
+    assert all('A[0] / B[0]' in r.note for r in uncertain)
+    assert all('alternative cannot prove bad pair' in r.note for r in uncertain)
+    assert 'A[0] / B[0]' not in next(r for r in out if r.status=='CHANGED').note
     assert {r.a_index for r in out if r.a_index is not None}=={0,1}
     assert {r.b_index for r in out if r.b_index is not None}=={0,1}
 
