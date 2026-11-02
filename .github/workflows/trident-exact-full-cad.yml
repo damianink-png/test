@@ -1,0 +1,125 @@
+name: DS Compare - exact user Trident R1 vs R2 full CAD verification
+on:
+  push:
+    branches: [codex/rc9-palette-20261102]
+    paths:
+      - '.github/workflows/trident-exact-full-cad.yml'
+  workflow_dispatch:
+concurrency:
+  group: trident-exact-full-cad-one-branch
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  exact-geometry:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: '1'
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      DSCOMPARE_IMPORT_CACHE: 'on'
+      DSCOMPARE_CACHE_DIR: 'evidence/import_cache'
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+      DSCOMPARE_CAPTURE_ACTIVE_BREP: '1'
+      PYTHONPATH: 'review/fix06:review/fix06/ci'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CAD engine dependencies and run audit regressions
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3' 'scipy>=1.10' 'trimesh>=4' 'pillow>=10'
+          python -m pip freeze > dependencies_exact.txt
+          python -m compileall -q review/fix06/dsac29 review/fix06/ci/trident_exact_run.py
+          PYTHONPATH=review/fix06/ci python -m unittest -v test_trident_exact_audit
+      - name: Download exact uploaded STEP bytes from pinned official sources
+        run: |
+          mkdir -p evidence models/user_exact
+          python review/fix06/ci/trident_exact_fetch_official.py --out models/user_exact | tee evidence/source_fetch.log
+          cp models/user_exact/EXACT_INPUT_PROVENANCE.json evidence/
+          python review/fix06/ci/trident_exact_audit.py \
+            --a models/user_exact/Trident_Assembly1.step \
+            --b models/user_exact/trident_assembly.step \
+            --report evidence/exact_input_preflight.json | tee evidence/verified_sha256.log
+      - name: Compare real Trident R1 2025 vs R2 2026
+        shell: bash
+        run: |
+          mkdir -p evidence/exact_comparison
+          set +e
+          timeout --signal=TERM 110m python -u review/fix06/ci/trident_exact_run.py \
+            --a models/user_exact/Trident_Assembly1.step \
+            --b models/user_exact/trident_assembly.step \
+            --out evidence/exact_comparison \
+            --log evidence/exact_progress.log > evidence/runner_stdout.log 2>&1
+          rc=$?
+          echo "$rc" > evidence/geometry_exit_code.txt
+          tail -n 120 evidence/runner_stdout.log || true
+          echo "GEOMETRY_EXIT_CODE=$rc"
+          exit 0
+      - name: Strict completeness and material validation
+        if: always()
+        shell: bash
+        run: |
+          if [ -f evidence/exact_comparison/PODSUMOWANIE.json ]; then
+            python review/fix06/ci/trident_exact_audit.py \
+              --a models/user_exact/Trident_Assembly1.step \
+              --b models/user_exact/trident_assembly.step \
+              --summary evidence/exact_comparison/PODSUMOWANIE.json \
+              --report evidence/strict_final_audit.json > evidence/strict_final_audit.log 2>&1 || true
+          else
+            echo "NO_COMPLETE_SUMMARY: full geometry run failed or timed out" > evidence/strict_final_audit.log
+          fi
+          cat evidence/strict_final_audit.log
+      - name: Upload complete diagnostic evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Trident-R1-2025-vs-R2-2026-EXACT-diagnostics
+          path: |
+            evidence/*.json
+            evidence/*.log
+            evidence/*.txt
+            evidence/exact_comparison/*.json
+            evidence/exact_comparison/*.txt
+            evidence/exact_comparison/*.csv
+            evidence/exact_comparison/*.log
+            dependencies_exact.txt
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Upload CAD STEP and HTML outputs if present
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Trident-R1-2025-vs-R2-2026-EXACT-STEP-HTML
+          path: |
+            evidence/exact_comparison/*.step
+            evidence/exact_comparison/*.html
+          if-no-files-found: ignore
+          compression-level: 1
+          retention-days: 30
+      - name: Enforce full comparison PASS only when complete
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -f evidence/geometry_exit_code.txt ] || [ "$(cat evidence/geometry_exit_code.txt)" != "0" ]; then
+            echo "::error::Exact pair full geometry analysis did not complete successfully."
+            exit 4
+          fi
+          if [ ! -f evidence/strict_final_audit.json ]; then
+            echo "::error::Missing strict final audit; no PASS."
+            exit 5
+          fi
+          python - <<'PY'
+          import json,sys
+          data=json.load(open('evidence/strict_final_audit.json'))
+          result=data.get('comparison',{})
+          print('EXACT_TRIDENT_FINAL_AUDIT',json.dumps(result,ensure_ascii=False))
+          if not result.get('strict_pass'):
+            print('FAIL: incomplete comparison or UNCERTAIN/failed Common/Cut',file=sys.stderr)
+            sys.exit(6)
+          print('FULL_EXACT_TRIDENT_CAD_PASS')
+          PY
