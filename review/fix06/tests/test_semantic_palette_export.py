@@ -99,3 +99,12 @@ def test_verified_material_only_preview_is_available_and_focuses_small_deltas(tm
     assert "if(mode!=='all')focusVisible()" in page
     assert "checks.some(c=>!c.checked)" in page
     assert "document.getElementById('fitVisible').onclick=focusVisible" in page
+
+
+def test_old_revision_transparency_in_split_and_overlay():
+    """Split A/B must not turn verified removed material into opaque red."""
+    template = (Path(__file__).parents[1] / 'dsac29' / 'preview_template.html').read_text(encoding='utf-8')
+    assert "if(c.role!=='A'||oldAlpha>=1){draw(c,1,color(i),picking);}" in template
+    assert "seen.filter(([i,c])=>c.role==='A'&&oldAlpha<1)" in template
+    assert "if(layoutMode==='split'||c.role!=='A'||oldAlpha>=1)" not in template
+    assert "layoutMode!=='split'&&c.role==='A'" not in template
