@@ -57,8 +57,12 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           python -m pip install pytest cadquery-ocp numpy
-          python -m pytest -q --junitxml=unit-results.xml tests/test_revision_overlap_policy.py tests/test_revision_common_recovery.py tests/test_rc9_retry_after_assembly_failure.py tests/test_output_palette.py tests/test_stability.py
-          if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
+          # Run native OCCT tests in fresh Python processes; combined pytest
+          # can retain worker state and stall unrelated subsequent tests.
+          foreach ($test in @('test_revision_overlap_policy.py','test_revision_common_recovery.py','test_rc9_retry_after_assembly_failure.py','test_output_palette.py','test_stability.py')) {
+            python -m pytest -q "tests/$test"
+            if ($LASTEXITCODE -ne 0) { throw "Regression failed: $test" }
+          }
       - name: Upload tested executable and source
         uses: actions/upload-artifact@v4
         if: always()
