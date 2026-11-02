@@ -27,6 +27,7 @@ jobs:
           sources=[
             ('Voron-Trident R2 2026-06-25','https://raw.githubusercontent.com/VoronDesign/Voron-Trident/1a49bdc2c524cd6f4491a01e8fd566d0bd6acd0a/CAD/trident_assembly.step.zip'),
             ('Voron-Trident R2 2026-06-13','https://raw.githubusercontent.com/VoronDesign/Voron-Trident/9d9223311f2b0fce72484023d6a755e13a733319/CAD/trident_assembly.step.zip'),
+            ('Voron-Trident R1 2025-06-15','https://raw.githubusercontent.com/VoronDesign/Voron-Trident/cc1d765173c12e9a7b6a1f14f6f213ef8bfb1b04/CAD/Trident_Assembly_STEP.zip'),
             ('Voron-Trident R1 2023-07-18','https://raw.githubusercontent.com/VoronDesign/Voron-Trident/79750725c457ceb16260322cf83922eb3b04ed33/CAD/Trident_Assembly.step.zip'),
           ]
           result={'expected':expected,'sources':[],'exact_matches':{}}
