@@ -62,6 +62,12 @@ change("gui_modern.py",
    self._details_toggle.hide()
    self._details.hide()""")
 
+# A hidden detail table can be rendered by Qt during teardown. The delegate
+# must not assume that the immediate QFrame has the main window's theme.
+change("gui46.py",
+       "  win=self.parent().window();palette=PALETTES.get(win.theme.currentText(),PALETTES['Jasny'])",
+       "  win=self.parent().window();theme=win.theme.currentText() if hasattr(win,'theme') else 'Jasny';palette=PALETTES.get(theme,PALETTES['Jasny'])")
+
 # An older GUI must never block analysis on the partial-report modal.
 # The worker already auto-approves safe partial reports, but this also
 # protects the GUI if it encounters a legacy material_unverified request.
