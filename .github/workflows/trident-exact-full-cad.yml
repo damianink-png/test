@@ -49,7 +49,8 @@ jobs:
           python review/fix06/ci/patch_material_worker_failclosed.py dscompare_rc9_manual
           python review/fix06/ci/patch_trident_native_failures.py dscompare_rc9_manual/dsac29/compare.py
           python -m compileall -q dscompare_rc9_manual/dsac29
-          PYTHONPATH=dscompare_rc9_manual:review/fix06/ci python -m unittest -v test_trident_native_failures | tee evidence/native_pair_regressions.log
+          mkdir -p evidence
+          PYTHONPATH=dscompare_rc9_manual:review/fix06/ci python -m unittest -v test_trident_native_failures 2>&1 | tee evidence/native_pair_regressions.log
           echo "RC9_FULL_ENGINE_IMPORT_READY"
       - name: Download exact uploaded STEP bytes from pinned official sources
         run: |
