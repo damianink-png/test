@@ -25,7 +25,7 @@ jobs:
           python - <<'PY'
           import zipfile
           z=zipfile.ZipFile('DSCompare_RC9_KOMPLET_ZRODLA.zip')
-          for target,spans in [('geometry.py',[(1,260)]),('native_guard.py',[(1,145),(300,460)]),('compare.py',[(1,55),(285,350)]),('trace_r22.py',[(100,145)])]:
+          for target,spans in [('geometry.py',[(1,260)]),('native_guard.py',[(175,290),(415,535)]),('compare.py',[(55,210),(245,285)]),('cli.py',[(95,140)])]:
             matches=[x for x in z.namelist() if x.endswith('/dsac29/'+target)]
             if not matches:
               print('MISSING',target);continue
