@@ -52,6 +52,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
           Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
           Copy-Item review/fix06/tests/test_semantic_palette_export.py dscompare_rc9_manual/tests/test_semantic_palette_export.py -Force
+          python review/fix06/ci/patch_legacy_palette_test.py dscompare_rc9_manual/tests/test_output_palette.py
+          if ($LASTEXITCODE -ne 0) { throw 'Neutral Common palette regression patch failed' }
           python review/fix06/ci/patch_legacy_dual_failure_tests.py dscompare_rc9_manual/tests
           if ($LASTEXITCODE -ne 0) { throw 'Frozen dual-failure regression patch failed' }
           python review/fix06/ci/patch_partial_audit.py dscompare_rc9_manual/ci/audit_partial_artifacts.py
@@ -181,6 +183,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
           Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
           Copy-Item review/fix06/tests/test_semantic_palette_export.py dscompare_rc9_manual/tests/test_semantic_palette_export.py -Force
+          python review/fix06/ci/patch_legacy_palette_test.py dscompare_rc9_manual/tests/test_output_palette.py
+          if ($LASTEXITCODE -ne 0) { throw 'Neutral Common palette regression patch failed' }
           python review/fix06/ci/patch_legacy_dual_failure_tests.py dscompare_rc9_manual/tests
           if ($LASTEXITCODE -ne 0) { throw 'Frozen dual-failure regression patch failed' }
           python review/fix06/ci/patch_partial_audit.py dscompare_rc9_manual/ci/audit_partial_artifacts.py
