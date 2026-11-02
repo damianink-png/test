@@ -128,3 +128,24 @@ def test_retry_budget_handles_more_than_original_sixteen_pair_limit(monkeypatch)
     assert stat['accepted']==count and not stat['incomplete']
     assert {r.status for r in out}=={'CHANGED'}
     assert len(regions)==count
+
+
+def test_removed_duplicate_uses_exact_definition_without_cached_rigid_proof():
+    """Exact native/B-Rep definition may be known although no pairwise proof was cached."""
+    a=[part(0,10,'repeat'),part(100,10,'repeat')]
+    b=[part(100,10,'repeat'),part(0,11,'new_other')]
+    known={id(a[0]),id(a[1]),id(b[0])}
+    class ExactDefinitions:
+        def has_rigid_proof(self,left,right,tolerance):
+            return False  # no preceding A-to-A comparisons
+        def same_definition(self,left,right):
+            return id(left) in known and id(right) in known
+    existing=[Record(0,None,'REMOVED',''),
+              Record(1,0,'SAME',''),
+              Record(None,1,'ADDED','')]
+    out,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,existing,geometry_context=ExactDefinitions(),review_approval=lambda _: 'review')
+    assert {(r.a_index,r.b_index,r.status) for r in out}=={
+        (0,None,'REMOVED'),(1,0,'SAME'),(None,1,'ADDED')}
+    assert stat['removed_repeated_occurrences_excluded']==1
+    assert stat['boolean_checks']==0 and not regions
