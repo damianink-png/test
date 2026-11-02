@@ -136,8 +136,9 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
         surviving_by_name=defaultdict(list)
         for r in records:
             if (r.a_index is not None and r.b_index is not None and
-                r.status in ('SAME','UNCHANGED','MOVED') and
-                _name_eq(a[r.a_index],b[r.b_index])):
+                r.status in ('SAME','RENAMED','UNCHANGED','MOVED')):
+                # The surviving occurrence may itself have been renamed.
+                # Its verified geometry, not B's text name, is the proof.
                 surviving_by_name[canonical(a[r.a_index].name)].append(r)
         for i in old_ids:
             for r in surviving_by_name.get(canonical(a[i].name),()):
