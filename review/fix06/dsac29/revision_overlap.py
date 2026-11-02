@@ -421,7 +421,28 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     if recover_failures and (failed_old or failed_new):
         from dataclasses import replace
         reason='Niepotwierdzona geometria tej części (awaria operacji lub limit); inne pary są nadal analizowane.'
-        out=[replace(r,status='UNCERTAIN',note=reason,
+        # Keep the specific failed candidate and native error attached to each
+        # UNCERTAIN occurrence, not only in the global failure statistics.
+        # Never turn a failed proof into CHANGED, ADDED or REMOVED.
+        failure_notes_a=defaultdict(list)
+        failure_notes_b=defaultdict(list)
+        for failure in failures:
+            i,j=failure['a_index'],failure['b_index']
+            detail=' '.join(str(failure['error']).split())
+            if len(detail)>240:detail=detail[:237]+'...'
+            failure_notes_a[i].append(f'A[{i}] / B[{j}]: {detail}')
+            failure_notes_b[j].append(f'A[{i}] / B[{j}]: {detail}')
+        def uncertain_note(record):
+            details=[]
+            if record.a_index is not None:
+                details.extend(failure_notes_a.get(record.a_index,()))
+            if record.b_index is not None:
+                details.extend(failure_notes_b.get(record.b_index,()))
+            details=list(dict.fromkeys(details))
+            suffix='; '.join(details[:2])
+            if len(details)>2:suffix+=f'; oraz {len(details)-2} innych par'
+            return reason+(' '+suffix if suffix else '')
+        out=[replace(r,status='UNCERTAIN',note=uncertain_note(r),
                      confidence='Raport częściowy — wymaga sprawdzenia',
                      distance_mm=None,delta_x=None,delta_y=None,delta_z=None,
                      volume_delta_mm3=None,rotation_deg=None)
