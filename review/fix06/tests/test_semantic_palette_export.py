@@ -4,6 +4,8 @@ Only the presentation layer changes: classification and Boolean proof are not mo
 """
 import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -108,3 +110,34 @@ def test_old_revision_transparency_in_split_and_overlay():
     assert "seen.filter(([i,c])=>c.role==='A'&&oldAlpha<1)" in template
     assert "if(layoutMode==='split'||c.role!=='A'||oldAlpha>=1)" not in template
     assert "layoutMode!=='split'&&c.role==='A'" not in template
+
+
+def test_pair_view_isolation_and_focus():
+    """The A/B pair action must zoom to the pair, never all unpaired items."""
+    template = (Path(__file__).parents[1] / 'dsac29' / 'preview_template.html').read_text(encoding='utf-8')
+    match = re.search(r'function showRevisionPair\(\)\{.*?^\}', template, re.S | re.M)
+    assert match, 'Missing A/B pair-view handler'
+    if not shutil.which('node'):
+        pytest.skip('Node.js not installed for JavaScript behavior test')
+    script = '''
+const assert=require('node:assert/strict');
+let selectedId=0,chunks=[],itemVisible=[],focusCalls=0;
+function selectPreviewMode(mode){assert.equal(mode,'all');itemVisible=chunks.map(()=>true);}
+function focusVisible(){focusCalls++;}
+function syncTree(){} function schedule(){}
+''' + match.group(0) + '''
+function check(pairs,selected,expected){
+ chunks=pairs.map(pair_id=>({pair_id}));selectedId=selected;
+ const before=focusCalls;showRevisionPair();
+ assert.deepEqual(itemVisible,expected);assert.equal(focusCalls,before+1);
+}
+check(['A','A','B'],0,[true,true,false]);
+check([null,null,'A'],0,[true,false,false]);
+check([0,0,1],1,[true,true,false]);
+check(['','',null],0,[true,false,false]);
+selectedId=-1;const before=focusCalls;showRevisionPair();assert.equal(focusCalls,before);
+console.log('PAIR_VIEW_TEST_PASS');
+'''
+    result = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stdout + '\n' + result.stderr
+    assert 'PAIR_VIEW_TEST_PASS' in result.stdout

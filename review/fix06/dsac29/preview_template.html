@@ -236,9 +236,12 @@ function selectPreviewMode(mode){
 function showRevisionPair(){
  if(selectedId<0)return;
  const pair=chunks[selectedId].pair_id;
+ const hasPair=pair!==undefined&&pair!==null&&pair!=='';
  selectPreviewMode('all');
- itemVisible=chunks.map((c,i)=>pair!==undefined?c.pair_id===pair:i===selectedId);
- syncTree();schedule();
+ itemVisible=chunks.map((c,i)=>hasPair?c.pair_id===pair:i===selectedId);
+ // A single changed detail can be tiny compared with the whole assembly.
+ // Fit the selected A/B pair, not the entire scene.
+ focusVisible();syncTree();schedule();
 }
 document.getElementById('pair').onclick=showRevisionPair;
 document.getElementById('zoomIn').onclick=()=>{scale=Math.min(20,scale*1.3);schedule();};
