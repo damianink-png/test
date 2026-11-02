@@ -125,14 +125,24 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     # eligible for the normal Common/Cut revision search.
     excluded_occurrences=set()
     if geometry_context is not None:
-        surviving=[r for r in records if r.a_index is not None and
-                   r.b_index is not None and r.status in ('SAME','UNCHANGED','MOVED')]
+        # has_rigid_proof checks only PREVIOUSLY stored proofs. Duplicate
+        # occurrences often share the exact local B-Rep without ever having
+        # been paired A-to-A. The exact-definition digest is also a positive
+        # proof; dimensions, volume or name alone must never suffice.
+        same_definition=getattr(geometry_context,'same_definition',None)
+        def known_same_definition(left,right):
+            return (geometry_context.has_rigid_proof(left,right,tolerance) or
+                    (same_definition is not None and same_definition(left,right)))
+        surviving_by_name=defaultdict(list)
+        for r in records:
+            if (r.a_index is not None and r.b_index is not None and
+                r.status in ('SAME','UNCHANGED','MOVED') and
+                _name_eq(a[r.a_index],b[r.b_index])):
+                surviving_by_name[canonical(a[r.a_index].name)].append(r)
         for i in old_ids:
-            for r in surviving:
-                if (_name_eq(a[i],a[r.a_index]) and
-                    _name_eq(a[i],b[r.b_index]) and
-                    geometry_context.has_rigid_proof(a[i],a[r.a_index],tolerance) and
-                    geometry_context.has_rigid_proof(a[i],b[r.b_index],tolerance)):
+            for r in surviving_by_name.get(canonical(a[i].name),()):
+                if (known_same_definition(a[i],a[r.a_index]) and
+                    known_same_definition(a[i],b[r.b_index])):
                     excluded_occurrences.add(i)
                     break
         old_ids-=excluded_occurrences
