@@ -7,6 +7,7 @@ regions. Ambiguous one-to-many and repetitive parts are never guessed.
 from bisect import bisect_right
 from time import perf_counter
 from .native_guard import NativeGeometryFailure
+from .overlap_evidence import classify_overlap
 from collections import defaultdict
 from math import sqrt
 import numpy as np
@@ -110,7 +111,10 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     old_ids={r.a_index for r in records if r.status=='REMOVED' and r.a_index is not None and r.b_index is None}
     new_ids={r.b_index for r in records if r.status=='ADDED' and r.b_index is not None and r.a_index is None}
     stat=dict(candidate_pairs=0,boolean_checks=0,accepted=0,ambiguous=0,invalid_boolean=0,
-              budget_exceeded=False,rigid_pairs_excluded=0,min_common_larger_same_name=SAME_NAME_MIN,
+              budget_exceeded=False,rigid_pairs_excluded=0,low_overlap_rejected_pairs=0,
+              intermediate_overlap_reviewed_pairs=0,mutual_overlap_candidate_pairs=0,
+              invalid_overlap_evidence=0,retry_budget_attempted=0,retry_budget_recovered=0,
+              min_common_larger_same_name=SAME_NAME_MIN,
               min_common_larger_different_name=OTHER_NAME_MIN,min_iou=MIN_IOU)
     if not old_ids or not new_ids:return list(records),{},stat
     if progress:progress(f'Zmiany materiału: {len(old_ids)} starych i {len(new_ids)} nowych elementów; sprawdzanie geometrii…')
@@ -250,6 +254,23 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 if not recover_failures:raise failure from exc
                 mark_failure(i,j,failure)
                 continue
+            overlap_evidence=classify_overlap(ref.volume,b[j].volume,common,
+                                             valid_boolean=True)
+            if overlap_evidence.decision=='REJECT_CANDIDATE':
+                stat['low_overlap_rejected_pairs']+=1
+                # Both fractions <20%: this pair is not a material revision.
+                # The parts remain available for OTHER candidate matches.
+                continue
+            if overlap_evidence.decision=='REVIEW_CANDIDATE':
+                stat['intermediate_overlap_reviewed_pairs']+=1
+            elif overlap_evidence.decision=='POSSIBLE_REVISION':
+                stat['mutual_overlap_candidate_pairs']+=1
+            else:
+                stat['invalid_overlap_evidence']+=1
+                if not recover_failures:
+                    raise NativeGeometryFailure('Niespójny dowód wspólnej objętości')
+                mark_failure(i,j,'Niespójny dowód wspólnej objętości')
+                continue
             score=_score(common,ref,b[j],_name_eq(ref,b[j]))
             if score is not None:
                 edges[i,j]=score
@@ -261,6 +282,37 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             raise NativeGeometryFailure('Limit liczby testów materiału — analiza niekompletna')
         if progress and idx and idx%50==0:
             progress(f'R17: geometria rewizji {idx}/{len(old_ids)}; B-Rep {stat["boolean_checks"]}')
+    # Give candidates skipped ONLY by the global budget a small, separate
+    # recovery budget. Never retry a native crash/invalid B-Rep blindly.
+    # Every positive retry still needs independent Common/Cut conservation.
+    if recover_failures and MAX_CHECKS>0:
+        retry_started=perf_counter()
+        pending=[f for f in failures if f['error'].startswith('Nie wykonano testu:')]
+        for failure in pending[:16]:
+            if perf_counter()-retry_started>=60.0:break
+            if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
+            i,j=failure['a_index'],failure['b_index']
+            stat['retry_budget_attempted']+=1
+            try:
+                reg=trace.brep_call('revision_budget_retry_regions',i,j,calculate,a[i],b[j],tolerance)
+                bind_regions(reg,a[i],b[j],tolerance)
+                common=reg.common_mm3
+                proof=classify_overlap(a[i].volume,b[j].volume,common,valid_boolean=True)
+                if proof.decision=='UNKNOWN':
+                    continue
+                if proof.decision=='REJECT_CANDIDATE':
+                    stat['low_overlap_rejected_pairs']+=1
+                else:
+                    score=_score(common,a[i],b[j],_name_eq(a[i],b[j]))
+                    if score is not None:
+                        edges[i,j]=score
+                        best_common[i]=(score,j,None,reg)
+                failures.remove(failure)
+                stat['retry_budget_recovered']+=1
+            except (NativeGeometryFailure,ValueError,RuntimeError,OSError) as exc:
+                trace.mark('revision_budget_retry','UNRESOLVED',a_index=i,b_index=j,error=str(exc))
+        failed_old={f['a_index'] for f in failures}
+        failed_new={f['b_index'] for f in failures}
     # Failed edges can change the winner among similar parts.
     # Never accept a competing candidate involving an unverified operand.
     if recover_failures:
