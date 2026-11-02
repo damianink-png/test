@@ -118,6 +118,26 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
               min_common_larger_same_name=SAME_NAME_MIN,
               min_common_larger_different_name=OTHER_NAME_MIN,min_iou=MIN_IOU)
     if not old_ids or not new_ids:return list(records),{},stat
+    # A removed occurrence of a repeated, still-present definition is not
+    # automatically a material revision. Only exclude it when the existing
+    # assembly match independently proves the SAME rigid geometry and name.
+    # A genuinely revised definition with no surviving identical match remains
+    # eligible for the normal Common/Cut revision search.
+    excluded_occurrences=set()
+    if geometry_context is not None:
+        surviving=[r for r in records if r.a_index is not None and
+                   r.b_index is not None and r.status in ('SAME','UNCHANGED','MOVED')]
+        for i in old_ids:
+            for r in surviving:
+                if (_name_eq(a[i],a[r.a_index]) and
+                    _name_eq(a[i],b[r.b_index]) and
+                    geometry_context.has_rigid_proof(a[i],a[r.a_index],tolerance) and
+                    geometry_context.has_rigid_proof(a[i],b[r.b_index],tolerance)):
+                    excluded_occurrences.add(i)
+                    break
+        old_ids-=excluded_occurrences
+    stat['removed_repeated_occurrences_excluded']=len(excluded_occurrences)
+    if not old_ids:return list(records),{},stat
     if progress:progress(f'Zmiany materiału: {len(old_ids)} starych i {len(new_ids)} nowych elementów; sprawdzanie geometrii…')
     ba={i:np.asarray(_precise_world_bounds(a[i].shape),float) for i in old_ids}
     bb={j:np.asarray(_precise_world_bounds(b[j].shape),float) for j in new_ids}
