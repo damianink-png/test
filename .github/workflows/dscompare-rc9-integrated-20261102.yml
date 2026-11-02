@@ -89,6 +89,8 @@ jobs:
             case: revision_shift
           - model: openarm
             case: review
+          - model: swerve
+            case: revision
     runs-on: windows-2022
     timeout-minutes: 75
     env:
@@ -110,6 +112,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           gh run download 41419934404 --repo "$env:GITHUB_REPOSITORY" --name RC9-patched-source-snapshot --dir snapshot
           Copy-Item snapshot/ci -Destination ci -Recurse -Force
+          Copy-Item review/fix06/ci/real_swerve.py ci/real_swerve.py -Force
           # OpenArm partial reporting is now automatic, not approval-gated.
           $test = Get-Content ci/real_openarm_review.py -Raw
           $test = $test.Replace("    assert any(x['decision']=='review' for x in decisions),'Review was not explicitly approved'", "    # Partial output is automatic: no approval prompt is required.")
@@ -122,6 +125,8 @@ jobs:
           $exe = (Resolve-Path 'build-artifact/dist/DSCompare/DSCompare.exe').Path
           if ('${{ matrix.model }}' -eq 'openarm') {
             python ci/real_openarm_review.py "$exe"
+          } elseif ('${{ matrix.model }}' -eq 'swerve') {
+            python ci/real_swerve.py "$exe"
           } else {
             python ci/large_exe.py "$exe" '${{ matrix.model }}' '${{ matrix.case }}'
           }
