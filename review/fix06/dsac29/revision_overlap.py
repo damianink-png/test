@@ -8,6 +8,7 @@ from bisect import bisect_right
 from time import perf_counter
 from .native_guard import NativeGeometryFailure
 from .overlap_evidence import classify_overlap
+from .candidate_policy import decide_pair
 from collections import defaultdict
 from math import sqrt
 import numpy as np
@@ -254,23 +255,25 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 if not recover_failures:raise failure from exc
                 mark_failure(i,j,failure)
                 continue
-            overlap_evidence=classify_overlap(ref.volume,b[j].volume,common,
-                                             valid_boolean=True)
-            if overlap_evidence.decision=='REJECT_CANDIDATE':
+            # Size/position alone never establishes a revision. The candidate
+            # policy only filters independently validated low-overlap pairs;
+            # the strict shape/IoU score and Common/Cut proof remain mandatory.
+            candidate_decision=decide_pair(
+                volume_a=ref.volume,volume_b=b[j].volume,common_volume=common,
+                valid_boolean=True,name_matches=_name_eq(ref,b[j]))
+            if candidate_decision.action=='SEARCH_ALTERNATIVES':
                 stat['low_overlap_rejected_pairs']+=1
-                # Both fractions <20%: this pair is not a material revision.
-                # The parts remain available for OTHER candidate matches.
                 continue
-            if overlap_evidence.decision=='REVIEW_CANDIDATE':
-                stat['intermediate_overlap_reviewed_pairs']+=1
-            elif overlap_evidence.decision=='POSSIBLE_REVISION':
-                stat['mutual_overlap_candidate_pairs']+=1
-            else:
+            if candidate_decision.action=='RETRY_ISOLATED':
                 stat['invalid_overlap_evidence']+=1
                 if not recover_failures:
                     raise NativeGeometryFailure('Niespójny dowód wspólnej objętości')
                 mark_failure(i,j,'Niespójny dowód wspólnej objętości')
                 continue
+            if candidate_decision.overlap_class=='REVIEW_CANDIDATE':
+                stat['intermediate_overlap_reviewed_pairs']+=1
+            elif candidate_decision.overlap_class=='POSSIBLE_REVISION':
+                stat['mutual_overlap_candidate_pairs']+=1
             score=_score(common,ref,b[j],_name_eq(ref,b[j]))
             if score is not None:
                 edges[i,j]=score
