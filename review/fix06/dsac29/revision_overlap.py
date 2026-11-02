@@ -140,8 +140,9 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     stat['exclusion_witnesses']=[]
     guarded_large = True  # every unresolved Common is isolated, including small assemblies
     guarded_started=perf_counter()
-    guarded_budget_s=240.0
-    trace.mark('revision_overlap_guard','BEGIN',guarded=guarded_large,unresolved=len(old_ids)+len(new_ids))
+    guarded_budget_s=min(900.0,max(240.0,0.5*(len(old_ids)+len(new_ids))))
+    stat['guarded_budget_seconds']=guarded_budget_s
+    trace.mark('revision_overlap_guard','BEGIN',guarded=guarded_large,unresolved=len(old_ids)+len(new_ids),budget_seconds=guarded_budget_s)
     for idx,i in enumerate(sorted(old_ids)):
         if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
         ref=a[i];bounds=ba[i]
