@@ -109,7 +109,7 @@ def main(argv=None):
             palette=json.loads(ns.palette)
             output,recs,err=process(ns.a,ns.b,ns.output,ns.tolerance,ns.density,
                    full_bom=not ns.no_bom,bom_fast=ns.fast_bom,bom_csv=not ns.no_bom_csv,max_solids=ns.max_solids,step=ns.generate_step,diff_step=ns.diff_step,preview3d=ns.preview3d,
-                   colors=palette,progress=emit,align=ns.align,auto_align=ns.align_auto,alignment_approval=approve_alignment if ns.align_auto else None,revision_style=ns.revision_style,thumbnails=ns.thumbnails,old_alpha=ns.old_alpha,direct_scene=ns.direct_scene,manual_review=json.loads(Path(ns.manual_review).read_text(encoding='utf-8')) if ns.manual_review else None,material_approval=approve_alignment if ns.allow_review_decision else None)
+                   colors=palette,progress=emit,align=ns.align,auto_align=ns.align_auto,alignment_approval=approve_alignment if ns.align_auto else None,revision_style=ns.revision_style,thumbnails=ns.thumbnails,old_alpha=ns.old_alpha,direct_scene=ns.direct_scene,manual_review=json.loads(Path(ns.manual_review).read_text(encoding='utf-8')) if ns.manual_review else None,material_approval=lambda proposal: (emit('Zapisuję automatycznie raport częściowy; niepotwierdzone części pozostają do sprawdzenia.'), 'review')[1])
             summary=json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
             main_ready=bool(summary.get('step_ready',False))
             payload={'ok':bool(not ns.generate_step or main_ready),
