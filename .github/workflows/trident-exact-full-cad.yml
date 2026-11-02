@@ -47,7 +47,9 @@ jobs:
           cp review/fix06/dsac29/preview_template.html dscompare_rc9_manual/dsac29/preview_template.html
           python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
           python review/fix06/ci/patch_material_worker_failclosed.py dscompare_rc9_manual
+          python review/fix06/ci/patch_trident_native_failures.py dscompare_rc9_manual/dsac29/compare.py
           python -m compileall -q dscompare_rc9_manual/dsac29
+          PYTHONPATH=dscompare_rc9_manual:review/fix06/ci python -m unittest -v test_trident_native_failures | tee evidence/native_pair_regressions.log
           echo "RC9_FULL_ENGINE_IMPORT_READY"
       - name: Download exact uploaded STEP bytes from pinned official sources
         run: |
@@ -58,6 +60,12 @@ jobs:
             --a models/user_exact/Trident_Assembly1.step \
             --b models/user_exact/trident_assembly.step \
             --report evidence/exact_input_preflight.json | tee evidence/verified_sha256.log
+      - name: Restore verified STEP import cache (only exact source SHA and OCCT)
+        id: step-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: evidence/import_cache
+          key: trident-step-ocp79311-schema-r1114-e26006c88700-416eda4e9212-v1
       - name: Compare real Trident R1 2025 vs R2 2026
         shell: bash
         run: |
@@ -73,6 +81,12 @@ jobs:
           tail -n 120 evidence/runner_stdout.log || true
           echo "GEOMETRY_EXIT_CODE=$rc"
           exit 0
+      - name: Save verified STEP import cache even if geometry comparison fails
+        if: always() && steps.step-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: evidence/import_cache
+          key: trident-step-ocp79311-schema-r1114-e26006c88700-416eda4e9212-v1
       - name: Strict completeness and material validation
         if: always()
         shell: bash
@@ -100,8 +114,19 @@ jobs:
             evidence/exact_comparison/*.txt
             evidence/exact_comparison/*.csv
             evidence/exact_comparison/*.log
+            evidence/exact_comparison/*.jsonl
+            evidence/exact_comparison/AWARIA_PYTHON_FAULTHANDLER.txt
             dependencies_exact.txt
           if-no-files-found: warn
+          retention-days: 30
+      - name: Upload isolated native BRep failure evidence if present
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Trident-R1-2025-vs-R2-2026-FAILED-BREP
+          path: evidence/exact_comparison/FAILED_BREP/**
+          if-no-files-found: ignore
+          compression-level: 1
           retention-days: 30
       - name: Upload CAD STEP and HTML outputs if present
         uses: actions/upload-artifact@v4
