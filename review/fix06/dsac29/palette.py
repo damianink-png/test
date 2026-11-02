@@ -1,11 +1,14 @@
 """Shared semantic colors for STEP, reports, preview and desktop settings."""
 HEX = {
-    'SAME':'#94A3B8', 'RENAMED':'#94A3B8',
-    'ADDED':'#009E73', 'REMOVED':'#D55E00',
-    'MOVED':'#0072B2', 'MOVED_OLD':'#8CC5E3',
-    'CHANGED':'#E69F00', 'CHANGED_NEW':'#E69F00', 'CHANGED_OLD':'#F3C977',
-    'CHANGED_COMMON':'#94A3B8', 'CHANGED_ADDED':'#009E73', 'CHANGED_REMOVED':'#D55E00',
-    'UNCERTAIN':'#CC79A7', 'UNCERTAIN_NEW':'#CC79A7', 'UNCERTAIN_OLD':'#E7B8D0',
+    # Exact defaults of the portable desktop UI: one meaning in every output.
+    'SAME':'#249B60', 'RENAMED':'#249B60',
+    'ADDED':'#168BFF', 'REMOVED':'#FF4050',
+    'MOVED':'#A855F7', 'MOVED_OLD':'#D1AAFA',
+    # Full CHANGED bodies are amber until verified material regions exist.
+    # Verified Common/Cut regions have independent semantic colors.
+    'CHANGED':'#F5B82E', 'CHANGED_NEW':'#F5B82E', 'CHANGED_OLD':'#F9D886',
+    'CHANGED_COMMON':'#7D899A', 'CHANGED_ADDED':'#168BFF', 'CHANGED_REMOVED':'#FF4050',
+    'UNCERTAIN':'#E879C3', 'UNCERTAIN_NEW':'#E879C3', 'UNCERTAIN_OLD':'#F4C4E3',
 }
 
 def rgb(value):
