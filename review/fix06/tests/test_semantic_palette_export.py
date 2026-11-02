@@ -79,3 +79,20 @@ def test_verified_changed_regions_match_step_html_table_and_transparency(tmp_pat
     for key in ('CHANGED_COMMON', 'CHANGED_ADDED', 'CHANGED_REMOVED', 'REMOVED', 'ADDED', 'SAME'):
         rgb = tuple(round(x, 4) for x in REVISION_COLORS[key])
         assert rgb in step['kolory_wczytane_rgb'], (key, rgb, step['kolory_wczytane_rgb'])
+
+
+def test_verified_material_only_preview_is_available_and_focuses_small_deltas(tmp_path):
+    # UI mode may show only proven material regions; uncertain geometry must
+    # never be presented as a certified Common/Cut difference.
+    a = [_box('FRAME', 0, 30)]
+    b = [_box('FRAME', 2, 32)]
+    produce(tmp_path, a, b, [Record(0, 0, 'CHANGED', 'verified')],
+            generate_step=False, revision_style=True, preview3d=True,
+            diff_step=False, full_bom=False, bom_csv=False)
+    page = (tmp_path/'PODGLAD_KOLOROW_3D.html').read_text(encoding='utf-8')
+    assert 'id="material"' in page
+    assert "mode==='material'&&['CHANGED_ADDED','CHANGED_REMOVED'].includes(status)" in page
+    assert "function focusVisible()" in page
+    assert "if(mode==='material')focusVisible()" in page
+    assert "disabled=!chunks.some(c=>['CHANGED_ADDED','CHANGED_REMOVED'].includes(c.status))" in page
+    assert "['all','changes','removed','material']" in page

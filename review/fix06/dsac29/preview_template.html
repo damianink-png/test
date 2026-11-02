@@ -44,7 +44,7 @@ footer.panel{position:relative;order:3;top:auto;bottom:auto;left:auto;max-width:
 <nav><button data-view="iso">Izometria</button><button data-view="front">Przód</button><button data-view="top">Góra</button><button data-view="right">Bok</button><button id="reset">Dopasuj</button><button id="zoomIn" aria-label="Przybliż model">+</button><button id="zoomOut" aria-label="Oddal model">−</button></nav></header>
 <aside id="sidebar" class="panel">
 <details open><summary>Widoczność części</summary><div id="legend"></div><nav>
-<button id="all">Wszystkie</button><button id="changes">Tylko zmiany</button><button id="removed">Stare / usunięte A</button>
+<button id="all">Wszystkie</button><button id="changes">Tylko zmiany</button><button id="material" title="Tylko zweryfikowany materiał dodany i usunięty, bez geometrii wspólnej">Materiał +/−</button><button id="removed">Stare / usunięte A</button>
 </nav><p><label><input type="checkbox" id="xray" checked> Stara A widoczna przez nową B</label></p>
 <p><label for="alpha">Przezroczystość starej A: <output id="alphaValue">60%</output></label><input aria-label="Przezroczystość starej rewizji w procentach" id="alpha" type="range" min="0" max="90" step="5" value="60"></p></details>
 <details id="viewOptions" open><summary>Kamera, położenie i przekrój</summary><section id="viewControls"><label>Układ <select id="layout"><option value="overlay">Nakładka A/B</option><option value="split">A | B · wspólna kamera</option></select></label>
@@ -104,6 +104,8 @@ chunks.push({...piece,pts});visible[piece.status]=true;itemVisible.push(true);}
 meshDefinitions.clear();
 if(!chunks.length)throw Error('Brak brył w scenie HTML.');
 const center=lo.map((v,i)=>(v+hi[i])/2),span=Math.max(...hi.map((v,i)=>v-lo[i]),1e-8);
+// Never present uncertain or unverified full bodies as proven material differences.
+document.getElementById('material').disabled=!chunks.some(c=>['CHANGED_ADDED','CHANGED_REMOVED'].includes(c.status));
 function buffer(data){const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);return b;}
 for(const c of chunks){const p=c.pts;for(let i=0;i<p.length;i+=3)for(let k=0;k<3;k++)p[i+k]=(p[i+k]-center[k])*2/span;
 const normals=new Float32Array(p.length);for(let i=0;i<p.length;i+=9){const u=[p[i+3]-p[i],p[i+4]-p[i+1],p[i+5]-p[i+2]],v=[p[i+6]-p[i],p[i+7]-p[i+1],p[i+8]-p[i+2]],n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]],length=Math.hypot(...n)||1;for(let j=0;j<9;j++)normals[i+j]=n[j%3]/length;}
@@ -224,9 +226,11 @@ function selectPreviewMode(mode){
  for(const check of checks){
   const status=check.dataset.status;
   check.checked=mode==='all'||(mode==='changes'&&status!=='SAME')||
-   (mode==='removed'&&['REMOVED','CHANGED_REMOVED','CHANGED_OLD','MOVED_OLD','UNCERTAIN_OLD'].includes(status));
+   (mode==='removed'&&['REMOVED','CHANGED_REMOVED','CHANGED_OLD','MOVED_OLD','UNCERTAIN_OLD'].includes(status))||
+   (mode==='material'&&['CHANGED_ADDED','CHANGED_REMOVED'].includes(status));
   visible[status]=check.checked;
  }
+ if(mode==='material')focusVisible();
  syncTree();schedule();
 }
 function showRevisionPair(){
@@ -252,7 +256,7 @@ window.addEventListener('message',event=>{
  }else if(d.action==='select'&&Number.isInteger(d.record_index)){
   let i=chunks.findIndex(c=>c.record_index===d.record_index&&c.role==='B');if(i<0)i=chunks.findIndex(c=>c.record_index===d.record_index);
   if(i>=0){setSelected(i);if(d.pair)showRevisionPair();if(d.focus)focusSelected();}
- }else if(d.action==='clear'){setSelected(-1,false);selectPreviewMode('all');}else if(['all','changes','removed'].includes(d.action))selectPreviewMode(d.action);
+ }else if(d.action==='clear'){setSelected(-1,false);selectPreviewMode('all');}else if(['all','changes','removed','material'].includes(d.action))selectPreviewMode(d.action);
 });
 if(window.parent!==window)window.parent.postMessage({type:'dscompare:ready'},'*');
 function selectHashPair(){
@@ -262,8 +266,24 @@ function selectHashPair(){
 }
 window.addEventListener('hashchange',selectHashPair);selectHashPair();
 function reset(){scale=1;panX=panY=0;cameraTarget=clipBounds[0].map((v,k)=>(v+clipBounds[1][k])/2);fitScale=2.8/Math.max(...clipBounds[1].map((v,k)=>v-clipBounds[0][k]),.001);schedule();}document.getElementById('reset').onclick=reset;
+// Fit only currently visible, proven material deltas; tiny revisions otherwise
+// disappear when the camera remains fitted to a large assembly.
+function focusVisible(){
+ const low=[Infinity,Infinity,Infinity],high=[-Infinity,-Infinity,-Infinity];let found=false;
+ for(let i=0;i<chunks.length;i++){
+  const c=chunks[i];if(!isVisible(c,i))continue;found=true;
+  for(let mask=0;mask<8;mask++){
+   const p=point(c,[0,1,2].map(k=>(mask&(1<<k))?c.max[k]:c.min[k]));
+   for(let k=0;k<3;k++){low[k]=Math.min(low[k],p[k]);high[k]=Math.max(high[k],p[k]);}
+  }
+ }
+ if(!found)return;
+ cameraTarget=low.map((v,k)=>(v+high[k])/2);
+ fitScale=2.8/Math.max(...high.map((v,k)=>v-low[k]),.001);
+ scale=1;panX=panY=0;schedule();
+}
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{[yaw,pitch]=({iso:[-.65,.45],front:[0,0],top:[0,Math.PI/2],right:[-Math.PI/2,0]})[b.dataset.view];reset();});
-for(const mode of ['all','changes','removed'])document.getElementById(mode).onclick=()=>selectPreviewMode(mode);
+for(const mode of ['all','changes','removed','material'])document.getElementById(mode).onclick=()=>selectPreviewMode(mode);
 document.getElementById('focus').onclick=focusSelected;
 document.getElementById('isolate').onclick=()=>{if(selectedId<0)return;isolation=!isolation;document.getElementById('isolate').textContent=isolation?'Pokaż pozostałe':'Izoluj';syncTree();schedule();};
 document.getElementById('clearPick').onclick=()=>setSelected(-1);

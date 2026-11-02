@@ -47,6 +47,8 @@ jobs:
           # source that was compiled and verified on the authentic Swerve pair.
           Copy-Item review/fix06/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/revision_overlap.py -Force
           Copy-Item review/fix06/dsac29/palette.py dscompare_rc9_manual/dsac29/palette.py -Force
+          Copy-Item review/fix06/dsac29/preview3d.py dscompare_rc9_manual/dsac29/preview3d.py -Force
+          Copy-Item review/fix06/dsac29/preview_template.html dscompare_rc9_manual/dsac29/preview_template.html -Force
           Copy-Item review/fix06/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/common_exclusion.py -Force
           python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
           if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
@@ -178,6 +180,8 @@ jobs:
           # source that was compiled and verified on the authentic Swerve pair.
           Copy-Item review/fix06/dsac29/revision_overlap.py dscompare_rc9_manual/dsac29/revision_overlap.py -Force
           Copy-Item review/fix06/dsac29/palette.py dscompare_rc9_manual/dsac29/palette.py -Force
+          Copy-Item review/fix06/dsac29/preview3d.py dscompare_rc9_manual/dsac29/preview3d.py -Force
+          Copy-Item review/fix06/dsac29/preview_template.html dscompare_rc9_manual/dsac29/preview_template.html -Force
           Copy-Item review/fix06/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/common_exclusion.py -Force
           python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
           if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
