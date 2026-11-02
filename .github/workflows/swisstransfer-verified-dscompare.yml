@@ -83,7 +83,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: swissfer-pending-validation
-          path: ${{ runner.temp }}/swissfer-config/swissfer/email-validations.json
+          path: /tmp/swissfer-config/swissfer/email-validations.json
           if-no-files-found: error
           retention-days: 1
 
