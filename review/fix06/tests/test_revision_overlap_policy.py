@@ -38,3 +38,35 @@ def test_separate_budget_recovers_unchecked_real_revision(monkeypatch):
     assert stats['accepted'] == 2 and not stats['incomplete']
     assert {r.status for r in out} == {'CHANGED'}
     assert len(regions) == 2
+
+
+def test_failed_common_in_large_scan_is_retried_in_fresh_isolated_process(monkeypatch):
+    """A real CHANGED pair must not become UNCERTAIN after one transient failure."""
+    from dsac29 import native_guard
+    from dsac29.native_guard import NativeGeometryFailure
+    a=[part(0,10,'old_revision')]
+    b=[part(0,11,'new_revision')]
+    actual_common=native_guard.guarded_common
+    actual_regions=revision_overlap.calculate
+    attempts={'common':0,'regions':0}
+    def transient_common(*args,**kwargs):
+        attempts['common']+=1
+        if attempts['common']==1:
+            raise NativeGeometryFailure('transient full-assembly Common failure')
+        return actual_common(*args,**kwargs)
+    def transient_regions(*args,**kwargs):
+        attempts['regions']+=1
+        if attempts['regions']==1:
+            raise NativeGeometryFailure('transient full-assembly regions failure')
+        return actual_regions(*args,**kwargs)
+    monkeypatch.setattr(native_guard,'guarded_common',transient_common)
+    monkeypatch.setattr(revision_overlap,'calculate',transient_regions)
+    out,regions,stats=revision_overlap.merge_material_revisions(
+        a,b,records(a,b),review_approval=lambda _: 'review')
+    assert [r.status for r in out]==['CHANGED']
+    assert stats['retry_failure_attempted']==1
+    assert stats['retry_failure_recovered']==1
+    assert stats['retry_failure_failed']==0
+    assert not stats['incomplete']
+    assert attempts['common']>=2
+    assert len(regions)==1
