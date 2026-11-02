@@ -296,14 +296,20 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
         retry_started=perf_counter()
         budget_pending=[f for f in failures if f['error'].startswith('Nie wykonano testu:')]
         geometry_pending=[f for f in failures if not f['error'].startswith('Nie wykonano testu:')]
-        pending=budget_pending[:16]+geometry_pending[:4]
+        # Retry all failed candidate pairs fairly: isolated comparisons can pass
+        # even when the assembly-wide scan exhausted its shared budget.
+        # Interleave geometry errors and budget omissions so neither starves.
+        pending=[]
+        for k in range(max(len(budget_pending),len(geometry_pending))):
+            if k<len(geometry_pending):pending.append(geometry_pending[k])
+            if k<len(budget_pending):pending.append(budget_pending[k])
         seen=set()
         stat['retry_failure_attempted']=0
         stat['retry_failure_recovered']=0
         stat['retry_failure_excluded']=0
         stat['retry_failure_failed']=0
         for failure in pending:
-            if perf_counter()-retry_started>=90.0:break
+            if perf_counter()-retry_started>=240.0:break
             if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
             i,j=failure['a_index'],failure['b_index']
             if (i,j) in seen:continue
