@@ -23,7 +23,7 @@ jobs:
       DSCOMPARE_TRACE_BREP: '1'
       DSCOMPARE_SAVE_FAILED_BREP: '1'
       DSCOMPARE_CAPTURE_ACTIVE_BREP: '1'
-      PYTHONPATH: 'review/fix06:review/fix06/ci'
+      PYTHONPATH: 'dscompare_rc9_manual:review/fix06/ci'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,6 +36,19 @@ jobs:
           python -m pip freeze > dependencies_exact.txt
           python -m compileall -q review/fix06/dsac29 review/fix06/ci/trident_exact_run.py
           PYTHONPATH=review/fix06/ci python -m unittest -v test_trident_exact_audit
+      - name: Restore complete RC9 CAD engine and apply current verified fixes
+        shell: bash
+        run: |
+          python -m zipfile -e DSCompare_RC9_KOMPLET_ZRODLA.zip .
+          test -f dscompare_rc9_manual/dsac29/import_cache.py
+          for file in revision_overlap.py overlap_evidence.py candidate_policy.py worker_v37.py palette.py preview3d.py common_exclusion.py step_io.py; do
+            cp "review/fix06/dsac29/$file" "dscompare_rc9_manual/dsac29/$file"
+          done
+          cp review/fix06/dsac29/preview_template.html dscompare_rc9_manual/dsac29/preview_template.html
+          python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
+          python review/fix06/ci/patch_material_worker_failclosed.py dscompare_rc9_manual
+          python -m compileall -q dscompare_rc9_manual/dsac29
+          echo "RC9_FULL_ENGINE_IMPORT_READY"
       - name: Download exact uploaded STEP bytes from pinned official sources
         run: |
           mkdir -p evidence models/user_exact
