@@ -123,9 +123,18 @@ def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=Non
     for setter_name in ('SetLayerMode','SetMatMode','SetPropsMode','SetGDTMode'):
         setter=getattr(reader,setter_name,None)
         if setter is not None:setter(False)
+    from time import perf_counter
+    t_read=perf_counter()
     if reader.ReadFile(str(p))!=IFSelect_RetDone: raise ValueError('Nie można odczytać STEP: '+str(p))
+    read_s=perf_counter()-t_read
+    if progress: progress(f'{p.name}: ReadFile OK ({read_s:.1f} s); rozpoczynam transfer XCAF…')
+    t_transfer=perf_counter()
     if not reader.Transfer(document): raise ValueError('Błąd transferu STEP: '+str(p))
-    if progress: progress(f'{p.name}: budowanie charakterystyk brył…')
+    transfer_s=perf_counter()-t_transfer
+    if diagnostics is not None:
+        diagnostics['step_readfile_s']=round(read_s,3)
+        diagnostics['step_xcaf_transfer_s']=round(transfer_s,3)
+    if progress: progress(f'{p.name}: Transfer XCAF OK ({transfer_s:.1f} s); budowanie charakterystyk brył…')
     tool=XCAFDoc_DocumentTool.ShapeTool_s(document.Main())
     roots=TDF_LabelSequence();tool.GetFreeShapes(roots)
     from .geometry import DescriptionCache
