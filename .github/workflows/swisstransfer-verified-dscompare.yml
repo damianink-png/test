@@ -6,6 +6,10 @@ name: SwissTransfer two-step upload - DSCompare OneEXE
 #          supplies the stage-1 run ID. Code is NOT embedded in workflow or logs.
 # SwissTransfer may still reject automated transfers through ALTCHA protection.
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/swisstransfer-verified-dscompare.yml'
   workflow_dispatch:
     inputs:
       stage:
@@ -25,11 +29,18 @@ permissions:
   actions: read
 
 jobs:
+  validate-definition:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm workflow starts without making a SwissTransfer request
+        run: echo 'Workflow definition accepted; no file transfer requested.'
   transfer:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      XDG_CONFIG_HOME: ${{ runner.temp }}/swissfer-config
+      XDG_CONFIG_HOME: /tmp/swissfer-config
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Build pinned Swissfer v3.0.1
