@@ -25,4 +25,4 @@
 - Exact-pair full rerun is required after regression PASS; **do not mark complete from unit tests**.
 
 ## Status
-Awaiting verified regression run and next full exact-pair run. Full PASS is not claimed.
+New exact-pair full CAD run [41547342189](https://github.com/damianink-png/test/actions/runs/41547342189) triggered at commit `cea1cf4d7ecfc5e23eb7be4d13e92aae0e44a615`. It runs the 8 strict audit regressions and 4 native-pair regressions before importing the two SHA-verified models. The run is pending/in progress; full PASS is not claimed. Earlier attempts [41546888812](https://github.com/damianink-png/test/actions/runs/41546888812) and quick unit runs failed only on an overly strict small-fixture assertion, corrected before this rerun.
