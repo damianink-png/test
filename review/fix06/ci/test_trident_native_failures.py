@@ -34,24 +34,38 @@ class TridentNativeFailures(unittest.TestCase):
     def test_world_native_failure_continues(self):
         with patch.object(comparison,'guarded_world_reexport',
                           side_effect=NativeGeometryFailure('UnprovenRepair: invalid wire')) as worker, \
-             patch.object(comparison,'equivalent_rigid',return_value=(False,None,None)):
+             patch('dsac29.native_guard.guarded_rigid',return_value=(False,None,None)) as rigid, \
+             patch.object(comparison,'equivalent_rigid',side_effect=AssertionError('in-process rigid forbidden for 600+')):
             records=comparison.compare(self.a,self.b,tolerance=.01,step_reexport_tolerance=True)
         self.assertGreaterEqual(worker.call_count,1)
+        self.assertGreaterEqual(rigid.call_count,1)
+        self.assertTrue(all(c.kwargs.get('registered_reexport') is False for c in rigid.call_args_list))
         self.check_uncertain(records)
 
     def test_rigid_native_failure_continues(self):
         with patch.object(comparison,'guarded_world_reexport',return_value=False), \
-             patch.object(comparison,'equivalent_rigid',
-                          side_effect=NativeGeometryFailure('native rigid crash')):
+             patch('dsac29.native_guard.guarded_rigid',
+                   side_effect=NativeGeometryFailure('native rigid crash')), \
+             patch.object(comparison,'equivalent_rigid',side_effect=AssertionError('in-process rigid forbidden')):
             records=comparison.compare(self.a,self.b,tolerance=.01,step_reexport_tolerance=True)
         self.check_uncertain(records)
 
     def test_global_budget_still_fails_closed(self):
         with patch.object(comparison,'guarded_world_reexport',return_value=False), \
-             patch.object(comparison,'equivalent_rigid',
-                          side_effect=NativeGeometryFailure('Budżet izolowanych porównań B-Rep wyczerpany')):
+             patch('dsac29.native_guard.guarded_rigid',
+                   side_effect=NativeGeometryFailure('Budżet izolowanych porównań B-Rep wyczerpany')), \
+             patch.object(comparison,'equivalent_rigid',side_effect=AssertionError('in-process rigid forbidden')):
             with self.assertRaisesRegex(NativeGeometryFailure,'Budżet izolowanych'):
                 comparison.compare(self.a,self.b,tolerance=.01,step_reexport_tolerance=True)
+
+    def test_small_assembly_keeps_direct_rigid_path(self):
+        # Only large CAD assemblies need the additional child-process overhead.
+        with patch.object(comparison,'guarded_world_reexport',return_value=False), \
+             patch.object(comparison,'equivalent_rigid',return_value=(False,None,None)) as direct, \
+             patch('dsac29.native_guard.guarded_rigid',side_effect=AssertionError('small should not fork')):
+            records=comparison.compare(self.a[:2],self.b[:2],tolerance=.01,step_reexport_tolerance=True)
+        self.assertGreaterEqual(direct.call_count,1)
+        self.assertEqual(len(records),3)  # 1 SAME plus unmatched A and B; no false match.
 
 if __name__=='__main__':
     unittest.main()
