@@ -33,8 +33,10 @@ jobs:
                       print(f'{k+1}: {lines[k][:300]}')
           
           for name,start,end in (
+              ('dscompare_rc9_manual/dsac29/gui46.py',230,260),
               ('dscompare_rc9_manual/dsac29/gui46.py',255,335),
-              ('dscompare_rc9_manual/dsac29/gui_modern.py',610,675),
+              ('dscompare_rc9_manual/dsac29/gui_modern.py',580,675),
+              ('dscompare_rc9_manual/dsac29/gui_modern.py',668,715),
               ('dscompare_rc9_manual/dsac29/gui45.py',305,350),
               ('dscompare_rc9_manual/dsac29/gui.py',485,565),
           ):
