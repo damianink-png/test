@@ -40,6 +40,7 @@ jobs:
             New-Item -ItemType Directory -Force "baseline/dscompare_rc9_manual/$folder" | Out-Null
             Copy-Item "snapshot/$folder/*" "baseline/dscompare_rc9_manual/$folder/" -Recurse -Force
           }
+          Copy-Item review/fix06/tests/test_rc9_retry_after_assembly_failure.py baseline/dscompare_rc9_manual/tests/ -Force
           python review/fix06/apply_rc9_20261102.py baseline/dscompare_rc9_manual
           if ($LASTEXITCODE -ne 0) { throw 'Source patch failed' }
       - name: Build real Windows executable from patched sources
@@ -56,7 +57,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           python -m pip install pytest cadquery-ocp numpy
-          python -m pytest -q --junitxml=unit-results.xml tests/test_revision_overlap_policy.py tests/test_revision_common_recovery.py tests/test_output_palette.py tests/test_stability.py
+          python -m pytest -q --junitxml=unit-results.xml tests/test_revision_overlap_policy.py tests/test_revision_common_recovery.py tests/test_rc9_retry_after_assembly_failure.py tests/test_output_palette.py tests/test_stability.py
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
       - name: Upload tested executable and source
         uses: actions/upload-artifact@v4
