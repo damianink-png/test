@@ -1,0 +1,34 @@
+name: DS Compare UI source anchors
+on:
+  push:
+    branches: [codex/rc9-palette-20261102]
+    paths: ['.github/workflows/dscompare-ui-anchors.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect frozen source UI anchors without changing the archive
+        run: |
+          python - <<'PY'
+          import zipfile,re
+          z=zipfile.ZipFile('DSCompare_RC9_KOMPLET_ZRODLA.zip')
+          patterns=('Nowe porównanie','Porównaj rewizje','Więcej','Niepełna analiza geometrii','Zapisz raport częściowy','search_results','ResultsWorkspace')
+          for name in z.namelist():
+              if not (name.endswith(('.py','.svelte')) and any(p in name.lower() for p in ('gui','app.svelte','result','worker','main'))):
+                  continue
+              try:
+                  lines=z.read(name).decode('utf-8').splitlines()
+              except (UnicodeError,KeyError):
+                  continue
+              matches=[i for i,line in enumerate(lines) if any(p in line for p in patterns)]
+              if not matches:continue
+              print('UI_SOURCE',name,'MATCHES',len(matches))
+              for i in matches[:15]:
+                  print('MATCH',i+1)
+                  for k in range(max(0,i-4),min(len(lines),i+5)):
+                      print(f'{k+1}: {lines[k][:300]}')
+          PY
