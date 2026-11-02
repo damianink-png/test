@@ -71,5 +71,11 @@ change("gui46.py",
     "  foot=QHBoxLayout();foot.addStretch()\n  self.reset_button=button('Nowe porównanie',self.reset_session)\n  foot.addWidget(self.reset_button);lay.addLayout(foot)",
     "",
     "lay.addWidget(self.reset_button,0,Qt.AlignLeft)")
+# CLI/worker must not require the old --allow-review-decision flag to
+# save verified results and mark unverified geometry UNCERTAIN.
+change("cli.py",
+    "review_approval=material_approval,geometry_context=geometry_context)",
+    "review_approval=material_approval or (lambda _proposal:'review'),geometry_context=geometry_context)",
+    "review_approval=material_approval or (lambda _proposal:'review')")
 assert compileall.compile_dir(str(root/"dsac29"),quiet=1)
 print("PATCHED_AND_COMPILED",root)
