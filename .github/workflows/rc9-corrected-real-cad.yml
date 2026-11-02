@@ -10,6 +10,9 @@ on:
       - 'review/fix06/ci/patch_common_exclusion_dispatch.py'
       - 'review/fix06/ci/patch_legacy_dual_failure_tests.py'
       - 'review/fix06/ci/patch_partial_audit.py'
+      - 'review/fix06/ci/patch_openarm_auto_partial.py'
+      - 'review/fix06/ci/patch_material_worker_failclosed.py'
+      - 'review/fix06/tests/test_material_worker_failclosed.py'
       - 'review/fix06/tests/test_partial_material_continue.py'
   pull_request:
     paths: ['.github/workflows/rc9-corrected-real-cad.yml', 'DSCompare_RC9_KOMPLET_ZRODLA.zip']
