@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/trident-exact-provenance.yml'
       - 'review/fix06/ci/trident_exact_audit.py'
+      - 'review/fix06/ci/test_trident_exact_audit.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,6 +29,7 @@ jobs:
           assert sum(x['bytes'] for x in mod.SOURCES.values())==377894225
           print('TRIDENT_AUDIT_SYNTAX_AND_MANIFEST_PASS')
           PY
+          PYTHONPATH=review/fix06/ci python -m unittest -v test_trident_exact_audit
       - name: Check whether the exact uploaded bytes are available on runner
         shell: bash
         run: |
