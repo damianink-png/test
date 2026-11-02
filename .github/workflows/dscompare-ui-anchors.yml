@@ -68,3 +68,17 @@ jobs:
               if 'cad_product_name(name,number,kind,role)' in line or "'podzlozenie':['02_ZMIENIONE'" in line:
                   print('STEP_NAME_ANCHOR',line.strip())
           PY
+      - name: Inspect legacy Qt regression assumptions for requested new UI
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for name,segments in [
+              ('dscompare_rc9_manual/tests/test_ui_polish.py',[(1,185)]),
+              ('dscompare_rc9_manual/dsac29/gui46.py',[(94,112)]),
+          ]:
+              lines=Path(name).read_text(encoding='utf-8').splitlines()
+              print('LEGACY_SOURCE',name)
+              for a,b in segments:
+                  for i in range(a-1,min(b,len(lines))):
+                      print(f'{i+1}: {lines[i][:300]}')
+          PY
