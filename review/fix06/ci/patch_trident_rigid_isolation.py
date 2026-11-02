@@ -19,7 +19,7 @@ def apply(path: Path):
             "    # in-process equivalent_rigid -> BRepAlgoAPI_Common -> SIGSEGV path.\n"
             "    # Isolate every rigid B-Rep check for large assemblies, regardless\n"
             "    # of whether initial matches were certified after alignment.\n"
-            "    use_native_guard = bool(len(a)>=600)"
+            "    registered_native_mode = bool(len(a)>=600 and len(certified_pairs)>=max(100,int(len(a)*.40)))\\n"\n            "    use_native_guard = bool(len(a)>=600)"
         ),
         (
             "    native_guard_budget_s = 240.0",
@@ -28,8 +28,16 @@ def apply(path: Path):
             "    native_guard_budget_s = max(600.0, min(2400.0, 1.5*len(a)))"
         ),
         (
+            "lookup=(sorted(free_b) if use_native_guard else volume_index.query(s.volume,tolerance))",
+            "lookup=(sorted(free_b) if registered_native_mode else volume_index.query(s.volume,tolerance))"
+        ),
+        (
+            "(use_native_guard and world_candidate(s,b[j],tolerance))",
+            "(registered_native_mode and world_candidate(s,b[j],tolerance))"
+        ),
+        (
             "guarded_rigid,s,b[j],tolerance,registered_reexport=True)",
-            "guarded_rigid,s,b[j],tolerance,registered_reexport=bool(certified_pairs))"
+            "guarded_rigid,s,b[j],tolerance,registered_reexport=registered_native_mode)"
         ),
     ]
     for before,after in replacements:
