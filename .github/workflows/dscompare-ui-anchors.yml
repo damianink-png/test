@@ -2,7 +2,7 @@ name: DS Compare UI source anchors
 on:
   push:
     branches: [codex/rc9-palette-20261102]
-    paths: ['.github/workflows/dscompare-ui-anchors.yml']
+    paths: ['.github/workflows/dscompare-ui-anchors.yml', 'review/fix06/ci/patch_gui_minimal.py']
   workflow_dispatch:
 permissions:
   contents: read
