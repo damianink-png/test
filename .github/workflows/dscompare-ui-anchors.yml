@@ -45,3 +45,15 @@ jobs:
               for i in range(start-1,min(end,len(lines))):
                   print(f'{i+1}: {lines[i][:260]}')
           PY
+      - name: Apply GUI patch to actual frozen sources and check syntax
+        run: |
+          python -m zipfile -e DSCompare_RC9_KOMPLET_ZRODLA.zip .
+          python review/fix06/ci/patch_gui_minimal.py dscompare_rc9_manual
+          python -m py_compile dscompare_rc9_manual/dsac29/gui_modern.py dscompare_rc9_manual/dsac29/gui45.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('dscompare_rc9_manual/dsac29/gui_modern.py').read_text(encoding='utf-8')
+          assert p.index('lay.addWidget(self._compare_run_host)')<p.index('lay.addWidget(self.reset_button')<p.index('self._compare_progress_panel=QFrame')
+          assert 'self._details_toggle.setVisible(done)' not in p
+          print('GUI_PATCH_SOURCE_ASSERTIONS_PASS')
+          PY
