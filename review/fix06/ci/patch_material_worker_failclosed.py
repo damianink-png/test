@@ -39,7 +39,7 @@ replace('dsac29/native_guard.py',
                 temporary.replace(target)
             except OSError:
                 pass
-            sys.stderr.write(error_code+': '+response['error']+'\n')
+            sys.stderr.write(error_code+': '+response['error']+'\\n')
             sys.stderr.flush()
             # Avoid unsafe OCCT/PyInstaller teardown after invalid topology.
             # The parent treats exit 70 as an incomplete proof.
