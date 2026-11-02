@@ -149,3 +149,23 @@ def test_removed_duplicate_uses_exact_definition_without_cached_rigid_proof():
         (0,None,'REMOVED'),(1,0,'SAME'),(None,1,'ADDED')}
     assert stat['removed_repeated_occurrences_excluded']==1
     assert stat['boolean_checks']==0 and not regions
+
+
+def test_removed_repeat_with_renamed_survivor_is_not_a_material_change():
+    """Renaming a still-present identical occurrence must not revive a removed duplicate."""
+    a=[part(0,10,'repeat'),part(100,10,'repeat')]
+    b=[part(100,10,'renamed_survivor'),part(0,11,'unrelated')]
+    same_group={id(a[0]),id(a[1]),id(b[0])}
+    class ExactDefinitions:
+        def has_rigid_proof(self,left,right,tolerance):return False
+        def same_definition(self,left,right):
+            return id(left) in same_group and id(right) in same_group
+    previous=[Record(0,None,'REMOVED',''),
+              Record(1,0,'RENAMED',''),
+              Record(None,1,'ADDED','')]
+    out,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,previous,geometry_context=ExactDefinitions(),review_approval=lambda _: 'review')
+    assert {(r.a_index,r.b_index,r.status) for r in out}=={
+        (0,None,'REMOVED'),(1,0,'RENAMED'),(None,1,'ADDED')}
+    assert stat['removed_repeated_occurrences_excluded']==1
+    assert stat['boolean_checks']==0 and not regions
