@@ -31,4 +31,15 @@ jobs:
                   print('MATCH',i+1)
                   for k in range(max(0,i-4),min(len(lines),i+5)):
                       print(f'{k+1}: {lines[k][:300]}')
+          
+          for name,start,end in (
+              ('dscompare_rc9_manual/dsac29/gui46.py',255,335),
+              ('dscompare_rc9_manual/dsac29/gui_modern.py',610,675),
+              ('dscompare_rc9_manual/dsac29/gui45.py',305,350),
+              ('dscompare_rc9_manual/dsac29/gui.py',485,565),
+          ):
+              lines=z.read(name).decode('utf-8').splitlines()
+              print('SOURCE_RANGE',name,start,end)
+              for i in range(start-1,min(end,len(lines))):
+                  print(f'{i+1}: {lines[i][:260]}')
           PY
