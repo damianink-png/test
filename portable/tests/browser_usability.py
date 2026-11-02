@@ -34,6 +34,11 @@ with sync_playwright() as p:
  drop(['C:\\Modele\\Osłona A.STEP'],'a');drop(['D:\\Modele\\Osłona B.stp'],'b')
  assert 'Osłona A.STEP' in page.locator('[data-drop-role=a]').inner_text();assert 'Osłona B.stp' in page.locator('[data-drop-role=b]').inner_text()
  drop(['C:\\bad.exe'],'a');assert page.get_by_role('alert').is_visible();page.get_by_label('Zamknij komunikat').click()
+ compare_button=page.get_by_role('button',name='Porównaj rewizje',exact=True).bounding_box()
+ new_button=page.get_by_role('button',name='Nowe porównanie',exact=True).bounding_box()
+ assert compare_button and new_button
+ assert new_button['y'] >= compare_button['y'] + compare_button['height'] - 1, 'Nowe porównanie must be below Porównaj rewizje'
+ assert abs(new_button['x']-compare_button['x']) < 20, 'Comparison actions must share a column'
  page.screenshot(path=str(out/'compare-1280.png'))
  page.get_by_role('button',name='Nowe porównanie',exact=True).click();assert 'Wybierz model A' in page.locator('[data-drop-role=a]').inner_text()
  page.get_by_role('button',name='Masa części',exact=True).click();drop(['C:\\A.step','C:\\A.step','D:\\B.step'],'mass');assert page.locator('.file-list li').count()==2
@@ -62,6 +67,12 @@ with sync_playwright() as p:
  page.evaluate("window.__job.question={token:'t',unresolved:true,material_unverified:false,translation_mm:[0,0,0],reason:'No anchor',unverified_A:0,unverified_B:0}")
  page.get_by_role('alertdialog').wait_for();assert 'Czy modele mają wspólne położenie?' in page.get_by_role('alertdialog').inner_text();assert page.locator('.translation').count()==0
  page.screenshot(path=str(out/'alignment-unresolved.png'));page.get_by_role('button',name='Oryginalne położenie',exact=True).click()
+ # Material uncertainty must never require a user decision or show the old modal.
+ page.evaluate("window.__job.question={token:'material-case',unresolved:false,material_unverified:true,translation_mm:[0,0,0],reason:'INVALID_BREP_AFTER_REPAIR',unverified_A:2,unverified_B:2}")
+ page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='material-case'&&c.args.decision==='review')",timeout=5000)
+ assert page.get_by_role('alertdialog').count()==0
+ assert 'Niepełna analiza geometrii' not in page.locator('body').inner_text()
+ assert 'Zapisuję automatycznie raport częściowy' in page.locator('main').inner_text()
  page.evaluate("window.__job={...window.__job,running:false,summary:window.__fixture}")
  page.get_by_role('heading',name='Wyniki porównania',exact=True).wait_for(timeout=5000)
  assert page.get_by_label('Postęp analizy').count()==0
@@ -69,5 +80,5 @@ with sync_playwright() as p:
  page.get_by_role('button',name='Nowe porównanie',exact=True).click();page.wait_for_timeout(200)
  assert page.get_by_label('Wyniki porównania').count()==0
  assert not errors,errors
- print('USABILITY_BROWSER_PASS: native SDK drop events at 125% DPI, A/B and batch drops, dedup/rejection, formatted mass, HTML BOM routing, inline results/external HTML 3D, fresh comparison/stale job reset, 480–1920px layouts, unresolved alignment, active-job guard',flush=True)
+ print('USABILITY_BROWSER_PASS: native SDK drop events at 125% DPI, A/B and batch drops, dedup/rejection, formatted mass, HTML BOM routing, inline results/external HTML 3D, fresh comparison/stale job reset, 480–1920px layouts, unresolved alignment, automatic partial report, correct new-comparison placement, active-job guard',flush=True)
  browser.close()
