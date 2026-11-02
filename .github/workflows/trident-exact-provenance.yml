@@ -1,0 +1,51 @@
+name: Trident exact uploaded STEP - provenance gate
+on:
+  push:
+    branches: [codex/rc9-palette-20261102]
+    paths:
+      - '.github/workflows/trident-exact-provenance.yml'
+      - 'review/fix06/ci/trident_exact_audit.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-audit-and-input-availability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile strict audit and check manifest
+        run: |
+          python -m py_compile review/fix06/ci/trident_exact_audit.py
+          python - <<'PY'
+          import importlib.util
+          spec=importlib.util.spec_from_file_location('exact','review/fix06/ci/trident_exact_audit.py')
+          mod=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          assert len(mod.SOURCES)==2
+          assert sum(x['bytes'] for x in mod.SOURCES.values())==377894225
+          print('TRIDENT_AUDIT_SYNTAX_AND_MANIFEST_PASS')
+          PY
+      - name: Check whether the exact uploaded bytes are available on runner
+        shell: bash
+        run: |
+          mkdir -p evidence
+          python review/fix06/ci/trident_exact_audit.py \
+            --a models/user_exact/Trident_Assembly1.step \
+            --b models/user_exact/trident_assembly.step \
+            --report evidence/exact_input_preflight.json > evidence/preflight.log 2>&1 || rc=$?
+          cat evidence/preflight.log
+          if [ -n "${rc:-}" ]; then
+            echo "TRIDENT_EXACT_MODEL_TRANSFER_BLOCKED: exact user files are not on the GitHub runner"
+            echo "The previous Trident R2 fixture is NOT a substitute."
+            echo "No geometry PASS may be claimed."
+          else
+            echo "TRIDENT_EXACT_INPUTS_VERIFIED"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trident-exact-input-availability
+          path: evidence/**
