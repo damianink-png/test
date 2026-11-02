@@ -1,0 +1,89 @@
+name: DS Compare - OpenArm v1.0 versus v1.1 strict verification
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/rc9-palette-20261102]
+    paths:
+      - '.github/workflows/openarm-pair-strict.yml'
+      - 'review/fix06/ci/audit_openarm_pair.py'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  previous-run-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve original OpenArm comparison evidence (not just workflow conclusion)
+        run: |
+          gh run download 41495039354 --repo "$GITHUB_REPOSITORY" --name RC9-large-openarm-review --dir previous
+          find previous -name PODSUMOWANIE.json -print
+      - name: Reject any incomplete OpenArm comparison
+        run: python review/fix06/ci/audit_openarm_pair.py previous
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: OpenArm-previous-diagnostic
+          path: previous/openarm-strict-diagnostic.json
+          if-no-files-found: warn
+  fresh-openarm-latest-engine:
+    runs-on: windows-2022
+    timeout-minutes: 65
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      DSCOMPARE_TRACE_BREP: '1'
+      DSCOMPARE_SAVE_FAILED_BREP: '1'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore matching tested source and latest Windows CAD executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Expand-Archive DSCompare_RC9_KOMPLET_ZRODLA.zip -DestinationPath . -Force
+          python review/fix06/ci/patch_openarm_auto_partial.py dscompare_rc9_manual/ci/real_openarm_review.py
+          if($LASTEXITCODE -ne 0){throw 'OpenArm test setup failed'}
+          gh run download 41495039354 --repo "$env:GITHUB_REPOSITORY" --name RC9-large-current-Windows-x64 --dir dscompare_rc9_manual/dist/DSCompare
+          if($LASTEXITCODE -ne 0){throw 'Tested CAD binary download failed'}
+          if(!(Test-Path dscompare_rc9_manual/dist/DSCompare/DSCompare.exe)){throw 'Missing exact latest CAD executable'}
+          Get-FileHash dscompare_rc9_manual/dist/DSCompare/DSCompare.exe -Algorithm SHA256
+      - name: Install the same OCC dependencies as the successful production build
+        shell: pwsh
+        run: |
+          python -m pip install 'cadquery-ocp==7.9.3.1.1' 'numpy>=1.26,<3'
+          if($LASTEXITCODE -ne 0){throw 'CAD dependencies failed'}
+      - name: Compare the exact OpenArm v1.0 and v1.1 STEP files again
+        shell: pwsh
+        run: |
+          New-Item evidence -ItemType Directory -Force | Out-Null
+          $env:PYTHONPATH=(Resolve-Path dscompare_rc9_manual).Path
+          python dscompare_rc9_manual/ci/real_openarm_review.py dscompare_rc9_manual/dist/DSCompare/DSCompare.exe
+          $rc=$LASTEXITCODE
+          "OPENARM_PROGRAM_EXIT_CODE=$rc" | Out-File evidence/engine-exit.txt
+          if($rc -ne 0){throw "OpenArm comparison itself failed: $rc"}
+      - name: Strictly audit actual OpenArm results (partial = FAIL)
+        if: always()
+        shell: pwsh
+        run: |
+          python review/fix06/ci/audit_openarm_pair.py evidence
+          if($LASTEXITCODE -ne 0){throw 'OpenArm remains incomplete or the result is missing'}
+      - name: Save reproducible failed-pair evidence and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenArm-fresh-latest-strict-diagnostics
+          path: |
+            evidence/**
+            dscompare_rc9_manual/ci/EXE_STDOUT.log
+            dscompare_rc9_manual/ci/EXE_STDERR.log
+          if-no-files-found: warn
+          retention-days: 14
