@@ -1,0 +1,150 @@
+name: SwissTransfer two-step upload - DSCompare OneEXE
+
+# Requires no local download. All file bytes are handled by GitHub runners.
+# Stage 1: request a new SwissTransfer email verification and store its pending ID.
+# Stage 2: user sets Actions secret SWISSFER_VERIFY_CODE from their email, then
+#          supplies the stage-1 run ID. Code is NOT embedded in workflow or logs.
+# SwissTransfer may still reject automated transfers through ALTCHA protection.
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Choose prepare to get email code, then finish after setting Actions secret'
+        required: true
+        type: choice
+        options:
+          - prepare
+          - finish
+      prepare_run_id:
+        description: 'Required for finish: ID of the prepare workflow run'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  transfer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      XDG_CONFIG_HOME: ${{ runner.temp }}/swissfer-config
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Build pinned Swissfer v3.0.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout -q --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+          swissfer/target/release/swissfer --version
+
+      - name: Prepare sender verification (tiny file only, not the EXE)
+        if: ${{ inputs.stage == 'prepare' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'swisstransfer-verification\n' > verification-stub.txt
+          # The client writes the pending validation ID before reading the email code.
+          # Closed stdin deliberately terminates without uploading anything.
+          swissfer/target/release/swissfer verification-stub.txt \
+            --email damianink@gmail.com --duration 30 \
+            </dev/null >prepare.log 2>&1 || true
+          cat prepare.log
+          cache="$XDG_CONFIG_HOME/swissfer/email-validations.json"
+          test -s "$cache"
+          python3 - "$cache" <<'PYCODE'
+          import json,sys
+          x=json.load(open(sys.argv[1],encoding='utf-8'))
+          row=x.get('validations',{}).get('damianink@gmail.com',{})
+          assert row.get('id') and row.get('validated') is False, 'No pending verification saved'
+          print('Pending email verification captured (code not logged).')
+          PYCODE
+          echo '## Email verification requested' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Check damianink@gmail.com for the new 6-character code.' >> "$GITHUB_STEP_SUMMARY"
+          echo "Prepare run ID: $GITHUB_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Set Actions secret SWISSFER_VERIFY_CODE, then run this workflow with stage=finish and prepare_run_id set to this run ID.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save pending verification (no EXE and no email code)
+        if: ${{ inputs.stage == 'prepare' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-pending-validation
+          path: ${{ runner.temp }}/swissfer-config/swissfer/email-validations.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Restore validation and download exact DSCompare EXE
+        if: ${{ inputs.stage == 'finish' }}
+        shell: bash
+        env:
+          PREPARE_RUN_ID: ${{ inputs.prepare_run_id }}
+          VERIFY_CODE: ${{ secrets.SWISSFER_VERIFY_CODE }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$PREPARE_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo 'Missing numeric prepare_run_id' >&2
+            exit 1
+          fi
+          if ! [[ "$VERIFY_CODE" =~ ^[[:alnum:]]{6}$ ]]; then
+            echo 'Missing or invalid SWISSFER_VERIFY_CODE secret (expected six letters/digits)' >&2
+            exit 1
+          fi
+          echo "::add-mask::$VERIFY_CODE"
+          mkdir -p pending "$XDG_CONFIG_HOME/swissfer" payload
+          gh run download "$PREPARE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name swissfer-pending-validation --dir pending
+          cp pending/email-validations.json "$XDG_CONFIG_HOME/swissfer/email-validations.json"
+          python3 - "$XDG_CONFIG_HOME/swissfer/email-validations.json" <<'PYCODE'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          v=d.get('validations',{}).get('damianink@gmail.com',{})
+          assert v.get('id') and v.get('validated') is False, 'Missing or stale pending validation'
+          PYCODE
+          gh run download 41447783891 --repo "$GITHUB_REPOSITORY" \
+            --name DSCompare-0.6.0-Portable-OneEXE --dir payload
+          test -s payload/DSCompare.exe
+          file payload/DSCompare.exe
+          sha256sum payload/DSCompare.exe > executable-sha256.txt
+          echo "EXE downloaded entirely to GitHub-hosted runner." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify email and attempt upload on GitHub runner
+        if: ${{ inputs.stage == 'finish' }}
+        timeout-minutes: 18
+        shell: bash
+        env:
+          VERIFY_CODE: ${{ secrets.SWISSFER_VERIFY_CODE }}
+        run: |
+          set -uo pipefail
+          echo "::add-mask::$VERIFY_CODE"
+          # This sends the code over stdin rather than on the command line or in a commit.
+          printf '%s\n' "$VERIFY_CODE" | timeout 930s \
+            swissfer/target/release/swissfer payload/DSCompare.exe \
+              --email damianink@gmail.com --duration 30 \
+              --message 'DSCompare OneEXE from GitHub Actions run 41447783891' \
+            > swissfer-upload.log 2>&1
+          status=$?
+          cat swissfer-upload.log
+          link=$(grep -Eo 'https://(www\.)?swisstransfer\.com/dl/[a-zA-Z0-9-]+' swissfer-upload.log | tail -n 1 || true)
+          if [ "$status" -eq 0 ] && [ -n "$link" ]; then
+            echo "## SwissTransfer upload succeeded" >> "$GITHUB_STEP_SUMMARY"
+            echo "Direct download: $link" >> "$GITHUB_STEP_SUMMARY"
+            echo 'Swissfer creates a transfer link; it does not email a recipient automatically.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "## SwissTransfer upload NOT completed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Swissfer exit code: $status. A fresh code or browser-only ALTCHA verification may be necessary." >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Save limited diagnostic logs, no executable or code
+        if: ${{ always() && inputs.stage == 'finish' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-transfer-diagnostics
+          path: |
+            swissfer-upload.log
+            executable-sha256.txt
+          if-no-files-found: warn
+          retention-days: 3
