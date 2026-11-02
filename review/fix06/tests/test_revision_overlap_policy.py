@@ -70,3 +70,61 @@ def test_failed_common_in_large_scan_is_retried_in_fresh_isolated_process(monkey
     assert not stats['incomplete']
     assert attempts['common']>=2
     assert len(regions)==1
+
+
+def test_retries_failed_final_cut_without_cached_common(monkeypatch):
+    """A transient final material split must not leave a correctly paired part UNCERTAIN."""
+    from dsac29.native_guard import NativeGeometryFailure
+    a=[part(0,10,'revised_part')]
+    b=[part(0,11,'revised_part')]
+    actual=revision_overlap.calculate
+    seen=[]
+    def flaky_final_regions(*args,**kwargs):
+        seen.append(kwargs)
+        if len(seen)==1:
+            raise NativeGeometryFailure('final Cut failed during assembly analysis')
+        return actual(*args,**kwargs)
+    monkeypatch.setattr(revision_overlap,'calculate',flaky_final_regions)
+    out,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,records(a,b),review_approval=lambda _: 'review')
+    assert [r.status for r in out]==['CHANGED']
+    assert stat['region_retry_attempted']==1
+    assert stat['region_retry_recovered']==1
+    assert stat['region_retry_failed']==0
+    assert len(seen)==2
+    assert 'common_shape' not in seen[1]  # no stale Common in the retry
+    assert not stat['incomplete'] and len(regions)==1
+
+
+def test_removed_duplicate_is_not_misclassified_as_changed_revision():
+    """A removed occurrence of a surviving shared part stays REMOVED, not CHANGED."""
+    class KnownGeometry:
+        def has_rigid_proof(self,one,two,tolerance):
+            return one.name==two.name and abs(one.volume-two.volume)<tolerance
+    a=[part(0,10,'repeat'),part(100,10,'repeat')]
+    b=[part(100,10,'repeat'),part(0,11,'different_part')]
+    existing=[Record(0,None,'REMOVED',''),
+              Record(1,0,'SAME',''),
+              Record(None,1,'ADDED','')]
+    out,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,existing,geometry_context=KnownGeometry(),review_approval=lambda _: 'review')
+    assert {(r.a_index,r.b_index,r.status) for r in out}=={
+        (0,None,'REMOVED'),(1,0,'SAME'),(None,1,'ADDED')}
+    assert stat['removed_repeated_occurrences_excluded']==1
+    assert stat['boolean_checks']==0
+    assert not regions and not stat.get('incomplete')
+
+
+def test_retry_budget_handles_more_than_original_sixteen_pair_limit(monkeypatch):
+    """Correctly matched independent revisions past the 16th candidate get a retry."""
+    count=18
+    a=[part(50*i,10,'old_'+str(i)) for i in range(count)]
+    b=[part(50*i,11,'new_'+str(i)) for i in range(count)]
+    monkeypatch.setattr(revision_overlap,'MAX_CHECKS',1)
+    out,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,records(a,b),review_approval=lambda _: 'review')
+    assert stat['retry_budget_attempted']==count-1
+    assert stat['retry_budget_recovered']==count-1
+    assert stat['accepted']==count and not stat['incomplete']
+    assert {r.status for r in out}=={'CHANGED'}
+    assert len(regions)==count
