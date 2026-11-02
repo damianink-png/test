@@ -364,7 +364,8 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                             if _score(reg.common_mm3,a[i],b[j],_name_eq(a[i],b[j])) is None:
                                 raise ValueError('Wspólna objętość nie potwierdziła rewizji')
                         edges[i,j]=score
-                        best_common[i]=(score,j,None,reg)
+                        if i not in best_common or score>best_common[i][0]:
+                            best_common[i]=(score,j,None,reg)
                 failures.remove(failure)
                 stat['retry_budget_recovered' if is_budget else 'retry_failure_recovered']+=1
                 trace.mark('revision_postpass_retry','VERIFIED',a_index=i,b_index=j,
@@ -395,13 +396,23 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     stat['region_proof_reuse']=0
     selected=set(chosen)
     best_common={i:value for i,value in best_common.items() if (i,value[1]) in selected}
+    stat['region_retry_attempted']=0
+    stat['region_retry_recovered']=0
+    stat['region_retry_failed']=0
+    def verify_regions(reg,i,j):
+        # Even translated/cached regions must be bound to the CURRENT operands.
+        if _score(reg.common_mm3,a[i],b[j],_name_eq(a[i],b[j])) is None:
+            raise ValueError('Niewystarczający wspólny materiał')
+        if reg.added_mm3+reg.removed_mm3<=max(1e-3,max(a[i].volume,b[j].volume)*1e-7):
+            raise ValueError('Brak różnicy')
+        return bind_regions(reg,a[i],b[j],tolerance)
     for i,j in chosen:
         if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
         if progress:progress(f'Zmiany materiału: podział Common/Cut A[{i}] ↔ B[{j}]; limit 90 s')
+        cached=best_common.pop(i,None)
+        reuse=next((entry for entry in region_cache
+                    if _reuse_common_volume(a[i],b[j],entry[0],entry[1])),None)
         try:
-            cached=best_common.pop(i,None)
-            reuse=next((entry for entry in region_cache
-                        if _reuse_common_volume(a[i],b[j],entry[0],entry[1])),None)
             if cached is not None and cached[1]==j and cached[3] is not None:
                 reg=cached[3]
             elif reuse is not None:
@@ -409,21 +420,27 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 stat['region_proof_reuse']+=1
             else:
                 reg=trace.brep_call('revision_material_regions',i,j,calculate,a[i],b[j],tolerance,common_shape=cached[2] if cached and cached[1]==j else None)
-                if len(region_cache)<128:
-                    region_cache.append((a[i],b[j],reg))
-            if _score(reg.common_mm3,a[i],b[j],_name_eq(a[i],b[j])) is None:
-                raise ValueError('Niewystarczający wspólny materiał')
-            if reg.added_mm3+reg.removed_mm3<=max(1e-3,max(a[i].volume,b[j].volume)*1e-7):
-                raise ValueError('Brak różnicy')
-        except NativeGeometryFailure as exc:
-            if not recover_failures:raise
-            mark_failure(i,j,exc)
-            continue
+            bound=verify_regions(reg,i,j)
         except Exception as exc:
-            failure=NativeGeometryFailure('Niekompletna analiza różnic materiału: '+str(exc))
-            if not recover_failures:raise failure from exc
-            mark_failure(i,j,failure)
-            continue
+            if not recover_failures:
+                if isinstance(exc,NativeGeometryFailure):raise
+                raise NativeGeometryFailure('Niekompletna analiza różnic materiału: '+str(exc)) from exc
+            # Critical: initial Common can succeed but the final region split
+            # can fail in the large assembly. Retry this SAME verified pair
+            # independently, with no cached Common or translated regions.
+            stat['region_retry_attempted']+=1
+            trace.mark('revision_material_regions_retry','BEGIN',a_index=i,b_index=j,reason=str(exc))
+            try:
+                reg=trace.brep_call('revision_material_regions_fresh_retry',i,j,
+                                    calculate,a[i],b[j],tolerance)
+                bound=verify_regions(reg,i,j)
+                stat['region_retry_recovered']+=1
+                trace.mark('revision_material_regions_retry','RECOVERED',a_index=i,b_index=j)
+                if progress:progress(f'Zweryfikowano ponownie podział materiału A[{i}] / B[{j}]')
+            except Exception as retry_exc:
+                stat['region_retry_failed']+=1
+                mark_failure(i,j,f'Podział materiału: {exc}; niezależna próba: {retry_exc}')
+                continue
         rename=_name_changed(a[i],b[j])
         d=b[j].center-a[i].center
         record=Record(i,j,'CHANGED',
@@ -432,13 +449,11 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             (f'; zmiana nazwy {a[i].name} → {b[j].name}' if rename else ''),
             float(np.linalg.norm(d)),float(d[0]),float(d[1]),float(d[2]),
             float(b[j].volume-a[i].volume),None,'Zweryfikowano OCC Common i Cut',name_changed=rename)
-        try:
-            bound=bind_regions(reg,a[i],b[j],tolerance)
-        except Exception as exc:
-            if not recover_failures:raise NativeGeometryFailure('Niepoprawne dowody różnicy materiału: '+str(exc)) from exc
-            mark_failure(i,j,'Niepoprawne dowody różnicy materiału: '+str(exc))
-            continue
         accepted[i]=(j,record);regions[i]=bound
+        # Cache only complete, source-bound material partitions. An unverified
+        # result must NEVER be reused by a later occurrence.
+        if reuse is None and len(region_cache)<128:
+            region_cache.append((a[i],b[j],reg))
     used_a=set(accepted);used_b={v[0] for v in accepted.values()}
     out=[r for r in records if not (
       (r.status=='REMOVED' and r.b_index is None and r.a_index in used_a) or
