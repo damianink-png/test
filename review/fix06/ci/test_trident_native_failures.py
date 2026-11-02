@@ -61,6 +61,7 @@ class TridentNativeFailures(unittest.TestCase):
     def test_small_assembly_keeps_direct_rigid_path(self):
         # Only large CAD assemblies need the additional child-process overhead.
         with patch.object(comparison,'guarded_world_reexport',return_value=False), \
+             patch.object(comparison,'equivalent_world',return_value=False), \
              patch.object(comparison,'equivalent_rigid',return_value=(False,None,None)) as direct, \
              patch('dsac29.native_guard.guarded_rigid',side_effect=AssertionError('small should not fork')):
             records=comparison.compare(self.a[:2],self.b[:2],tolerance=.01,step_reexport_tolerance=True)
