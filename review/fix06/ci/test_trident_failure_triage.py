@@ -62,6 +62,19 @@ class TriageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             analyze(a, s)
 
+    def test_uncertain_histogram_mismatch_rejected(self):
+        a, s = fixture()
+        a['comparison']['uncertain_records'] = 0
+        with self.assertRaisesRegex(ValueError, 'UNCERTAIN histogram mismatch'):
+            analyze(a, s)
+
+    def test_uncertain_histogram_cannot_be_boolean(self):
+        a, s = fixture()
+        a['comparison']['statuses']['UNCERTAIN'] = True
+        s['statuses'] = a['comparison']['statuses']
+        with self.assertRaises(ValueError):
+            analyze(a, s)
+
     def test_clean_evidence_pass(self):
         a, s = fixture()
         a['comparison']['failed_pairs'] = []
