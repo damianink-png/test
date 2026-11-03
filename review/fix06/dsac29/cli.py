@@ -158,8 +158,13 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                 votes=int(proposal.get('votes',0))
                 original=int(proposal.get('previous_world_matches',0))
                 pop=min(len(a),len(b))
-                if (votes>=max(2*original,original+ceil(.30*pop))
-                    and votes>=max(8,ceil(.50*pop))):
+                # A small assembly can have only 2 parts. Requiring 8
+                # proofs even for 2/2 fully validated matches forced a
+                # redundant confirmation prompt despite a unique shift.
+                fully_verified_small=(2<=pop<8 and votes==pop and original==0)
+                if (fully_verified_small or
+                    (votes>=max(2*original,original+ceil(.30*pop))
+                     and votes>=max(8,ceil(.50*pop)))):
                     decision='align'
                     automatic=True
                     if progress:progress('Jednoznaczne przesunięcie B→A: '+
