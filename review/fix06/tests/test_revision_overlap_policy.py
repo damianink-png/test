@@ -169,3 +169,38 @@ def test_removed_repeat_with_renamed_survivor_is_not_a_material_change():
         (0,None,'REMOVED'),(1,0,'RENAMED'),(None,1,'ADDED')}
     assert stat['removed_repeated_occurrences_excluded']==1
     assert stat['boolean_checks']==0 and not regions
+
+
+def test_spatial_interval_index_never_drops_possible_brep_candidate():
+    """Broad-phase must conservatively match brute force, including tolerance."""
+    import numpy as np
+    rng=np.random.default_rng(12345)
+    bounds={}
+    for j in range(600):
+        origin=rng.uniform(-3000,3000,size=3)
+        length=rng.uniform(0.001,500,size=3)
+        bounds[j]=np.concatenate((origin,origin+length))
+    index=revision_overlap._XIntervalIndex(bounds)
+    for _ in range(140):
+        origin=rng.uniform(-3000,3000,size=3)
+        length=rng.uniform(0.001,500,size=3)
+        query=np.concatenate((origin,origin+length))
+        for tol in (0.0,0.01,2.5):
+            observed=list(index.candidates(query,tol))
+            expected=[j for j,v in bounds.items()
+                      if v[0]<=query[3]+tol and v[3]+tol>=query[0]]
+            assert len(observed)==len(set(observed))
+            assert set(observed)==set(expected)
+
+
+def test_spatial_interval_index_handles_touching_and_large_sparse_assemblies():
+    import numpy as np
+    bounds={j:np.array([float(j*100),0,0,float(j*100+10),10,10])
+            for j in range(2500)}
+    index=revision_overlap._XIntervalIndex(bounds)
+    touched=np.array([10010.0,0,0,10020.0,10,10])
+    assert list(index.candidates(touched,0.0))==[100,101]
+    query=np.array([123449.996,0,0,123460,10,10])
+    assert list(index.candidates(query,0.01))==[1235]
+    assert list(index.candidates(query,0.0))==[1235]
+    assert list(index.candidates(np.array([-1000,0,0,-500,10,10]),.01))==[]
