@@ -44,15 +44,23 @@ def main():
                 preview3d=True,revision_style=True,
                 full_bom=False,bom_csv=False,diff_step=True,
                 auto_align=False,force_unrelated=True,
+                diagnostic_only=True,
                 progress=progress)
             counts={status:sum(x.status==status for x in records) for status in
                     ("SAME","RENAMED","CHANGED","MOVED","ADDED","REMOVED","UNCERTAIN")}
-            result={"status":"FINISHED","elapsed_s":round(time.monotonic()-started,3),
+            summary=json.loads((folder/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
+            incomplete=(not summary.get('analysis_complete',False) or
+                        not summary.get('material_analysis_complete',False) or
+                        counts['UNCERTAIN']>0)
+            result={"status":"INCOMPLETE" if incomplete else "FINISHED",
+                    "elapsed_s":round(time.monotonic()-started,3),
                     "counts":counts,"step_export_error":export_error,
+                    "material_incomplete":incomplete,
                     "output":str(folder),"engine":"review/fix06/dsac29"}
             (args.log.parent/"exact_execution.json").write_text(json.dumps(result,indent=2,ensure_ascii=False),encoding="utf-8")
             progress("EXACT_COMPARISON_FINISHED "+json.dumps(result))
-            return 0 if export_error is None else 2
+            # Partial diagnostic is useful evidence but MUST fail the full CAD gate.
+            return 2 if export_error is not None else (3 if incomplete else 0)
         except BaseException as exc:
             result={"status":"FAILED","elapsed_s":round(time.monotonic()-started,3),
                     "exception":repr(exc),"traceback":traceback.format_exc()}
