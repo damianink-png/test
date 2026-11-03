@@ -26,6 +26,43 @@ MIN_IOU=0.57
 MIN_MARGIN=0.075
 MAX_CHECKS=10000
 
+class _XIntervalIndex:
+    """Exact, conservative broad-phase for world-space X intervals.
+
+    Uses a segment tree of the maximum X endpoint; queries skip whole
+    subtrees that cannot overlap. Y/Z, volume and actual B-Rep proofs remain
+    unchanged. Unlike a quantized voxel grid, no valid candidate is lost.
+    """
+    def __init__(self, bounds):
+        self.rows=sorted((float(v[0]),float(v[3]),int(j)) for j,v in bounds.items())
+        self.starts=[row[0] for row in self.rows]
+        self.size=1 << (max(1,len(self.rows))-1).bit_length()
+        self.max_ends=[float('-inf')]*(self.size*2)
+        for k,(_,right,_) in enumerate(self.rows):
+            self.max_ends[self.size+k]=right
+        for k in range(self.size-1,0,-1):
+            self.max_ends[k]=max(self.max_ends[k*2],self.max_ends[k*2+1])
+
+    def candidates(self, bounds, tolerance):
+        """Yield every B with X overlap (including tolerance), in X order."""
+        right=float(bounds[3])+float(tolerance)
+        left=float(bounds[0])-float(tolerance)
+        stop=bisect_right(self.starts,right)
+        if not stop:
+            return
+        stack=[(1,0,self.size)]
+        while stack:
+            node,begin,end=stack.pop()
+            if begin>=stop or self.max_ends[node]<left:
+                continue
+            if end-begin==1:
+                if begin<len(self.rows):
+                    yield self.rows[begin][2]
+                continue
+            middle=(begin+end)//2
+            stack.append((node*2+1,middle,end))
+            stack.append((node*2,begin,middle))
+
 def _name_eq(a,b):
     x,y=canonical(a.name),canonical(b.name)
     return bool(x and y and x==y)
@@ -171,8 +208,12 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     if progress:progress(f'Zmiany materiału: {len(old_ids)} starych i {len(new_ids)} nowych elementów; sprawdzanie geometrii…')
     ba={i:np.asarray(_precise_world_bounds(a[i].shape),float) for i in old_ids}
     bb={j:np.asarray(_precise_world_bounds(b[j].shape),float) for j in new_ids}
-    sorted_b=sorted((bb[j][0],j) for j in new_ids)
-    xstarts=[x for x,j in sorted_b]
+    # Spatial broad phase: avoid repeatedly slicing every earlier B interval
+    # for each A. The interval tree is conservative and never proves geometry.
+    index_started=perf_counter()
+    x_index=_XIntervalIndex(bb)
+    stat['spatial_index_build_seconds']=round(perf_counter()-index_started,5)
+    stat['spatial_candidates_scanned']=0
     edges={}
     best_common={}
     common_cache=[]
@@ -197,9 +238,15 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
         if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
         ref=a[i];bounds=ba[i]
         candidates=[]
-        for _,j in sorted_b[:bisect_right(xstarts,bounds[3]+tolerance)]:
+        for j in x_index.candidates(bounds,tolerance):
+            stat['spatial_candidates_scanned']+=1
+            # Cheap conservative Y/Z gate before volume and distance. This
+            # cannot reject touching / tolerance-adjacent valid pairs.
+            target=bb[j]
+            if (target[4]+tolerance<bounds[1] or bounds[4]+tolerance<target[1] or
+                target[5]+tolerance<bounds[2] or bounds[5]+tolerance<target[2]):
+                continue
             other=b[j]
-            if bb[j][3]+tolerance<bounds[0]:continue
             common_limit=SAME_NAME_MIN if _name_eq(ref,other) else OTHER_NAME_MIN
             if min(ref.volume,other.volume)/max(ref.volume,other.volume)<common_limit:continue
             boxvol=_bbox_intersect(bounds,bb[j])
