@@ -38,7 +38,8 @@ aside{display:flex;gap:12px;align-items:center;flex-wrap:wrap}small{color:#b7c2d
 <label>Gęstość [kg/m³] <input id="defaultDensity" type="number" min="0.001" step="any"></label>
 <button onclick="applyDefault()">Zastosuj do wszystkich</button>
 <button onclick="addMaterial()">Dodaj materiał</button>
-<button onclick="exportCsv()">Eksportuj CSV</button></aside>
+<button onclick="exportCsv()">Eksportuj CSV</button>
+<button onclick="saveChanges()">Zapisz przypisania materiałów</button><label>Wczytaj przypisania <input type="file" accept=".json" onchange="loadChanges(event)"></label></aside>
 <table><thead><tr><th>Model</th><th>Część</th><th>Ilość</th><th>Objętość [mm³]</th>
 <th>Materiał</th><th>Gęstość [kg/m³]</th><th>Masa 1 szt. [kg]</th><th>Masa łączna [kg]</th></tr></thead>
 <tbody id="parts"></tbody></table><h2 id="total"></h2><p id="sideTotals"></p>
