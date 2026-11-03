@@ -148,7 +148,26 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                     break
         old_ids-=excluded_occurrences
     stat['removed_repeated_occurrences_excluded']=len(excluded_occurrences)
-    if not old_ids:return list(records),{},stat
+    # Symmetric population guard: when a removed/added occurrence belongs to
+    # a definition already proven present on the SAME side of a surviving
+    # correspondence, it is an occurrence delta, not a material revision.
+    # Never infer equality from name, volume or bounding box alone.
+    excluded_added=set()
+    if geometry_context is not None:
+        surviving_b_by_name=defaultdict(list)
+        for r in records:
+            if (r.a_index is not None and r.b_index is not None and
+                r.status in ('SAME','RENAMED','UNCHANGED','MOVED')):
+                surviving_b_by_name[canonical(b[r.b_index].name)].append(r)
+        for j in new_ids:
+            for r in surviving_b_by_name.get(canonical(b[j].name),()):
+                if (known_same_definition(b[j],b[r.b_index]) and
+                    known_same_definition(b[j],a[r.a_index])):
+                    excluded_added.add(j)
+                    break
+        new_ids-=excluded_added
+    stat['added_repeated_occurrences_excluded']=len(excluded_added)
+    if not old_ids or not new_ids:return list(records),{},stat
     if progress:progress(f'Zmiany materiału: {len(old_ids)} starych i {len(new_ids)} nowych elementów; sprawdzanie geometrii…')
     ba={i:np.asarray(_precise_world_bounds(a[i].shape),float) for i in old_ids}
     bb={j:np.asarray(_precise_world_bounds(b[j].shape),float) for j in new_ids}
