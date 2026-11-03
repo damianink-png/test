@@ -175,7 +175,14 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                     _,proposal=align_assembly(a,b,tolerance,progress)
                     decision=alignment_approval(proposal)
                 except AlignmentUnavailable as exc:
-                    decision=alignment_approval({'status':'unresolved','reason':str(exc),'search_failed':True})
+                    # An unsuccessful explicit search must not reopen the
+                    # same "search for shift" dialog indefinitely.
+                    alignment.update(status='search_failed_original',applied=False,
+                                     reason='Nie znaleziono potwierdzonego przesunięcia: '+str(exc))
+                    if progress:
+                        progress('UWAGA: '+alignment['reason']+
+                                 ' Kontynuuję porównanie w oryginalnych współrzędnych.')
+                    decision='original'
             if decision=='original':
                 alignment.update(**{**proposal,'status':'original_by_user','applied':False,
                                     'reason':'Użytkownik wybrał oryginalne położenie.'})
