@@ -24,7 +24,7 @@ SAME_NAME_MIN=0.68
 OTHER_NAME_MIN=0.72
 MIN_IOU=0.57
 MIN_MARGIN=0.075
-MAX_CHECKS=1400
+MAX_CHECKS=10000
 
 def _name_eq(a,b):
     x,y=canonical(a.name),canonical(b.name)
