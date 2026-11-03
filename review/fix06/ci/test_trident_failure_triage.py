@@ -36,5 +36,41 @@ class TriageTests(unittest.TestCase):
         self.assertEqual(set(categories('UnprovenRepair: invalid wire; fallback Timeout')),
                          {'INVALID_TOPOLOGY','TIMEOUT_OR_BUDGET'})
 
+    def test_failed_pair_cannot_be_full_pass(self):
+        a, s = fixture()
+        a['comparison']['strict_pass'] = True
+        a['comparison']['uncertain_records'] = 0
+        s['analysis_complete'] = True
+        s['material_analysis_complete'] = True
+        self.assertEqual(analyze(a, s)['status'], 'INCOMPLETE')
+
+    def test_missing_verification_fails_closed(self):
+        a, s = fixture()
+        del a['inputs']['Trident_Assembly1.step']['verified']
+        with self.assertRaises(ValueError):
+            analyze(a, s)
+
+    def test_sample_exceeds_total_fails_closed(self):
+        a, s = fixture()
+        a['comparison']['failed_pairs_total'] = 0
+        with self.assertRaises(ValueError):
+            analyze(a, s)
+
+    def test_malformed_status_fails_closed(self):
+        a, s = fixture()
+        a['comparison']['statuses']['UNCERTAIN'] = -1
+        with self.assertRaises(ValueError):
+            analyze(a, s)
+
+    def test_clean_evidence_pass(self):
+        a, s = fixture()
+        a['comparison']['failed_pairs'] = []
+        a['comparison']['failed_pairs_total'] = 0
+        a['comparison']['uncertain_records'] = 0
+        a['comparison']['strict_pass'] = True
+        s['analysis_complete'] = True
+        s['material_analysis_complete'] = True
+        self.assertEqual(analyze(a, s)['status'], 'PASS')
+
 if __name__ == '__main__':
     unittest.main()
