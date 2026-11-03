@@ -198,9 +198,9 @@ def test_spatial_interval_index_handles_touching_and_large_sparse_assemblies():
     bounds={j:np.array([float(j*100),0,0,float(j*100+10),10,10])
             for j in range(2500)}
     index=revision_overlap._XIntervalIndex(bounds)
-    touched=np.array([10010.0,0,0,10020.0,10,10])
+    touched=np.array([10010.0,0,0,10100.0,10,10])
     assert list(index.candidates(touched,0.0))==[100,101]
-    query=np.array([123449.996,0,0,123460,10,10])
+    query=np.array([123510.006,0,0,123520,10,10])
     assert list(index.candidates(query,0.01))==[1235]
-    assert list(index.candidates(query,0.0))==[1235]
+    assert list(index.candidates(query,0.0))==[]
     assert list(index.candidates(np.array([-1000,0,0,-500,10,10]),.01))==[]
