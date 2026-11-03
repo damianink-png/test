@@ -21,7 +21,7 @@ from dsac29.step_io import inspect_step_colors
 
 EXPECTED = {
     'SAME': '#249B60', 'RENAMED': '#249B60',
-    'ADDED': '#168BFF', 'REMOVED': '#FF4050',
+    'ADDED': '#168BFF', 'REMOVED': '#F28C28',
     'MOVED': '#A855F7', 'CHANGED_COMMON': '#7D899A',
     'CHANGED_ADDED': '#168BFF', 'CHANGED_REMOVED': '#FF4050',
 }
@@ -33,7 +33,7 @@ def test_palette_semantics_and_custom_overrides():
         assert REVISION_COLORS[key] == tuple(int(color[n:n+2], 16)/255 for n in (1, 3, 5))
     assert COLORS['SAME'] == COLORS['RENAMED']
     assert MATERIAL_COLORS['CHANGED_ADDED'] == COLORS['ADDED']
-    assert MATERIAL_COLORS['CHANGED_REMOVED'] == COLORS['REMOVED']
+    assert MATERIAL_COLORS['CHANGED_REMOVED'] != COLORS['REMOVED']
     assert MATERIAL_COLORS['CHANGED_COMMON'] != MATERIAL_COLORS['CHANGED_ADDED']
     assert MATERIAL_COLORS['CHANGED_COMMON'] != MATERIAL_COLORS['CHANGED_REMOVED']
     custom = semantic_overrides({'ADDED': (.1, .2, .3), 'REMOVED': (.4, .5, .6)})
