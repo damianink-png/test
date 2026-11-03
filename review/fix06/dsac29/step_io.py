@@ -263,6 +263,7 @@ class ColoredDocument:
         self.reuse_definitions=bool(reuse_definitions and not self.flat_zw3d)
         import os
         self.body_colors=os.environ.get('DSCOMPARE_BODY_COLORS','0')=='1' and group_by_status
+        self.face_styles_created=0
         self.definitions_created=0
         self.definitions_reused=0
 
@@ -343,6 +344,7 @@ class ColoredDocument:
             num_faces=0
             for face in (() if self.body_colors and alpha>=0.9999 else _faces(world)):
                 num_faces+=1
+                self.face_styles_created+=1
                 sub=self.tool.AddSubShape(label,face)
                 if sub.IsNull():raise RuntimeError('Nie mozna przypisac koloru powierzchni: '+str(name))
                 self.colors.SetColor(sub,color,XCAFDoc_ColorType.XCAFDoc_ColorSurf)
@@ -371,6 +373,7 @@ class ColoredDocument:
             num_faces=0
             for face in (() if self.body_colors else _faces(unlocated)):
                 num_faces+=1
+                self.face_styles_created+=1
                 sub=self.tool.AddSubShape(label,face)
                 if sub.IsNull():raise RuntimeError('Nie można przypisać koloru powierzchni')
                 self.colors.SetColor(sub,col,XCAFDoc_ColorType.XCAFDoc_ColorSurf)
@@ -513,7 +516,10 @@ class ColoredDocument:
                 zapis_alfy_step=self.transparent_faces>0,
                 przezroczystosc_w_zw3d='zalezy_od_importera',
                 kolory_na_poziomie_bryl=bool(self.body_colors),
-                tryb_bez_pustych_kontenerow=bool(self.flat_zw3d))
+                tryb_bez_pustych_kontenerow=bool(self.flat_zw3d),
+                rozmiar_step_mb=round(temporary.stat().st_size/1048576,2),
+                style_powierzchni_utworzone=self.face_styles_created,
+                sredni_rozmiar_na_definicje_kb=round(temporary.stat().st_size/max(1,self.definitions_created)/1024,1))
             temporary.replace(target)
             return diag
         finally:
