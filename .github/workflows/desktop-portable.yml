@@ -33,7 +33,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          foreach($file in @('revision_overlap.py','overlap_evidence.py','candidate_policy.py','worker_v37.py','common_exclusion.py','palette.py','preview3d.py','preview_template.html')){
+          foreach($file in @('revision_overlap.py','overlap_evidence.py','candidate_policy.py','worker_v37.py','common_exclusion.py','palette.py','preview3d.py','preview_template.html','cli.py','report.py','material_mass_report.py')){
             Copy-Item "review/fix06/dsac29/$file" "portable-src/dsac29/$file" -Force
           }
           python review/fix06/ci/patch_common_exclusion_dispatch.py portable-src/dsac29/native_guard.py
