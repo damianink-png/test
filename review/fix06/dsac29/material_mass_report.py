@@ -41,7 +41,7 @@ aside{display:flex;gap:12px;align-items:center;flex-wrap:wrap}small{color:#b7c2d
 <button onclick="exportCsv()">Eksportuj CSV</button></aside>
 <table><thead><tr><th>Model</th><th>Część</th><th>Ilość</th><th>Objętość [mm³]</th>
 <th>Materiał</th><th>Gęstość [kg/m³]</th><th>Masa 1 szt. [kg]</th><th>Masa łączna [kg]</th></tr></thead>
-<tbody id="parts"></tbody></table><h2 id="total"></h2>
+<tbody id="parts"></tbody></table><h2 id="total"></h2><p id="sideTotals"></p>
 <script>
 const rows=__ROWS__;
 const materials=__MATERIALS__;
@@ -55,9 +55,10 @@ defaultDensity.value=materials[defaultMaterial.value];
 document.getElementById('parts').innerHTML=rows.map((r,i)=>'<tr><td>'+r.side+'</td><td>'+escapeHtml(r.name)+'</td><td>'+r.count+'</td><td>'+r.volume+'</td><td><select data-i="'+i+'" data-k="material">'+options(r.material)+'</select></td><td><input type="number" min="0.001" step="any" data-i="'+i+'" data-k="density" value="'+r.density+'"></td><td class="unit"></td><td class="sum"></td></tr>').join('');
 recalc();}
 function recalc(){
-let total=0;
-document.querySelectorAll('#parts tr').forEach((tr,i)=>{const r=rows[i],unit=r.volume*1e-9*r.density,sum=unit*r.count;total+=sum;tr.querySelector('.unit').textContent=unit.toFixed(5);tr.querySelector('.sum').textContent=sum.toFixed(5);});
-document.getElementById('total').textContent='Łączna masa A + B: '+total.toFixed(5)+' kg';}
+let total=0;const bySide={A:0,B:0};
+document.querySelectorAll('#parts tr').forEach((tr,i)=>{const r=rows[i],unit=r.volume*1e-9*r.density,sum=unit*r.count;total+=sum;bySide[r.side]=(bySide[r.side]||0)+sum;tr.querySelector('.unit').textContent=unit.toFixed(5);tr.querySelector('.sum').textContent=sum.toFixed(5);});
+document.getElementById('total').textContent='Łączna masa A + B: '+total.toFixed(5)+' kg';
+document.getElementById('sideTotals').textContent='Rewizja A: '+bySide.A.toFixed(5)+' kg | Rewizja B: '+bySide.B.toFixed(5)+' kg';}
 document.getElementById('parts').addEventListener('change',e=>{
 const i=Number(e.target.dataset.i),key=e.target.dataset.k;if(!key)return;
 if(key==='material'){rows[i].material=e.target.value;rows[i].density=materials[e.target.value];e.target.closest('tr').querySelector('input').value=rows[i].density;}
