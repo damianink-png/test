@@ -180,3 +180,29 @@ console.log('XRAY_PICK_DEPTH_PASS');
     result = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stdout + '\\n' + result.stderr
     assert 'XRAY_PICK_DEPTH_PASS' in result.stdout
+
+def test_exact_brep_definition_reuse_for_independent_instances(tmp_path):
+    """Exact geometry only: preserve location, color and dissimilar namesakes."""
+    from OCP.gp import gp_Trsf, gp_Vec
+    from OCP.TopLoc import TopLoc_Location
+    from dsac29.step_io import ColoredDocument
+    first=BRepPrimAPI_MakeBox(10,10,10).Shape()
+    independent=BRepPrimAPI_MakeBox(10,10,10).Shape()
+    translation=gp_Trsf()
+    translation.SetTranslation(gp_Vec(100,0,0))
+    moved=independent.Moved(TopLoc_Location(translation))
+    doc=ColoredDocument(group_by_status=True)
+    doc.add(first,'bolt-1',(0.2,0.7,0.3),group='SAME',source_name='bolt')
+    doc.add(moved,'bolt-2',(0.2,0.7,0.3),group='SAME',source_name='bolt')
+    doc.add(BRepPrimAPI_MakeBox(11,10,10).Shape(),'bolt-3',
+            (0.2,0.7,0.3),group='SAME',source_name='bolt')
+    doc.add(BRepPrimAPI_MakeBox(10,10,10).Shape(),'bolt-4',
+            (0.2,0.3,0.9),group='ADDED',source_name='bolt')
+    assert doc.count==4
+    assert doc.definitions_created==3
+    assert doc.definitions_reused==1
+    diagnostics=doc.write(tmp_path/'repeated.step')
+    assert diagnostics['definicje_unikalne']==3
+    assert diagnostics['ponownie_uzyte_definicje']==1
+    assert diagnostics['rzeczywiste_bryly_step']==4
+    assert diagnostics['dokladne_porownania_brep']>=2

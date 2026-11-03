@@ -266,6 +266,33 @@ class ColoredDocument:
         self.face_styles_created=0
         self.definitions_created=0
         self.definitions_reused=0
+        self._named_definitions={}
+        self._exact_reuse_attempts=0
+        self._exact_reuse_seconds=0.0
+
+    @staticmethod
+    def _serialized_brep_signature(shape):
+        """Exact serialized BRep fingerprint, never an approximate geometry test."""
+        import hashlib
+        import os
+        import tempfile
+        from OCP.BRepTools import BRepTools
+        fd,filename=tempfile.mkstemp(prefix='dscompare_exact_',suffix='.brep')
+        os.close(fd)
+        try:
+            if not BRepTools.Write_s(shape,filename):return None
+            size=os.path.getsize(filename)
+            if size>4*1024*1024:return None
+            digest=hashlib.sha256()
+            with open(filename,'rb') as handle:
+                for chunk in iter(lambda:handle.read(1024*1024),b''):
+                    digest.update(chunk)
+            return size,digest.digest()
+        except (OSError,RuntimeError,TypeError):
+            return None
+        finally:
+            try:os.unlink(filename)
+            except OSError:pass
 
     def _assembly(self,name,parent=None):
         from OCP.TopoDS import TopoDS_Compound
@@ -300,7 +327,7 @@ class ColoredDocument:
             parent=self._groups[path]
         return parent
 
-    def add(self,shape,name,rgb,alpha=1.0,group=None,revision=None,pair_id=None,region=None):
+    def add(self,shape,name,rgb,alpha=1.0,group=None,revision=None,pair_id=None,region=None,source_name=None):
         import math
         name=str(name or '').strip() or f'Element_{self.count+1:04d}'
         if not math.isfinite(float(alpha)) or not 0.0 <= float(alpha) <= 1.0:
@@ -355,10 +382,28 @@ class ColoredDocument:
             return
         rgba=tuple(round(float(c),7) for c in rgb)+(round(float(alpha),7),)
         key=(hash(local),int(local.Orientation()),rgba)
+        # The original name restricts candidates, but cannot prove equivalence.
+        source_key=(str(source_name).strip().casefold(),int(local.Orientation()),rgba) if source_name else None
         label=None
         for candidate,known,known_faces in (self._definitions.get(key,()) if self.reuse_definitions else ()):
             if local.IsSame(candidate) and local.Orientation()==candidate.Orientation():
                 label=known;num_faces=known_faces;break
+        if label is None and self.reuse_definitions and source_key:
+            candidates=self._named_definitions.get(source_key,())
+            if candidates:
+                import time
+                started=time.perf_counter()
+                self._exact_reuse_attempts+=1
+                fingerprint=self._serialized_brep_signature(local)
+                if fingerprint is not None:
+                    for candidate in candidates:
+                        if not candidate['checked']:
+                            candidate['fingerprint']=self._serialized_brep_signature(candidate['shape'])
+                            candidate['checked']=True
+                        if candidate['fingerprint'] is not None and fingerprint==candidate['fingerprint']:
+                            label=candidate['label'];num_faces=candidate['faces']
+                            break
+                self._exact_reuse_seconds+=time.perf_counter()-started
         if label is None:
             # Do not modify the source shape. Copy only once per native definition.
             from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
@@ -380,6 +425,9 @@ class ColoredDocument:
                 self.colors.SetColor(sub,col,XCAFDoc_ColorType.XCAFDoc_ColorGen)
             if self.reuse_definitions:
                 self._definitions.setdefault(key,[]).append((local,label,num_faces))
+                if source_key:
+                    self._named_definitions.setdefault(source_key,[]).append(
+                        {'shape':local,'label':label,'faces':num_faces,'checked':False,'fingerprint':None})
             self.definitions_created+=1
         else:
             self.definitions_reused+=1
@@ -519,7 +567,9 @@ class ColoredDocument:
                 tryb_bez_pustych_kontenerow=bool(self.flat_zw3d),
                 rozmiar_step_mb=round(temporary.stat().st_size/1048576,2),
                 style_powierzchni_utworzone=self.face_styles_created,
-                sredni_rozmiar_na_definicje_kb=round(temporary.stat().st_size/max(1,self.definitions_created)/1024,1))
+                sredni_rozmiar_na_definicje_kb=round(temporary.stat().st_size/max(1,self.definitions_created)/1024,1),
+                dokladne_porownania_brep=self._exact_reuse_attempts,
+                czas_porownan_brep_s=round(self._exact_reuse_seconds,3))
             temporary.replace(target)
             return diag
         finally:
@@ -684,7 +734,8 @@ def _export_revision_step(path, records, a_parts, b_parts, colors=None, old_alph
             role_pl={'SAME':'BEZ_ZMIAN','OLD':'STARA','NEW':'NOWA'}[role]
             # Names are actual PRODUCT definitions in STEP (not only the HTML report).
             name=cad_product_name(part.name,number,status_pl,role_pl)
-            document.add(part.shape,name,palette[key],alpha,group=r.status,revision=revision)
+            document.add(part.shape,name,palette[key],alpha,group=r.status,revision=revision,
+                         source_name=part.name if r.status in ('SAME','RENAMED') else None)
             group_name=REVISION_GROUPS.get(r.status,'99_INNE')
             group_path=[group_name]
             if r.status in ('CHANGED','MOVED','UNCERTAIN'):
