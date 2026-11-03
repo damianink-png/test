@@ -31,3 +31,8 @@ html,body,#app{min-width:0;width:100%;overflow-x:hidden}.app{min-width:0}.worksp
 .compare-actions .new-comparison{border:1px solid var(--line);padding:9px 14px}
 
 .mass-material-controls{display:flex;flex-wrap:wrap;align-items:end;gap:14px}.mass-material-controls label{display:flex;flex-direction:column;gap:7px;min-width:180px}.mass-material-controls select,.mass-material-controls input{min-height:38px;max-width:280px;padding:8px 10px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px}.mass-material-controls button{min-height:38px}
+
+/* Native Windows/WebView2 select popup: explicitly pair light option background with dark text. */
+.mass-material-controls select{color-scheme:light dark}
+.mass-material-controls select option{background-color:#ffffff;color:#17202b}
+.mass-material-controls select option:checked{background-color:#dcecff;color:#111827}
