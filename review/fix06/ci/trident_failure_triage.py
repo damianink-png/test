@@ -64,6 +64,11 @@ def analyze(audit, summary):
             'Invalid failed-pair sample')
     require(type(total) is int and total >= len(failures), 'Invalid failed-pair total')
     require(type(uncertain) is int and uncertain >= 0, 'Invalid UNCERTAIN count')
+    # A strict PASS must never be derived from a summary whose uncertainty
+    # counter disagrees with the recorded classification histogram.
+    require(type(statuses.get('UNCERTAIN', 0)) is int and
+            statuses.get('UNCERTAIN', 0) == uncertain,
+            'UNCERTAIN histogram mismatch')
     flags = collections.Counter(tag for f in failures for tag in categories(f.get('error', '')))
     incomplete = (summary.get('analysis_complete') is not True
                   or summary.get('material_analysis_complete') is not True
