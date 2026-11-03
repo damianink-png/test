@@ -130,7 +130,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
         if winners:
             best=max(w[0] for w in winners)
             margin=max(1,ceil(.10*best)) if low_overlap else 0
-            if coarse<best-margin:continue
+            if coarse<best-margin and _covered_volume<max(w[3] for w in winners):continue
         evaluated.append(offset)
         check_cancel()
         # Each unique offset is evaluated once; retaining all shifted OCCT
@@ -164,6 +164,9 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     winners.sort(key=lambda v:(-v[3],-v[0]));votes,offset,certified,verified_volume=winners[0]
     total_volume=sum(max(0.0,float(p.volume)) for p in a)
     volume_ratio=verified_volume/max(total_volume,1e-12)
+        # A handful of small repeated fasteners must not anchor a large assembly.
+    if population>=40 and votes<ceil(.50*population) and volume_ratio<.15:
+        return {'status':'unresolved','reason':('Kandydat obejmuje tylko '+f'{volume_ratio:.1%}'+' objętości i '+str(votes)+' brył; możliwe dopasowanie drobnych powtarzalnych części.')}
     if progress:progress(f'Wyrównanie: najlepszy kandydat {votes}/{population} brył, potwierdzona objętość {volume_ratio:.1%}, przesunięcie {offset.tolist()} mm')
     # Sparse revisions (e.g. 8/80 unchanged parts) require a convincing
     # winner, not just any 8 matching generic bolts. Compare all verified
