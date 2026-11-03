@@ -6,6 +6,8 @@ on:
       - 'review/fix06/apply_rc9_20261102.py'
       - 'review/fix06/dsac29/revision_overlap.py'
       - 'review/fix06/dsac29/cli.py'
+      - 'review/fix06/dsac29/report.py'
+      - 'review/fix06/dsac29/material_mass_report.py'
       - 'review/fix06/tests/test_rc9_retry_after_assembly_failure.py'
       - '.github/workflows/dscompare-rc9-integrated-20261102.yml'
   workflow_dispatch:
@@ -45,7 +47,7 @@ jobs:
           }
           Copy-Item review/fix06/tests/test_rc9_retry_after_assembly_failure.py baseline/dscompare_rc9_manual/tests/ -Force
           python review/fix06/apply_rc9_20261102.py baseline/dscompare_rc9_manual
-          foreach ($module in @('revision_overlap.py','candidate_policy.py','overlap_evidence.py','cli.py')) {
+          foreach ($module in @('revision_overlap.py','candidate_policy.py','overlap_evidence.py','cli.py','report.py','material_mass_report.py')) {
             Copy-Item "review/fix06/dsac29/$module" "baseline/dscompare_rc9_manual/dsac29/$module" -Force
           }
           if ($LASTEXITCODE -ne 0) { throw 'Source patch failed' }
