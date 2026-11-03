@@ -373,11 +373,21 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                     common=reg.common_mm3
                 else:
                     from .native_guard import guarded_common
-                    shape=trace.brep_call('revision_failed_pair_fresh_common',i,j,guarded_common,
-                                          a[i].shape,b[j].shape,tolerance)
-                    bind_common(shape,a[i].shape,b[j].shape,tolerance)
-                    common=volume(shape)
-                    reg=None
+                    try:
+                        shape=trace.brep_call('revision_failed_pair_fresh_common',i,j,guarded_common,
+                                              a[i].shape,b[j].shape,tolerance)
+                        bind_common(shape,a[i].shape,b[j].shape,tolerance)
+                        common=volume(shape)
+                        reg=None
+                    except (NativeGeometryFailure,ValueError,RuntimeError,OSError) as common_exc:
+                        # A failing Common alone does not invalidate a pair:
+                        # retry a fresh, independently bound Common + Cut partition.
+                        trace.mark('revision_failed_pair_fresh_common','FALLBACK_REGIONS',
+                                   a_index=i,b_index=j,error=str(common_exc))
+                        reg=trace.brep_call('revision_failed_pair_fresh_regions_fallback',i,j,
+                                            calculate,a[i],b[j],tolerance)
+                        bind_regions(reg,a[i],b[j],tolerance)
+                        common=reg.common_mm3
                 proof=classify_overlap(a[i].volume,b[j].volume,common,valid_boolean=True)
                 if proof.decision=='UNKNOWN':
                     raise ValueError('Niepotwierdzona wspólna objętość po ponowieniu')
