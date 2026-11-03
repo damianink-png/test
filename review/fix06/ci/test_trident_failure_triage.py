@@ -39,7 +39,7 @@ class TriageTests(unittest.TestCase):
     def test_failed_pair_cannot_be_full_pass(self):
         a, s = fixture()
         a['comparison']['strict_pass'] = True
-        a['comparison']['uncertain_records'] = 0
+        # Keep the histogram consistent: failed_pairs_total alone must block PASS.
         s['analysis_complete'] = True
         s['material_analysis_complete'] = True
         self.assertEqual(analyze(a, s)['status'], 'INCOMPLETE')
@@ -80,6 +80,7 @@ class TriageTests(unittest.TestCase):
         a['comparison']['failed_pairs'] = []
         a['comparison']['failed_pairs_total'] = 0
         a['comparison']['uncertain_records'] = 0
+        a['comparison']['statuses']['UNCERTAIN'] = 0
         a['comparison']['strict_pass'] = True
         s['analysis_complete'] = True
         s['material_analysis_complete'] = True
