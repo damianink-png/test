@@ -43,7 +43,9 @@ jobs:
           }
           Copy-Item review/fix06/tests/test_rc9_retry_after_assembly_failure.py baseline/dscompare_rc9_manual/tests/ -Force
           python review/fix06/apply_rc9_20261102.py baseline/dscompare_rc9_manual
-          Copy-Item review/fix06/dsac29/revision_overlap.py baseline/dscompare_rc9_manual/dsac29/revision_overlap.py -Force
+          foreach ($module in @('revision_overlap.py','candidate_policy.py','overlap_evidence.py')) {
+            Copy-Item "review/fix06/dsac29/$module" "baseline/dscompare_rc9_manual/dsac29/$module" -Force
+          }
           if ($LASTEXITCODE -ne 0) { throw 'Source patch failed' }
       - name: Build real Windows executable from patched sources
         shell: pwsh
