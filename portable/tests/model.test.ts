@@ -11,7 +11,7 @@ it('shows exactly ten independently editable categories in five related pairs',(
  expect(paletteLabels.changed_common).toBe('Bez zmian w detalu');
  expect(defaults.palette.changed_common).toBe('#7d899a');
  expect(defaults.palette.changed_added).toBe('#168bff');
- expect(defaults.palette.changed_removed).toBe('#ff4050');
+ expect(defaults.palette.changed_removed).toBe('#ff4050');expect(defaults.palette.removed).toBe('#f28c28');
  expect(defaults.oldAlpha).toBe(0.4);
  expect(keys.map(k=>k.toUpperCase())).toContain('CHANGED_COMMON');
 });
