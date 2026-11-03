@@ -61,7 +61,7 @@ jobs:
         working-directory: baseline/dscompare_rc9_manual
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m pip install pytest cadquery-ocp numpy
+          python -m pip install pytest cadquery-ocp==7.9.3.1.1 numpy
           # Run native OCCT tests in fresh Python processes; combined pytest
           # can retain worker state and stall unrelated subsequent tests.
           foreach ($test in @('test_revision_overlap_policy.py','test_revision_common_recovery.py','test_rc9_retry_after_assembly_failure.py','test_output_palette.py','test_stability.py')) {
@@ -151,7 +151,7 @@ jobs:
           if (!(Test-Path $required)) { throw "Missing required CAD test script: $required" }
           python -m py_compile $required ci/fixture_oracles.py
           if ($LASTEXITCODE -ne 0) { throw 'CAD test script syntax failed' }
-          python -m pip install cadquery-ocp numpy
+          python -m pip install cadquery-ocp==7.9.3.1.1 numpy
           if ($LASTEXITCODE -ne 0) { throw 'CAD test dependencies failed' }
       - name: Run actual frozen EXE against public STEP assembly
         shell: pwsh
