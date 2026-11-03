@@ -164,7 +164,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     winners.sort(key=lambda v:(-v[3],-v[0]));votes,offset,certified,verified_volume=winners[0]
     total_volume=sum(max(0.0,float(p.volume)) for p in a)
     volume_ratio=verified_volume/max(total_volume,1e-12)
-        # A handful of small repeated fasteners must not anchor a large assembly.
+    # A handful of small repeated fasteners must not anchor a large assembly.
     if population>=40 and votes<ceil(.50*population) and volume_ratio<.15:
         return {'status':'unresolved','reason':('Kandydat obejmuje tylko '+f'{volume_ratio:.1%}'+' objętości i '+str(votes)+' brył; możliwe dopasowanie drobnych powtarzalnych części.')}
     if progress:progress(f'Wyrównanie: najlepszy kandydat {votes}/{population} brył, potwierdzona objętość {volume_ratio:.1%}, przesunięcie {offset.tolist()} mm')
