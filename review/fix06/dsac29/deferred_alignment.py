@@ -108,7 +108,11 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
             for i in _nearby(cells,SimpleNamespace(center=center),radius):
                 if i in used or np.linalg.norm(a[i].center-center)>radius:continue
                 if world_candidate(a[i],p,tolerance):used.add(i);break
-        if len(used)>=minimum and len(used)>baseline:ranked.append((len(used),offset))
+        if len(used)>=minimum and len(used)>baseline:
+            # For equal occurrence support, prioritize the shift explaining
+            # more physical material (large structural anchors over bolts).
+            covered_volume=sum(max(0.0,float(a[i].volume)) for i in used)
+            ranked.append((len(used),offset,covered_volume))
     if not ranked:return None
     if progress:progress('Wynik porównania wskazuje wspólne przesunięcie. Weryfikacja położenia B-Rep…')
     # First test hypotheses using virtual center offsets (above) and a bounded
@@ -120,7 +124,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     # checks on each of 16 weak hypotheses before starting any full proof.
     winners=[];evaluated=[]
     identity=np.eye(3)
-    for coarse,offset in sorted(ranked,key=lambda v:-v[0]):
+    for coarse,offset,_covered_volume in sorted(ranked,key=lambda v:(-v[0],-v[2])):
         if any(np.linalg.norm(offset-old)<=tolerance for old in evaluated):continue
         if len(evaluated)>=16:break
         if winners:
