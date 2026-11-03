@@ -130,6 +130,8 @@ def main(argv=None):
                 output,s=analyze_many(files,ns.output,ns.density,progress=emit,max_solids=ns.max_solids)
             else:
                 output,s=analyze_single(ns.input,ns.output,ns.density,progress=emit,preview=not ns.no_preview,max_solids=ns.max_solids)
+            from .standalone_mass_materials import enhance_mass_html
+            if enhance_mass_html(output,ns.density):emit('Raport masy: aktywne materiały i gęstości dla każdej pozycji BOM.')
             payload={'ok':True,'folder':str(output),'podsumowanie':s}
         else:
             from .mesh_v37 import make_mesh
