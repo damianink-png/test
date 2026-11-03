@@ -178,7 +178,20 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             if decision=='search':
                 try:
                     _,proposal=align_assembly(a,b,tolerance,progress)
-                    decision=alignment_approval(proposal)
+                    # The user has already explicitly requested a search.
+                    # Apply a verified registration directly rather than
+                    # asking whether to search a second time.
+                    if proposal.get('status') in ('registered','already_aligned'):
+                        decision='align'
+                        if progress:
+                            progress('Znaleziono potwierdzone wyrównanie B do A; stosuję przesunięcie i kontynuuję analizę.')
+                    else:
+                        alignment.update(status='search_unresolved_original',applied=False,
+                                         reason=str(proposal.get('reason','Nie potwierdzono przesunięcia.')))
+                        if progress:
+                            progress('UWAGA: '+alignment['reason']+
+                                     ' Kontynuuję w oryginalnych współrzędnych.')
+                        decision='original'
                 except AlignmentUnavailable as exc:
                     # An unsuccessful explicit search must not reopen the
                     # same "search for shift" dialog indefinitely.
@@ -189,7 +202,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                                  ' Kontynuuję porównanie w oryginalnych współrzędnych.')
                     decision='original'
             if decision=='original':
-                if alignment.get('status')=='search_failed_original':
+                if alignment.get('status') in ('search_failed_original','search_unresolved_original'):
                     alignment.update(applied=False)
                 else:
                     alignment.update(**{**proposal,'status':'original_by_user','applied':False,
