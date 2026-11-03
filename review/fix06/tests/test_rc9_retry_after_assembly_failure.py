@@ -21,7 +21,10 @@ def test_retry_common_failure_falls_back_to_validated_regions(monkeypatch):
     monkeypatch.setattr(overlap,'calculate',flaky_regions)
     result,cache,stat=overlap.merge_material_revisions(a,b,records,review_approval=lambda _:'review')
     assert [r.status for r in result]==['CHANGED']
-    assert stat['retry_budget_attempted']>=1
-    assert stat['retry_budget_recovered']>=1
+    # This fixture injects a geometry failure, not a budget exhaustion.
+    # Verify that the independently validated recovery was actually used.
+    assert stat['retry_failure_attempted']>=1
+    assert stat['retry_failure_recovered']>=1
+    assert stat['retry_failure_failed']==0
     assert calls['regions']>=2
     assert cache
