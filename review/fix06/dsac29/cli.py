@@ -184,8 +184,11 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                                  ' Kontynuuję porównanie w oryginalnych współrzędnych.')
                     decision='original'
             if decision=='original':
-                alignment.update(**{**proposal,'status':'original_by_user','applied':False,
-                                    'reason':'Użytkownik wybrał oryginalne położenie.'})
+                if alignment.get('status')=='search_failed_original':
+                    alignment.update(applied=False)
+                else:
+                    alignment.update(**{**proposal,'status':'original_by_user','applied':False,
+                                        'reason':'Użytkownik wybrał oryginalne położenie.'})
             elif decision=='align' and proposal.get('status') in ('registered','already_aligned'):
                 rotation=np.asarray(proposal.get('rotation_B_to_A',np.eye(3)))
                 offset=np.asarray(proposal.get('translation_B_to_A_mm',[0,0,0]))
