@@ -62,6 +62,7 @@ jobs:
           python review/fix06/ci/patch_gui_minimal.py dscompare_rc9_manual
           python review/fix06/ci/patch_legacy_ui_tests.py dscompare_rc9_manual
           python review/fix06/ci/patch_step_polish_names.py dscompare_rc9_manual
+          Copy-Item review/fix06/dsac29/step_io.py dscompare_rc9_manual/dsac29/step_io.py -Force
           if ($LASTEXITCODE -ne 0) { throw 'Material guard patch failed' }
           if ($LASTEXITCODE -ne 0) { throw 'Native dispatch patch failed' }
           Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
