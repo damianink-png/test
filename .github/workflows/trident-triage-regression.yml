@@ -1,0 +1,22 @@
+name: Trident exact material failure triage regression
+on:
+  push:
+    branches:
+      - codex/rc9-palette-20261102
+    paths:
+      - review/fix06/ci/trident_failure_triage.py
+      - review/fix06/ci/test_trident_failure_triage.py
+      - .github/workflows/trident-triage-regression.yml
+  workflow_dispatch:
+jobs:
+  triage-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify triage module and regression guards
+        run: |
+          python -m py_compile review/fix06/ci/trident_failure_triage.py review/fix06/ci/test_trident_failure_triage.py
+          python review/fix06/ci/test_trident_failure_triage.py -v
