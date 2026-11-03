@@ -23,13 +23,13 @@ class TriageTests(unittest.TestCase):
     def test_sha_guard(self):
         a, s = fixture()
         a['inputs']['Trident_Assembly1.step']['sha256'] = '0'*64
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             analyze(a,s)
 
     def test_occurrence_guard(self):
         a, s = fixture()
         a['comparison']['covered_A'] = 1
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             analyze(a,s)
 
     def test_multiple_failure_flags(self):
