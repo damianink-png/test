@@ -178,6 +178,20 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             if decision=='search':
                 try:
                     _,proposal=align_assembly(a,b,tolerance,progress)
+                    # A legacy alignment based on only two anchor bases is not
+                    # sufficient evidence to relocate a large revised assembly.
+                    # Keep the original coordinates unless full-assembly B-Rep
+                    # evidence independently supports the proposed transform.
+                    if proposal.get('status')=='registered' and min(len(a),len(b))>=40:
+                        from .registration_gate import frame_support
+                        candidate_offset=np.asarray(proposal.get('translation_B_to_A_mm',[0,0,0]),dtype=float)
+                        candidate_rotation=np.asarray(proposal.get('rotation_B_to_A',np.eye(3)),dtype=float)
+                        relocated=[_relocate(part,candidate_rotation,candidate_offset) for part in b]
+                        checked=frame_support(a,relocated,tolerance,proofs=24,progress=progress,cancelled=cancelled)
+                        required=max(8,ceil(.30*min(len(a),len(b))))
+                        if checked['count']<required or checked['proofs']<min(8,checked['checked']):
+                            proposal={'status':'unresolved','reason':f'Wyrównanie z samych baz odrzucone: {checked["proofs"]}/{checked["checked"]} dowodów B-Rep, {checked["count"]} kandydatów; wymagane co najmniej {required} par.'}
+                            if progress:progress('UWAGA: '+proposal['reason'])
                     # The user has already explicitly requested a search.
                     # Apply a verified registration directly rather than
                     # asking whether to search a second time.
