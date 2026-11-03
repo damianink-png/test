@@ -10,5 +10,11 @@ new = ("    assert COLORS['SAME']==REVISION_COLORS['SAME']\n"
        "    assert MATERIAL_COLORS['CHANGED_COMMON'] not in (COLORS['ADDED'],COLORS['REMOVED'])")
 if source.count(old) != 1:
     raise RuntimeError('Frozen palette test changed; review before patching')
-p.write_text(source.replace(old,new),encoding='utf-8')
+source=source.replace(old,new)
+legacy="    assert COLORS['REMOVED']==MATERIAL_COLORS['CHANGED_REMOVED']"
+updated="    assert COLORS['REMOVED']!=MATERIAL_COLORS['CHANGED_REMOVED']  # Orange whole part, red cut material"
+if source.count(legacy)!=1:
+    raise RuntimeError('Frozen removed/material color assertion changed; review before patching')
+source=source.replace(legacy,updated)
+p.write_text(source,encoding='utf-8')
 print('NEUTRAL_COMMON_PALETTE_TEST_PATCH_PASS')
