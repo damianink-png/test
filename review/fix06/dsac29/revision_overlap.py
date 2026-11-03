@@ -354,17 +354,27 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             if k<len(geometry_pending):pending.append(geometry_pending[k])
             if k<len(budget_pending):pending.append(budget_pending[k])
         seen=set()
+        # Give unresolved pairs a separate bounded recovery window. The
+        # original 240 s shared deadline could stop before all six were tried.
+        retry_budget_s=min(600.0,max(240.0,90.0*min(len(pending),6)))
+        stat['retry_budget_seconds']=retry_budget_s
+        stat['retry_skipped_due_to_time']=0
         stat['retry_failure_attempted']=0
         stat['retry_failure_recovered']=0
         stat['retry_failure_excluded']=0
         stat['retry_failure_failed']=0
         for failure in pending:
-            if perf_counter()-retry_started>=240.0:break
+            if perf_counter()-retry_started>=retry_budget_s:
+                stat['retry_skipped_due_to_time']=len(pending)-len(seen)
+                trace.mark('revision_postpass_retry','TIME_BUDGET_EXHAUSTED',remaining=stat['retry_skipped_due_to_time'],budget_seconds=retry_budget_s)
+                if progress:progress(f'Ponowienia B-Rep: limit {retry_budget_s:.0f} s, pozostalo {stat["retry_skipped_due_to_time"]} par')
+                break
             if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
             i,j=failure['a_index'],failure['b_index']
             if (i,j) in seen:continue
             seen.add((i,j))
             is_budget=failure in budget_pending
+            if progress:progress(f'Ponowienie B-Rep A[{i}] / B[{j}]: {len(seen)}/{len(pending)}; przyczyna: {"TIME_BUDGET" if is_budget else "GEOMETRY_FAILURE"}')
             stat['retry_budget_attempted' if is_budget else 'retry_failure_attempted']+=1
             try:
                 if is_budget:
