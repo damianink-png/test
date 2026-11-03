@@ -349,6 +349,8 @@ def produce(folder,a,b,records,density=7850.,generate_step=True,colors=None,
         if progress:progress(f'BOM A+B ukończony po {perf_counter()-bom_start:.1f} s; grup B: {len(groups_b)}.')
         stage.update(reports="zapisywanie_bom",report_percent=78)
         bom_a=_bill(a,density,groups_a);bom_b=_bill(b,density,groups_b)
+        from .material_mass_report import render_mass_report
+        (out/'MASA_MATERIALY.html').write_text(render_mass_report(bom_a,bom_b,density),encoding='utf-8')
         for role,parts,groups in [('A',a,groups_a),('B',b,groups_b)]:
             mapping=[{'ilosc':len(ids),'wystapienia':[{'index':i,'name':parts[i].name,'path':parts[i].path} for i in ids]} for ids in groups]
             (out/f'BOM_GRUPY_{role}.json').write_text(json.dumps(mapping,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -515,6 +517,8 @@ def produce(folder,a,b,records,density=7850.,generate_step=True,colors=None,
         import re
         overview=re.sub(r'<a class="preview-link"[^>]*>.*?</a>','',overview)
     htmltxt=htmltxt.replace('<div class="panel filters">',overview+'<div class="panel filters">',1)
+    if (out/'MASA_MATERIALY.html').is_file():
+        htmltxt=htmltxt.replace('<body>','<body><p><a href="MASA_MATERIALY.html">Masa części — materiały i gęstości (edytuj)</a></p>',1)
     htmltxt=enhance_report(htmltxt,palette,counts,(out/'PODGLAD_KOLOROW_3D.html').is_file(),available)
     draft.write_text(htmltxt,encoding='utf-8');draft.replace(final_report)
     stage.update(basic_report_ready=True,reports='finalizacja',report_percent=95)
