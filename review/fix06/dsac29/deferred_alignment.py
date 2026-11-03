@@ -101,7 +101,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     radius=search_radius(tolerance)
     cells=_spatial_index(a,range(len(a)),radius)
     ranked=[]
-    for _,offset in sorted(histogram.values(),key=lambda v:-v[0])[:96]:
+    for _,offset in sorted(histogram.values(),key=lambda v:-v[0])[:192]:
         check_cancel();used=set()
         for p in b:
             center=p.center+offset
@@ -124,9 +124,9 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     # checks on each of 16 weak hypotheses before starting any full proof.
     winners=[];evaluated=[]
     identity=np.eye(3)
-    for coarse,offset,_covered_volume in sorted(ranked,key=lambda v:(-v[0],-v[2])):
+    for coarse,offset,_covered_volume in sorted(ranked,key=lambda v:(-v[2],-v[0])):
         if any(np.linalg.norm(offset-old)<=tolerance for old in evaluated):continue
-        if len(evaluated)>=16:break
+        if len(evaluated)>=24:break
         if winners:
             best=max(w[0] for w in winners)
             margin=max(1,ceil(.10*best)) if low_overlap else 0
@@ -151,7 +151,8 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
             support=frame_support(a,shifted,tolerance,verify_all=True,
                                   progress=progress,cancelled=cancelled,proof_cache=proof_cache)
             if support['count']>=minimum and support['count']>baseline:
-                winners.append((support['count'],offset,support['pairs']))
+                verified_volume=sum(max(0.0,float(a[i].volume)) for i,_ in support['pairs'])
+                winners.append((support['count'],offset,support['pairs'],verified_volume))
         from . import trace_r22 as trace
         trace.mark('registration_proof_cache','END',hits=proof_cache.hits,
                    proof_calls=proof_cache.proof_calls,stored=len(proof_cache.results),
@@ -160,13 +161,16 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
             progress(f'Przesunięcie: próbka B-Rep {confirmed}/{checked}, '
                      f'pełne dowody {len(winners)}, kandydaci {len(evaluated)}')
     if not winners:return {'status':'unresolved','reason':'Hipotezy nie przeszły kontroli geometrii.'}
-    winners.sort(key=lambda v:-v[0]);votes,offset,certified=winners[0]
+    winners.sort(key=lambda v:(-v[3],-v[0]));votes,offset,certified,verified_volume=winners[0]
+    total_volume=sum(max(0.0,float(p.volume)) for p in a)
+    volume_ratio=verified_volume/max(total_volume,1e-12)
+    if progress:progress(f'Wyrównanie: najlepszy kandydat {votes}/{population} brył, potwierdzona objętość {volume_ratio:.1%}, przesunięcie {offset.tolist()} mm')
     # Sparse revisions (e.g. 8/80 unchanged parts) require a convincing
     # winner, not just any 8 matching generic bolts. Compare all verified
     # runner-ups with a tolerance for nearly identical vote totals.
     ambiguity_margin=max(1,ceil(.10*votes)) if low_overlap else 0
     if any(score>=votes-ambiguity_margin and np.linalg.norm(other-offset)>tolerance
-           for score,other,_ in winners[1:]):
+           for score,other,_,other_volume in winners[1:] if other_volume>=verified_volume*.90):
         return {'status':'unresolved',
                 'reason':'Kilka przesunięć ma podobne potwierdzenie B-Rep. '
                          'Nie zmieniono układu bez jednoznacznego wyniku.'}
@@ -174,6 +178,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
             'translation_B_to_A_mm':offset.tolist(),'rotation_B_to_A':np.eye(3).tolist(),
             'votes':votes,'previous_world_matches':baseline,
             'support_ratio':round(votes/max(1,population),4),
+             'verified_volume_ratio':round(volume_ratio,4),
             'requested':True,'enabled':True,'certified_pairs':certified,
             'full_pair_map':certified if len(certified)==len(a)==len(b) else []}
 
