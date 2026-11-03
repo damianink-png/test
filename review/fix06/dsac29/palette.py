@@ -2,7 +2,7 @@
 HEX = {
     # Exact defaults of the portable desktop UI: one meaning in every output.
     'SAME':'#249B60', 'RENAMED':'#249B60',
-    'ADDED':'#168BFF', 'REMOVED':'#FF4050',
+    'ADDED':'#168BFF', 'REMOVED':'#F28C28',
     'MOVED':'#A855F7', 'MOVED_OLD':'#D1AAFA',
     # Full CHANGED bodies are amber until verified material regions exist.
     # Verified Common/Cut regions have independent semantic colors.
