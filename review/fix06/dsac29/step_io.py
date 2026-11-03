@@ -714,7 +714,7 @@ def export_revision_step(path, records, a_parts, b_parts, colors=None, old_alpha
     started=time.perf_counter()
     rows=list(records)
     result=_export_revision_step(path,rows,a_parts,b_parts,colors,old_alpha,progress,
-                                 reuse_definitions=False,flat_zw3d=flat,material_regions=material_regions)
+                                 reuse_definitions=not flat,flat_zw3d=flat,material_regions=material_regions)
     result['tryb_zapisu']='plaski_awaryjny' if flat else 'podzlozenia_bez_pustych_lisci'
     result['czas_zapisu_i_weryfikacji_s']=round(time.perf_counter()-started,3)
     try:
