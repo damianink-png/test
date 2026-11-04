@@ -89,3 +89,12 @@ force, granice tolerancji i duże rzadkie złożenie.
   revision_overlap z wyłączeniem jednego długotrwałego testu.
 - Rzeczywisty Windows/duże złożenia, pomiar szczytu RAM,
   liczba B-Rep i rozmiar STEP po zmianach: DO WERYFIKACJI w CI.
+
+## Audyt CI — 2026-11-04 06:51 CET (SHA 4c2ad5b)
+- Windows portable/single EXE: workflow 41777579200 **success**.
+- Zintegrowana kompilacja i testy rzeczywistych STEP: 41777579166 **success**, 7/7 zadań real-cad zielonych (Voron V2 shift/revision_shift, Trident shift/revision_shift, Simple Swerve revision, OpenArm review).
+- Poprawiony ZIP RC9: 41777579262 **success**, 7/7 zadań CAD zielonych (V2 shift/revision/revision_shift, Trident shift/revision/revision_shift, OpenArm review); instalator Svelte5/Tauri2 zielony.
+- Izolowane CAD/Swerve: 41777579176 **success**.
+- Ważne: zielony job nie jest dowodem rozwiązania każdej z sześciu trudnych par Boolean; do potwierdzenia na poziomie raportów par. Nie ma jeszcze porównywalnych danych baseline dla czasu/RSS/liczby Common/Cut i rozmiaru wyeksportowanego STEP ani potwierdzenia importu do ZW3D 2019. Nie deklarować tych bramek jako PASS.
+- Rozmiary *spakowanych artefaktów CI*, nie wynikowego STEP: Windows x64 195377587 B; V2 revision 149696937 B; Trident shift 100910382 B. Nie wolno mylić ich z rozmiarem STEP.
+- W tej iteracji wykonano audyt i uaktualnienie ewidencji; **bez zmian algorytmu** i bez uruchamiania duplikatów buildów. Następny krok: z artefaktów CAD wydobyć per-pair Boolean outcomes, RSS, czas i rozmiar STEP; następnie wdrożyć brakujące pomiary (nr 20).
