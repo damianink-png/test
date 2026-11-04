@@ -178,3 +178,20 @@ force, granice tolerancji i duże rzadkie złożenie.
   złożenia oraz wymóg świadomego wyboru oryginału.
 - Nie twierdzić, że przesunięcie z przykładu jest prawidłowe:
   nie posiadamy źródłowych plików STEP ani logów tego przebiegu.
+
+## 2026-11-04 — cztery powtarzające się pozycje „Do sprawdzenia”
+- Wykryto ograniczenie: wykluczanie powtórzeń z analizy Common/Cut
+  szukało potwierdzonych wystąpień głównie po kanonicznej NAZWIE.
+  Różne nazwy identycznych brył trafiały do kosztownego i zawodnego Common.
+- Teraz nazwa jest tylko wskazówką. Alternatywny indeks sygnatury
+  podsuwa potencjalne wystąpienia, ale wykluczenie wymaga dwóch
+  dowodów geometrii: A(powtórzenie)=A(ocalały) i A(powtórzenie)=B(ocalały).
+  Analogicznie dla dodatkowych wystąpień B.
+- Zachowano pojedyncze zdarzenia ADDED/REMOVED i dokładne liczności;
+  nie przepisuje się par i nie oznacza dowolnych podobnych części SAME.
+- Liczniki repeated_signature_fallback_checks/proofs w diagnostyce.
+- Regresje: cztery powtórzenia po zmianie nazw, symetryczne ADDED,
+  podobny podpis bez dowodu geometrii — brak automatycznej równości.
+- Ograniczenie: gdy części są geometrycznie takie same, ale mają różne
+  reprezentacje B-Rep i brak jakiegokolwiek potwierdzonego dowodu,
+  nadal mogą pozostać UNCERTAIN. Potrzebne są pliki lub logi do oceny.

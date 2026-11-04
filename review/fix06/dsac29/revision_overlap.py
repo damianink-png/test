@@ -14,7 +14,7 @@ from math import sqrt, isfinite
 import numpy as np
 from .compare import Record
 from .names import canonical
-from .geometry import _precise_world_bounds
+from .geometry import _precise_world_bounds,signature
 from .material_deltas import operate,volume,bind_common,bind_regions
 from .material_guard import calculate_isolated as calculate
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
@@ -218,49 +218,70 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     # assembly match independently proves the SAME rigid geometry and name.
     # A genuinely revised definition with no surviving identical match remains
     # eligible for the normal Common/Cut revision search.
+    # Do not treat occurrence deltas of an already proven surviving STEP
+    # definition as changes in material. Historically only equal part NAMES
+    # were searched; renamed STEP occurrences then entered Common/Cut and
+    # could become UNCERTAIN after an unrelated Boolean failure.
+    #
+    # Names and numeric signatures only choose candidates. Exclusion still
+    # requires two positive geometry proofs, one to each side of the
+    # surviving SAME/RENAMED/MOVED match. Never infer from a shared name,
+    # volume, bounding box, signature, or count alone.
     excluded_occurrences=set()
+    excluded_added=set()
+    stat['repeated_signature_fallback_checks']=0
+    stat['repeated_signature_fallback_proofs']=0
     if geometry_context is not None:
-        # has_rigid_proof checks only PREVIOUSLY stored proofs. Duplicate
-        # occurrences often share the exact local B-Rep without ever having
-        # been paired A-to-A. The exact-definition digest is also a positive
-        # proof; dimensions, volume or name alone must never suffice.
         same_definition=getattr(geometry_context,'same_definition',None)
         def known_same_definition(left,right):
             return (geometry_context.has_rigid_proof(left,right,tolerance) or
                     (same_definition is not None and same_definition(left,right)))
-        surviving_by_name=defaultdict(list)
-        for r in records:
-            if (r.a_index is not None and r.b_index is not None and
-                r.status in ('SAME','RENAMED','UNCHANGED','MOVED')):
-                # The surviving occurrence may itself have been renamed.
-                # Its verified geometry, not B's text name, is the proof.
-                surviving_by_name[canonical(a[r.a_index].name)].append(r)
-        for i in old_ids:
-            for r in surviving_by_name.get(canonical(a[i].name),()):
-                if (known_same_definition(a[i],a[r.a_index]) and
-                    known_same_definition(a[i],b[r.b_index])):
-                    excluded_occurrences.add(i)
-                    break
+
+        survivor_pairs=[r for r in records
+                        if r.a_index is not None and r.b_index is not None
+                        and r.status in ('SAME','RENAMED','UNCHANGED','MOVED')]
+
+        def exclude_occurrences(indices,own,opposite,own_field,other_field):
+            # Try name-indexed matches first (cheap common case). Only
+            # unresolved names trigger a lazily built signature hint index.
+            by_name=defaultdict(list)
+            for record in survivor_pairs:
+                p=own[getattr(record,own_field)]
+                by_name[canonical(p.name)].append(record)
+            signature_index=None
+            excluded=set()
+            for i in sorted(indices):
+                part=own[i]
+                tested=set()
+                def prove_matching(records_to_check,fallback=False):
+                    for record in records_to_check:
+                        record_id=getattr(record,own_field)
+                        if record_id in tested:continue
+                        tested.add(record_id)
+                        if fallback:stat['repeated_signature_fallback_checks']+=1
+                        source=own[record_id]
+                        target=opposite[getattr(record,other_field)]
+                        if (known_same_definition(part,source) and
+                            known_same_definition(part,target)):
+                            if fallback:stat['repeated_signature_fallback_proofs']+=1
+                            return True
+                    return False
+                if prove_matching(by_name.get(canonical(part.name),())):
+                    excluded.add(i)
+                    continue
+                if signature_index is None:
+                    signature_index=defaultdict(list)
+                    for record in survivor_pairs:
+                        signature_index[signature(own[getattr(record,own_field)])].append(record)
+                if prove_matching(signature_index.get(signature(part),()),fallback=True):
+                    excluded.add(i)
+            return excluded
+
+        excluded_occurrences=exclude_occurrences(old_ids,a,b,'a_index','b_index')
+        excluded_added=exclude_occurrences(new_ids,b,a,'b_index','a_index')
         old_ids-=excluded_occurrences
-    stat['removed_repeated_occurrences_excluded']=len(excluded_occurrences)
-    # Symmetric population guard: when a removed/added occurrence belongs to
-    # a definition already proven present on the SAME side of a surviving
-    # correspondence, it is an occurrence delta, not a material revision.
-    # Never infer equality from name, volume or bounding box alone.
-    excluded_added=set()
-    if geometry_context is not None:
-        surviving_b_by_name=defaultdict(list)
-        for r in records:
-            if (r.a_index is not None and r.b_index is not None and
-                r.status in ('SAME','RENAMED','UNCHANGED','MOVED')):
-                surviving_b_by_name[canonical(b[r.b_index].name)].append(r)
-        for j in new_ids:
-            for r in surviving_b_by_name.get(canonical(b[j].name),()):
-                if (known_same_definition(b[j],b[r.b_index]) and
-                    known_same_definition(b[j],a[r.a_index])):
-                    excluded_added.add(j)
-                    break
         new_ids-=excluded_added
+    stat['removed_repeated_occurrences_excluded']=len(excluded_occurrences)
     stat['added_repeated_occurrences_excluded']=len(excluded_added)
     if not old_ids or not new_ids:return list(records),{},stat
     if progress:progress(f'Zmiany materiału: {len(old_ids)} starych i {len(new_ids)} nowych elementów; sprawdzanie geometrii…')

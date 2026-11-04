@@ -217,3 +217,72 @@ def test_spatial_interval_index_handles_touching_and_large_sparse_assemblies():
     assert list(index.candidates(query,0.01))==[1235]
     assert list(index.candidates(query,0.0))==[]
     assert list(index.candidates(np.array([-1000,0,0,-500,10,10]),.01))==[]
+
+
+def test_four_repeated_renamed_removed_parts_do_not_become_uncertain(monkeypatch):
+    """Four duplicates of a confirmed survivor must bypass broken Common."""
+    from dsac29 import native_guard
+    a=[part(x,10,'DUPLICATE_A_'+str(k)) for k,x in enumerate([0,25,50,75,100])]
+    b=[part(100,10,'DIFFERENT_STEP_LABEL'),part(0,11,'NEW_PART')]
+    # Simulate independent B-Rep copies with exact definition proofs.
+    group={id(p) for p in a}|{id(b[0])}
+    class ExactContext:
+        def has_rigid_proof(self,left,right,tolerance):return False
+        def same_definition(self,left,right):
+            return id(left) in group and id(right) in group
+    saved=[Record(i,None,'REMOVED','') for i in range(4)]+[
+        Record(4,0,'SAME','CAD matched this instance'),
+        Record(None,1,'ADDED','')]
+    def should_not_boolean(*args,**kwargs):
+        raise AssertionError('A repeated, verified part should not enter Common')
+    monkeypatch.setattr(native_guard,'guarded_common',should_not_boolean)
+    result,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,saved,geometry_context=ExactContext(),review_approval=lambda _: 'review')
+    assert len([x for x in result if x.status=='REMOVED'])==4
+    assert len([x for x in result if x.status=='SAME'])==1
+    assert len([x for x in result if x.status=='ADDED'])==1
+    assert all(x.status!='UNCERTAIN' for x in result)
+    assert stat['removed_repeated_occurrences_excluded']==4
+    assert stat['repeated_signature_fallback_proofs']==4
+    assert stat['boolean_checks']==0 and not stat.get('incomplete')
+    assert not regions
+
+
+def test_added_occurrences_of_surviving_geometry_dont_enter_material_common(monkeypatch):
+    """A mirrored population change must not masquerade as a material revision."""
+    from dsac29 import native_guard
+    a=[part(100,10,'origin-name'),part(0,11,'unrelated-old')]
+    b=[part(100,10,'surviving-new-name')]+[
+        part(x,10,'fresh-step-name-'+str(k)) for k,x in enumerate([0,25,50,75])]
+    group={id(a[0])}|{id(p) for p in b}
+    class ExactContext:
+        def has_rigid_proof(self,left,right,tolerance):return False
+        def same_definition(self,left,right):
+            return id(left) in group and id(right) in group
+    saved=[Record(0,0,'RENAMED','proven'),Record(1,None,'REMOVED','')]
+    saved.extend(Record(None,k,'ADDED','') for k in range(1,5))
+    monkeypatch.setattr(native_guard,'guarded_common',
+                        lambda *x,**kw:(_ for _ in ()).throw(AssertionError('unexpected Common')))
+    result,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,saved,geometry_context=ExactContext(),review_approval=lambda _: 'review')
+    assert len([r for r in result if r.status=='ADDED'])==4
+    assert all(r.status!='UNCERTAIN' for r in result)
+    assert stat['added_repeated_occurrences_excluded']==4
+    assert stat['boolean_checks']==0 and not stat.get('incomplete')
+
+
+def test_similar_signature_and_name_cannot_replace_exact_geometry_proof():
+    """Never reclassify real changes merely because volume/signature resemble."""
+    from dsac29 import native_guard
+    a=[part(0,10,'A'),part(25,10,'B')]
+    b=[part(25,10,'C'),part(0,11,'D')]
+    class NoProof:
+        def has_rigid_proof(self,left,right,tolerance):return False
+        def same_definition(self,left,right):return False
+    saved=[Record(0,None,'REMOVED',''),Record(1,0,'SAME',''),Record(None,1,'ADDED','')]
+    result,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,saved,geometry_context=NoProof(),review_approval=lambda _: 'review')
+    assert stat['removed_repeated_occurrences_excluded']==0
+    assert stat['added_repeated_occurrences_excluded']==0
+    # The unmatched pair remains eligible for independent Common/Cut.
+    assert stat['boolean_checks']>=1
