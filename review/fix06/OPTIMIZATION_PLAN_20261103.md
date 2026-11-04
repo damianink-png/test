@@ -159,3 +159,22 @@ force, granice tolerancji i duże rzadkie złożenie.
   geometria/STEP PASS. Pełne CI/EXE wymaga potwierdzenia na SHA commita.
 - Nadal DO WERYFIKACJI: niewyjaśnione bryły OpenArm, zmniejszenie
   pełnego STEP kompaktowego w ZW3D 2019, realne zużycie GPU po HTML.
+
+## 2026-11-04 — krytyczny błąd wyrównania z 2 baz (zdjęcie użytkownika)
+- Potwierdzono ścieżkę: legacy `_align_anchors()` raportuje 2/2 baz i
+  translację -130/-280/-410 mm przed potwierdzeniem całego złożenia.
+  Następnie kosztowny `frame_support(...,verify_all=True)` sprawdza
+  rzeczywiste części i może odrzucić hipotezę dopiero po długim czasie.
+- Nowa bramka przed pełnym B-Rep: minimum niezależnych położeń i
+  kandydatów geometrycznych całego złożenia, potem próbka B-Rep.
+  Brak dowodu => odrzuć kandydat bez kosztownej pełnej weryfikacji.
+- Reużycie zweryfikowanych dowodów z `align_assembly` w CLI
+  zamiast ponownego pełnego kosztownego B-Rep dla tego samego kadru.
+- Nie wolno automatycznie kontynuować analizy w oryginalnych
+  współrzędnych po nieudanym wyszukiwaniu: użytkownik musi świadomie
+  wybrać oryginalne położenie albo przerwać. Modal ukrywa opcję
+  ponowienia identycznego wyszukiwania po porażce.
+- Dwa testy regresji: 2/2 odrzucone bez pełnego B-Rep dla dużego
+  złożenia oraz wymóg świadomego wyboru oryginału.
+- Nie twierdzić, że przesunięcie z przykładu jest prawidłowe:
+  nie posiadamy źródłowych plików STEP ani logów tego przebiegu.

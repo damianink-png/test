@@ -9,6 +9,25 @@ from .report import produce
 from . import trace_r22 as trace
 
 
+def confirm_original_after_failed_search(alignment_approval,reason,progress=None):
+    """Never silently undo a suspected shift after an explicit failed search.
+
+    The caller may continue in original coordinates ONLY on a new, explicit
+    'original' decision. 'search' is not offered again for the same failure.
+    """
+    reason=str(reason or 'Brak dowodow B-Rep dla przesuniecia.')
+    if progress:
+        progress('UWAGA: nie potwierdzono przesuniecia. Nie uruchamiam automatycznie porownania bez wyrownania.')
+    if alignment_approval is None:
+        raise InterruptedError('Nie potwierdzono przesuniecia: '+reason)
+    decision=alignment_approval({'status':'unresolved','search_failed':True,
+                                 'reason':reason})
+    if decision!='original':
+        raise InterruptedError('Przerwano: przesuniecie niepotwierdzone, nie wybrano oryginalnego polozenia.')
+    if progress:progress('Uzytkownik swiadomie wybral porownanie w oryginalnym polozeniu.')
+    return 'original'
+
+
 def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress=print,cancelled=None,colors=None,diff_step=True,preview3d=False,align=False,direct_scene=False,manual_review=None,revision_style=False,old_alpha=0.4,thumbnails=False,max_solids=20000,full_bom=True,bom_fast=False,bom_csv=True,auto_align=False,alignment_approval=None,force_unrelated=False,material_approval=None):
     # Both the desktop UI and CLI use this entrypoint. Reject NaN/Inf and
     # impossible settings before importing any CAD or touching output files.
@@ -197,7 +216,15 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                         candidate_offset=np.asarray(proposal.get('translation_B_to_A_mm',[0,0,0]),dtype=float)
                         candidate_rotation=np.asarray(proposal.get('rotation_B_to_A',np.eye(3)),dtype=float)
                         relocated=[_relocate(part,candidate_rotation,candidate_offset) for part in b]
-                        checked=frame_support(a,relocated,tolerance,proofs=24,progress=progress,cancelled=cancelled)
+                        # align_assembly may have already completed FULL
+                        # B-Rep verification on this very same placed model.
+                        # Never repeat those expensive native calls merely to
+                        # re-confirm the identical frame in the CLI.
+                        checked=proposal.get('whole_assembly_support')
+                        if checked is None:
+                            checked=frame_support(a,relocated,tolerance,proofs=12,progress=progress,cancelled=cancelled)
+                        elif progress:
+                            progress('Wyrównanie: wykorzystano gotowe dowody B-Rep całego złożenia.')
                         required=max(8,ceil(.30*min(len(a),len(b))))
                         if checked['count']<required or checked['proofs']<min(8,checked['checked']):
                             proposal={'status':'unresolved','reason':f'Wyrównanie z samych baz odrzucone: {checked["proofs"]}/{checked["checked"]} dowodów B-Rep, {checked["count"]} kandydatów; wymagane co najmniej {required} par.'}
@@ -212,19 +239,15 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                     else:
                         alignment.update(status='search_unresolved_original',applied=False,
                                          reason=str(proposal.get('reason','Nie potwierdzono przesunięcia.')))
-                        if progress:
-                            progress('UWAGA: '+alignment['reason']+
-                                     ' Kontynuuję w oryginalnych współrzędnych.')
-                        decision='original'
+                        decision=confirm_original_after_failed_search(
+                            alignment_approval,alignment['reason'],progress)
                 except AlignmentUnavailable as exc:
                     # An unsuccessful explicit search must not reopen the
                     # same "search for shift" dialog indefinitely.
                     alignment.update(status='search_failed_original',applied=False,
                                      reason='Nie znaleziono potwierdzonego przesunięcia: '+str(exc))
-                    if progress:
-                        progress('UWAGA: '+alignment['reason']+
-                                 ' Kontynuuję porównanie w oryginalnych współrzędnych.')
-                    decision='original'
+                    decision=confirm_original_after_failed_search(
+                        alignment_approval,alignment['reason'],progress)
             if decision=='original':
                 if alignment.get('status') in ('search_failed_original','search_unresolved_original'):
                     alignment.update(applied=False)
