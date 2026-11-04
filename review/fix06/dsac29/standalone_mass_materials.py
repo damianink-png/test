@@ -38,14 +38,22 @@ def _repair_table_text(markup: str) -> str:
             ) + "<",
             body,
         )
-    return re.sub(r"(?is)<tbody\b[^>]*>.*?</tbody\s*>", fix_body, markup)
+    # Some legacy reports use table rows without an explicit TBODY tag.
+    # Repair text inside TD cells directly, leaving headers, scripts and
+    # attribute values untouched.
+    return re.sub(r"(?is)<td\b[^>]*>.*?</td\s*>", fix_body, markup)
 
 
 def enhance_mass_html(folder, density=7850):
     path = Path(folder) / "RAPORT_MASY.html"
     if not path.is_file():
         return False
-    initial = path.read_text(encoding="utf-8")
+    try:
+        initial = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        # Older builds sometimes wrote HTML bytes in Windows-1250.
+        # Decode once and then rewrite with an explicit UTF-8 charset.
+        initial = path.read_bytes().decode("cp1250")
     if 'id="ds-material-enhancement"' in initial:
         return True
     base_density = float(density)
@@ -59,7 +67,10 @@ def enhance_mass_html(folder, density=7850):
     html = _repair_table_text(initial)
     # A meta charset is mandatory; writing UTF-8 bytes alone is insufficient
     # for browsers that open the file directly from disk.
-    if not re.search(r"(?is)<meta\b[^>]*charset\s*=", html):
+    legacy_charset = re.search(r"(?is)<meta\b[^>]*charset\s*=[^>]*>", html)
+    if legacy_charset:
+        html = html[:legacy_charset.start()] + '<meta charset="utf-8">' + html[legacy_charset.end():]
+    else:
         if re.search(r"(?i)<head\b[^>]*>", html):
             html = re.sub(r"(?i)<head\b[^>]*>",
                           lambda m: m.group(0) + '<meta charset="utf-8">',

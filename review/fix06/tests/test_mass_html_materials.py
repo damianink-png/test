@@ -66,3 +66,18 @@ def test_missing_bom_table_raises_an_explicit_error(tmp_path):
     (tmp_path/"RAPORT_MASY.html").write_text("<html><body><h1>Masa</h1></body></html>",encoding="utf-8")
     with pytest.raises(ValueError,match="tabeli BOM"):
         enhance_mass_html(tmp_path,7850)
+
+
+def test_legacy_mass_html_without_tbody_and_declared_windows_charset(tmp_path):
+    # Some previous reports omitted TBODY and declared a legacy charset.
+    # The generated file is always UTF-8 with no stale Windows meta tag.
+    sample=HTML.replace("<head>","<head><meta charset='windows-1250'>")
+    sample=sample.replace("<tbody>","").replace("</tbody>","")
+    p=tmp_path/"RAPORT_MASY.html"
+    p.write_text(sample,encoding="utf-8")
+    assert enhance_mass_html(tmp_path,8000)
+    fixed=p.read_text(encoding="utf-8")
+    assert "Płyta dolna wspornika" in fixed
+    assert "koła linowego" in fixed
+    assert "<meta charset=\"utf-8\">" in fixed
+    assert "windows-1250" not in fixed
