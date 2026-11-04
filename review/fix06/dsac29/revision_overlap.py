@@ -94,12 +94,20 @@ def _score(v,a,b,same):
         return None
     return 0.65*iou+0.35*frac+(0.015 if same else 0.)
 
-def _reuse_common_volume(a, b, saved_a, saved_b):
-    """Exact native definition + same relative pose: valid translated proof."""
+def _reuse_common_volume(a, b, saved_a, saved_b, registry=None):
+    """Reuse a positive proof for identical LOCAL B-Reps at same relative pose.
+
+    Separately exported STEP instances can have distinct TopoDS TShapes.
+    Exact serialized local B-Rep identity, NEVER numeric similarity, can
+    independently prove that two occurrences share the same definition.
+    """
     sa, sb = a.shape, b.shape
     ca, cb = saved_a.shape, saved_b.shape
     if not sa.IsPartner(ca) or not sb.IsPartner(cb):
-        return False
+        if registry is None or signature(a)!=signature(saved_a) or signature(b)!=signature(saved_b):
+            return False
+        if not registry.same_definition(a,saved_a) or not registry.same_definition(b,saved_b):
+            return False
     if sa.Orientation() != ca.Orientation() or sb.Orientation() != cb.Orientation():
         return False
     # Do not collapse coincident/duplicate occurrences: every candidate in
@@ -124,7 +132,12 @@ class _TranslatedProofIndex:
     Boolean result can become a positive proof.
     """
     def __init__(self, limit=128):
+        from .geometry_registry import GeometryRegistry
         self.groups=defaultdict(list)
+        # Numeric signatures are only bucket hints; hits need full B-Rep
+        # identity and matching relative OCCT locations before proof reuse.
+        self.signature_groups=defaultdict(list)
+        self.registry=GeometryRegistry()
         self.limit=limit
         self.saved=0
         self.candidates_checked=0
@@ -137,15 +150,22 @@ class _TranslatedProofIndex:
         return (hash(sa),int(sa.Orientation()),hash(sb),int(sb.Orientation()))
 
     def find(self,a,b):
-        for old_a,old_b,proof in self.groups.get(self._key(a,b),()):
-            self.candidates_checked+=1
-            if _reuse_common_volume(a,b,old_a,old_b):
-                return (old_a,old_b,proof)
+        seen=set()
+        for entries in (self.groups.get(self._key(a,b),()),
+                        self.signature_groups.get((signature(a),signature(b)),())):
+            for old_a,old_b,proof in entries:
+                key=(id(old_a),id(old_b))
+                if key in seen:continue
+                seen.add(key)
+                self.candidates_checked+=1
+                if _reuse_common_volume(a,b,old_a,old_b,self.registry):
+                    return (old_a,old_b,proof)
         return None
 
     def save(self,a,b,proof):
         if self.saved>=self.limit:return
         self.groups[self._key(a,b)].append((a,b,proof))
+        self.signature_groups[(signature(a),signature(b))].append((a,b,proof))
         self.saved+=1
 
 
