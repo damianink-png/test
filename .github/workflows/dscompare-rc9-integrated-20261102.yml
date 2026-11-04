@@ -16,6 +16,9 @@ on:
       - 'review/fix06/ci/patch_geometry_registry_streaming.py'
       - 'review/fix06/ci/patch_alignment_stage2.py'
       - 'review/fix06/ci/patch_material_timeout.py'
+      - 'review/fix06/ci/patch_common_exclusion_dispatch.py'
+      - 'review/fix06/ci/patch_material_worker_failclosed.py'
+      - 'review/fix06/dsac29/common_exclusion.py'
       - 'review/fix06/ci/patch_stale_failed_pairs.py'
       - 'review/fix06/ci/patch_assignment_uniqueness.py'
       - 'review/fix06/ci/patch_legacy_audit_tests.py'
@@ -92,6 +95,9 @@ jobs:
           Copy-Item review/fix06/dsac29/common_exclusion.py baseline/dscompare_rc9_manual/dsac29/common_exclusion.py -Force
           python review/fix06/ci/patch_common_exclusion_dispatch.py baseline/dscompare_rc9_manual/dsac29/native_guard.py
           if ($LASTEXITCODE -ne 0) { throw 'Native Common exclusion dispatch patch failed' }
+          # Prove the overlay is idempotent on the pinned source snapshot.
+          python review/fix06/ci/patch_common_exclusion_dispatch.py baseline/dscompare_rc9_manual/dsac29/native_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Repeated Common exclusion dispatch changed the source' }
           python review/fix06/ci/patch_material_worker_failclosed.py baseline/dscompare_rc9_manual
           if ($LASTEXITCODE -ne 0) { throw 'Native material worker fail-closed patch failed' }
           python review/fix06/ci/patch_material_timeout.py baseline/dscompare_rc9_manual/dsac29/material_guard.py
