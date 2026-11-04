@@ -147,3 +147,39 @@ def test_two_independently_exported_step_assemblies_with_only_translation(tmp_pa
     assert proposal['checked_sample_count']==12
     assert proposal['verified_sample_count']==12
     assert proposal['verification_scope']=='sample_then_final_compare'
+
+
+
+def test_large_legacy_two_anchor_does_not_verify_all_before_final_compare(monkeypatch):
+    """Legacy two-anchor fallback must never preverify all 600+ solids."""
+    from dsac29 import alignment,registration_gate,compare,step_reexport_tolerance
+    a=[SimpleNamespace(center=np.array([float(i)*10,0.,0.])) for i in range(601)]
+    b=[SimpleNamespace(center=np.array([float(i)*10,0.,0.])) for i in range(601)]
+    def unavailable(*args,**kwargs):
+        raise alignment.AlignmentUnavailable('Synthetic competing fallback')
+    monkeypatch.setattr(alignment,'_align_global_centroid_translation',unavailable)
+    monkeypatch.setattr(alignment,'_align_sparse_translation',unavailable)
+    monkeypatch.setattr(alignment,'_align_repeated_translation',unavailable)
+    monkeypatch.setattr(alignment,'_align_anchors',
+                        lambda *a,**kw:(b,{'status':'registered','votes':2,'method':'two_anchor'}))
+    monkeypatch.setattr(compare,'_spatial_index',lambda *a,**kw:{})
+    monkeypatch.setattr(compare,'_nearby',
+                        lambda _index,part,_radius:[int(round(float(part.center[0])/10))])
+    monkeypatch.setattr(step_reexport_tolerance,'world_candidate',lambda *a,**kw:True)
+    calls=[]
+    def fake_support(left,right,tolerance,proofs=8,verify_all=False,proof_cache=None,**kwargs):
+        assert not verify_all,'Full B-Rep preflight resurrected'
+        calls.append(proofs)
+        if len(calls)==1:
+            return {'count':0,'ratio':0.,'checked':0,'proofs':0}
+        if proof_cache is not None:
+            for k in range(48):proof_cache.results[k,k]=True
+        return {'count':601,'ratio':1.,'checked':min(proofs,601),
+                'proofs':min(proofs,601)}
+    monkeypatch.setattr(registration_gate,'frame_support',fake_support)
+    result,info=alignment.align_assembly(a,b,.01)
+    assert result is b
+    assert calls==[12,8,48]
+    assert info['verification_scope']=='sample_then_final_compare'
+    assert info['votes']==601 and len(info['certified_pairs'])==48
+    assert info['full_pair_map']==[]
