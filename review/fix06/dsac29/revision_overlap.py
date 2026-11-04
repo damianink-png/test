@@ -662,6 +662,23 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             if not recover_failures:
                 if isinstance(exc,NativeGeometryFailure):raise
                 raise NativeGeometryFailure('Niekompletna analiza różnic materiału: '+str(exc)) from exc
+            # Running an identical isolated material operation immediately
+            # after its subprocess timeout repeats the same 120–240s deadline
+            # without new evidence. Keep the part explicitly UNCERTAIN.
+            import subprocess
+            cause=exc
+            timed_out=False
+            while cause is not None:
+                if isinstance(cause,subprocess.TimeoutExpired):
+                    timed_out=True
+                    break
+                cause=cause.__cause__
+            if timed_out:
+                stat['region_retry_skipped_timeout']=stat.get('region_retry_skipped_timeout',0)+1
+                trace.mark('revision_material_regions_retry','SKIP_IDENTICAL_TIMEOUT',a_index=i,b_index=j)
+                mark_failure(i,j,f'Podział materiału przekroczył limit czasu: {exc}. '
+                               'Nie powtórzono identycznej kosztownej operacji.')
+                continue
             # Critical: initial Common can succeed but the final region split
             # can fail in the large assembly. Retry this SAME verified pair
             # independently, with no cached Common or translated regions.

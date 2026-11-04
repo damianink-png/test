@@ -392,3 +392,24 @@ def test_repeated_renamed_changed_definition_reuses_proven_common_and_cut():
     assert stat['accepted']==4 and not stat['incomplete']
     assert stat['boolean_checks']<=2
     assert stat['region_proof_reuse']>=2
+
+
+def test_repeated_material_timeout_is_not_retried_on_unchanged_operands(monkeypatch):
+    import subprocess
+    from dsac29 import native_guard
+    old=[part(0,10,'same_old')]
+    new=[part(0,11,'same_new')]
+    called=[]
+    def timeout(*args,**kwargs):
+        called.append(1)
+        try: raise subprocess.TimeoutExpired(cmd='material',timeout=120)
+        except subprocess.TimeoutExpired as native:
+            raise native_guard.NativeGeometryFailure('OCCT material timeout') from native
+    monkeypatch.setattr(revision_overlap,'calculate',timeout)
+    records=[Record(0,None,'REMOVED',''),Record(None,0,'ADDED','')]
+    out,regions,stat=revision_overlap.merge_material_revisions(
+        old,new,records,review_approval=lambda _:'review')
+    assert len(called)==1
+    assert stat['region_retry_skipped_timeout']==1
+    assert stat['incomplete']
+    assert {r.status for r in out}=={'UNCERTAIN'}
