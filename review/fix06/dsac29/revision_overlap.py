@@ -485,6 +485,32 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             raise NativeGeometryFailure('Limit liczby testów materiału — analiza niekompletna')
         if progress and idx and idx%50==0:
             progress(f'R17: geometria rewizji {idx}/{len(old_ids)}; B-Rep {stat["boolean_checks"]}')
+    # Recover earlier speculative Common failures using a LATER positive
+    # witness for exact local old/new B-Reps and the same relative CAD pose.
+    # Matching names, signatures, bounding boxes or similar volumes are
+    # NEVER sufficient. Invalid original B-Reps still fail final bind_regions.
+    stat['earlier_failures_recovered_by_exact_repeat']=0
+    if recover_failures and failures and common_cache.saved:
+        unresolved=[]
+        for failure in failures:
+            i,j=failure['a_index'],failure['b_index']
+            evidence=common_cache.find(a[i],b[j])
+            if evidence is None:
+                unresolved.append(failure)
+                continue
+            score=_score(evidence[2],a[i],b[j],_name_eq(a[i],b[j]))
+            if score is None:
+                unresolved.append(failure)
+                continue
+            edges[i,j]=score
+            if i not in best_common or score>best_common[i][0]:
+                best_common[i]=(score,j,None,None)
+            stat['earlier_failures_recovered_by_exact_repeat']+=1
+            trace.mark('revision_repeat_positive_proof','RECOVERED_EARLIER_PAIR',
+                       a_index=i,b_index=j,proof='exact_local_brep_relative_location')
+        failures=unresolved
+        failed_old={f['a_index'] for f in failures}
+        failed_new={f['b_index'] for f in failures}
     # Post-pass: retry independently after the large-assembly candidate scan.
     # A pair that fails in a large assembly may pass as an isolated STEP pair.
     # Every retry runs a NEW guarded Common subprocess; no previous invalid
