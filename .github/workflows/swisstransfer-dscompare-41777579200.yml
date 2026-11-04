@@ -55,7 +55,7 @@ jobs:
           else
             # This validation ID was confirmed by the user in successful run 41522643915.
             # Swissfer normally caches confirmed IDs and reuses them until they expire.
-            gh run download 41521083664 --repo "$GITHUB_REPOSITORY" --name swissfer-pending-validation --dir pending
+            gh run download 41643980259 --repo "$GITHUB_REPOSITORY" --name swissfer-validation-state --dir pending
           fi
           cp pending/email-validations.json "$XDG_CONFIG_HOME/swissfer/email-validations.json"
           python3 - "$XDG_CONFIG_HOME/swissfer/email-validations.json" "$STAGE" <<'PYCODE'
