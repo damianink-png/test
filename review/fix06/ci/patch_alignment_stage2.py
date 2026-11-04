@@ -61,7 +61,7 @@ def patch(path):
         support=frame_support(a,aligned,tolerance,verify_all=True,progress=progress)
         sampled_ok=True
     if (sampled_ok and support['ratio']>=.60
-            and support['count']>=min(2,min(len(a),len(b))):"""
+            and support['count']>=min(2,min(len(a),len(b)))):"""
     if source.count(original)!=1:
         if source.count("A translation supported by 2/2 selected anchors") == 1:
             return
