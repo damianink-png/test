@@ -17,6 +17,7 @@ on:
       - 'review/fix06/ci/patch_alignment_stage2.py'
       - 'review/fix06/ci/patch_material_timeout.py'
       - 'review/fix06/ci/patch_native_completion_read.py'
+      - 'review/fix06/tests/test_native_completion_read.py'
       - 'review/fix06/ci/patch_common_exclusion_dispatch.py'
       - 'review/fix06/ci/patch_material_worker_failclosed.py'
       - 'review/fix06/dsac29/common_exclusion.py'
@@ -84,6 +85,7 @@ jobs:
           Copy-Item review/fix06/tests/test_stale_failed_pair_guard.py baseline/dscompare_rc9_manual/tests/ -Force
           Copy-Item review/fix06/tests/test_audit_legacy_guards.py baseline/dscompare_rc9_manual/tests/ -Force
           Copy-Item review/fix06/tests/test_large_frame_sampling.py baseline/dscompare_rc9_manual/tests/ -Force
+          Copy-Item review/fix06/tests/test_native_completion_read.py baseline/dscompare_rc9_manual/tests/ -Force
           python review/fix06/apply_rc9_20261102.py baseline/dscompare_rc9_manual
           foreach ($module in @('revision_overlap.py','candidate_policy.py','overlap_evidence.py','cli.py','report.py','material_mass_report.py','standalone_mass_materials.py','name_encoding.py','worker_v37.py','deferred_alignment.py','preview3d.py','preview_template.html','step_io.py')) {
             Copy-Item "review/fix06/dsac29/$module" "baseline/dscompare_rc9_manual/dsac29/$module" -Force
@@ -131,7 +133,7 @@ jobs:
           python -m pip install pytest cadquery-ocp==7.9.3.1.1 numpy
           # Run native OCCT tests in fresh Python processes; combined pytest
           # can retain worker state and stall unrelated subsequent tests.
-          foreach ($test in @('test_revision_overlap_policy.py','test_revision_common_recovery.py','test_partial_material_continue.py','test_material_worker_failclosed.py','test_rc9_retry_after_assembly_failure.py','test_output_palette.py','test_stability.py','test_streamed_preview.py','test_20261104_audit_fixes.py','test_alignment_stage2_guard.py','test_material_timeout_policy.py','test_material_deterministic_retry_guard.py','test_stale_failed_pair_guard.py','test_audit_legacy_guards.py','test_mass_html_materials.py','test_large_frame_sampling.py')) {
+          foreach ($test in @('test_revision_overlap_policy.py','test_revision_common_recovery.py','test_partial_material_continue.py','test_material_worker_failclosed.py','test_rc9_retry_after_assembly_failure.py','test_output_palette.py','test_stability.py','test_streamed_preview.py','test_20261104_audit_fixes.py','test_alignment_stage2_guard.py','test_material_timeout_policy.py','test_material_deterministic_retry_guard.py','test_stale_failed_pair_guard.py','test_audit_legacy_guards.py','test_mass_html_materials.py','test_large_frame_sampling.py','test_native_completion_read.py')) {
             python -m pytest -q "tests/$test"
             if ($LASTEXITCODE -ne 0) { throw "Regression failed: $test" }
           }
