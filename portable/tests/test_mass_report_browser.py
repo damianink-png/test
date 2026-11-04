@@ -49,7 +49,7 @@ def run():
             assert data["rows"][0]["material"]=="Aluminium 6061"
             with page.expect_download() as download_info:
                 page.get_by_role("button",name="Eksportuj CSV").click()
-            csv=Path(download_info.value.path()).read_text(encoding="utf-8-sig")
+            csv=Path(download_info.value.path()).read_bytes().decode("utf-8-sig")
             assert "Płyta dolna" in csv and "Aluminium 6061" in csv
             assert "\r\n" in csv and ";" in csv
             assert not errors,errors
