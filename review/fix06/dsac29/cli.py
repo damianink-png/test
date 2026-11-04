@@ -191,8 +191,12 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                 # proofs even for 2/2 fully validated matches forced a
                 # redundant confirmation prompt despite a unique shift.
                 fully_verified_small=(2<=pop<8 and votes==pop and original==0)
-                if (fully_verified_small or
-                    (votes>=max(2*original,original+ceil(.30*pop))
+                # An explicit approval callback is authoritative for
+                # small assemblies, even when every sample matches. Users
+                # must still be able to cancel a proposed shift (and avoid
+                # publishing comparison results in a refused frame).
+                if ((fully_verified_small and alignment_approval is None) or
+                    (pop>=8 and votes>=max(2*original,original+ceil(.30*pop))
                      and votes>=max(8,ceil(.50*pop)))):
                     decision='align'
                     automatic=True
