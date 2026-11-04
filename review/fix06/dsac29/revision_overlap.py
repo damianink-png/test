@@ -319,7 +319,8 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     stat['spatial_candidates_scanned']=0
     edges={}
     best_common={}
-    # Store verified reusable Common proofs for large assemblies, not only the first 128.\n    common_cache=_TranslatedProofIndex(limit=min(4096,max(128,len(old_ids)+len(new_ids))))
+    # Store verified reusable Common proofs for large assemblies, not only the first 128.
+    common_cache=_TranslatedProofIndex(limit=min(4096,max(128,len(old_ids)+len(new_ids))))
     failed_old=set();failed_new=set();failures=[]
     def mark_failure(i,j,error,code='BOOLEAN_FAILED'):
         failed_old.add(i);failed_new.add(j)
