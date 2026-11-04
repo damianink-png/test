@@ -53,7 +53,7 @@ def test_enhanced_mass_report_is_utf8_interactive_and_idempotent(tmp_path):
         scripts=re.findall(r'<script[^>]*>(.*?)</script>',generated,flags=re.I|re.S)
         assert scripts
         for js in scripts:
-            checked=subprocess.run(["node","--check"],input=js,text=True,capture_output=True)
+            checked=subprocess.run(["node","--check"],input=js,text=True,encoding="utf-8",capture_output=True)
             assert checked.returncode==0,checked.stderr
 
 
