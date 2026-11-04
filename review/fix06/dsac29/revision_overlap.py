@@ -10,7 +10,7 @@ from .native_guard import NativeGeometryFailure
 from .overlap_evidence import classify_overlap
 from .candidate_policy import decide_pair
 from collections import defaultdict
-from math import sqrt
+from math import sqrt, isfinite
 import numpy as np
 from .compare import Record
 from .names import canonical
@@ -76,6 +76,9 @@ def _bbox_intersect(a,b):
     return float(np.prod(np.maximum(0.,np.minimum(a[3:],b[3:])-np.maximum(a[:3],b[:3]))))
 
 def _score(v,a,b,same):
+    # Reject invalid Common before ranking, without changing overlap thresholds.
+    if not all(isfinite(float(x)) for x in (v,a.volume,b.volume)) or v<0:
+        return None
     top=max(a.volume,b.volume)
     lo=min(a.volume,b.volume)
     union=a.volume+b.volume-v
@@ -186,7 +189,24 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
               intermediate_overlap_reviewed_pairs=0,mutual_overlap_candidate_pairs=0,
               invalid_overlap_evidence=0,retry_budget_attempted=0,retry_budget_recovered=0,
               min_common_larger_same_name=SAME_NAME_MIN,
-              min_common_larger_different_name=OTHER_NAME_MIN,min_iou=MIN_IOU)
+              min_common_larger_different_name=OTHER_NAME_MIN,min_iou=MIN_IOU,
+               brep_calls_total=0,brep_calls_by_phase={},
+               brep_failures_by_phase={},brep_seconds_by_phase={})
+    def measured_brep(phase,i,j,fn,*args,**kwargs):
+        """Record every native attempt, even errors and timeouts."""
+        started=perf_counter()
+        stat['brep_calls_total']+=1
+        calls=stat['brep_calls_by_phase']
+        calls[phase]=calls.get(phase,0)+1
+        try:
+            return trace.brep_call(phase,i,j,fn,*args,**kwargs)
+        except BaseException:
+            failures=stat['brep_failures_by_phase']
+            failures[phase]=failures.get(phase,0)+1
+            raise
+        finally:
+            elapsed=stat['brep_seconds_by_phase']
+            elapsed[phase]=round(elapsed.get(phase,0.)+perf_counter()-started,4)
     if not old_ids or not new_ids:return list(records),{},stat
     # A removed occurrence of a repeated, still-present definition is not
     # automatically a material revision. Only exclude it when the existing
@@ -251,9 +271,9 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     best_common={}
     common_cache=_TranslatedProofIndex()
     failed_old=set();failed_new=set();failures=[]
-    def mark_failure(i,j,error):
+    def mark_failure(i,j,error,code='BOOLEAN_FAILED'):
         failed_old.add(i);failed_new.add(j)
-        entry={'a_index':i,'b_index':j,'error':str(error)}
+        entry={'a_index':i,'b_index':j,'error':str(error),'code':code}
         failures.append(entry)
         trace.mark('revision_material_pair','UNVERIFIED',**entry)
         if progress:progress(f'Niepotwierdzona para A[{i}] / B[{j}]: {error}; kontynuuję inne pary.')
@@ -302,7 +322,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 stat['budget_exceeded']=True
                 if not recover_failures:
                     raise NativeGeometryFailure('Limit czasu lub liczby testów materiału — analiza niekompletna')
-                mark_failure(i,j,'Nie wykonano testu: przekroczony limit czasu lub liczby operacji')
+                mark_failure(i,j,'Nie wykonano testu: przekroczony limit czasu lub liczby operacji',code='BUDGET_EXCEEDED')
                 continue
             cached=common_cache.find(ref,b[j])
             shape=None
@@ -317,9 +337,9 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             try:
                 if cached is None and guarded_large:
                     from .native_guard import guarded_common
-                    shape=trace.brep_call('revision_common_isolated',i,j,guarded_common,ref.shape,b[j].shape,tolerance)
+                    shape=measured_brep('revision_common_isolated',i,j,guarded_common,ref.shape,b[j].shape,tolerance)
                 elif cached is None:
-                    shape=trace.brep_call('revision_common',i,j,operate,BRepAlgoAPI_Common,ref.shape,b[j].shape,tolerance)
+                    shape=measured_brep('revision_common',i,j,operate,BRepAlgoAPI_Common,ref.shape,b[j].shape,tolerance)
                 if cached is None:
                     try:
                         evidence=bind_common(shape,ref.shape,b[j].shape,tolerance)
@@ -344,7 +364,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 # source-bound material regions pass strict conservation.
                 if shape is None and cached is None and not stat['budget_exceeded']:
                     try:
-                        recovered_regions=trace.brep_call('revision_common_alternative_regions',i,j,calculate,ref,b[j],tolerance)
+                        recovered_regions=measured_brep('revision_common_alternative_regions',i,j,calculate,ref,b[j],tolerance)
                         bind_regions(recovered_regions,ref,b[j],tolerance)
                         common=volume(recovered_regions.common)
                         stat['alternative_region_recovery']+=1
@@ -361,7 +381,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                         try:
                             from .common_exclusion import guarded_exclusion
                             threshold=(SAME_NAME_MIN if _name_eq(ref,b[j]) else OTHER_NAME_MIN)*max(ref.volume,b[j].volume)
-                            proof=trace.brep_call('revision_common_exclusion',i,j,guarded_exclusion,
+                            proof=measured_brep('revision_common_exclusion',i,j,guarded_exclusion,
                                                   ref.shape,b[j].shape,tolerance,threshold)
                             if proof['excluded']:
                                 stat['excluded_after_common_failure']+=1
@@ -422,8 +442,8 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     # still requires an independently validated Common/Cut partition.
     if recover_failures and failures and MAX_CHECKS>0:
         retry_started=perf_counter()
-        budget_pending=[f for f in failures if f['error'].startswith('Nie wykonano testu:')]
-        geometry_pending=[f for f in failures if not f['error'].startswith('Nie wykonano testu:')]
+        budget_pending=[f for f in failures if f['code']=='BUDGET_EXCEEDED']
+        geometry_pending=[f for f in failures if f['code']!='BUDGET_EXCEEDED']
         # Retry all failed candidate pairs fairly: isolated comparisons can pass
         # even when the assembly-wide scan exhausted its shared budget.
         # Interleave geometry errors and budget omissions so neither starves.
@@ -451,18 +471,18 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             i,j=failure['a_index'],failure['b_index']
             if (i,j) in seen:continue
             seen.add((i,j))
-            is_budget=failure in budget_pending
+            is_budget=failure['code']=='BUDGET_EXCEEDED'
             if progress:progress(f'Ponowienie B-Rep A[{i}] / B[{j}]: {len(seen)}/{len(pending)}; przyczyna: {"TIME_BUDGET" if is_budget else "GEOMETRY_FAILURE"}')
             stat['retry_budget_attempted' if is_budget else 'retry_failure_attempted']+=1
             try:
                 if is_budget:
-                    reg=trace.brep_call('revision_budget_retry_regions',i,j,calculate,a[i],b[j],tolerance)
+                    reg=measured_brep('revision_budget_retry_regions',i,j,calculate,a[i],b[j],tolerance)
                     bind_regions(reg,a[i],b[j],tolerance)
                     common=reg.common_mm3
                 else:
                     from .native_guard import guarded_common
                     try:
-                        shape=trace.brep_call('revision_failed_pair_fresh_common',i,j,guarded_common,
+                        shape=measured_brep('revision_failed_pair_fresh_common',i,j,guarded_common,
                                               a[i].shape,b[j].shape,tolerance)
                         bind_common(shape,a[i].shape,b[j].shape,tolerance)
                         common=volume(shape)
@@ -472,7 +492,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                         # retry a fresh, independently bound Common + Cut partition.
                         trace.mark('revision_failed_pair_fresh_common','FALLBACK_REGIONS',
                                    a_index=i,b_index=j,error=str(common_exc))
-                        reg=trace.brep_call('revision_failed_pair_fresh_regions_fallback',i,j,
+                        reg=measured_brep('revision_failed_pair_fresh_regions_fallback',i,j,
                                             calculate,a[i],b[j],tolerance)
                         bind_regions(reg,a[i],b[j],tolerance)
                         common=reg.common_mm3
@@ -486,11 +506,15 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                     score=_score(common,a[i],b[j],_name_eq(a[i],b[j]))
                     if score is not None:
                         if reg is None:
-                            reg=trace.brep_call('revision_failed_pair_fresh_regions',i,j,
+                            reg=measured_brep('revision_failed_pair_fresh_regions',i,j,
                                                 calculate,a[i],b[j],tolerance)
                             bind_regions(reg,a[i],b[j],tolerance)
-                            if _score(reg.common_mm3,a[i],b[j],_name_eq(a[i],b[j])) is None:
-                                raise ValueError('Wspólna objętość nie potwierdziła rewizji')
+                        # Preliminary Common filters candidates; final ranking
+                        # must use the verified Common/Cut partition.
+                        verified_score=_score(reg.common_mm3,a[i],b[j],_name_eq(a[i],b[j]))
+                        if verified_score is None:
+                            raise ValueError('Zweryfikowany podział Common/Cut nie potwierdził rewizji')
+                        score=verified_score
                         edges[i,j]=score
                         if i not in best_common or score>best_common[i][0]:
                             best_common[i]=(score,j,None,reg)
@@ -546,7 +570,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 reg=_translated_regions(reuse[2],a[i].center-reuse[0].center)
                 stat['region_proof_reuse']+=1
             else:
-                reg=trace.brep_call('revision_material_regions',i,j,calculate,a[i],b[j],tolerance,common_shape=cached[2] if cached and cached[1]==j else None)
+                reg=measured_brep('revision_material_regions',i,j,calculate,a[i],b[j],tolerance,common_shape=cached[2] if cached and cached[1]==j else None)
             bound=verify_regions(reg,i,j)
         except Exception as exc:
             if not recover_failures:
@@ -558,7 +582,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             stat['region_retry_attempted']+=1
             trace.mark('revision_material_regions_retry','BEGIN',a_index=i,b_index=j,reason=str(exc))
             try:
-                reg=trace.brep_call('revision_material_regions_fresh_retry',i,j,
+                reg=measured_brep('revision_material_regions_fresh_retry',i,j,
                                     calculate,a[i],b[j],tolerance)
                 bound=verify_regions(reg,i,j)
                 stat['region_retry_recovered']+=1

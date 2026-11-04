@@ -4,6 +4,14 @@ from OCP.gp import gp_Pnt
 from dsac29.compare import Record
 from dsac29.geometry import describe
 from dsac29 import revision_overlap
+from types import SimpleNamespace
+
+def test_nonfinite_common_never_becomes_revision_match():
+    ref=SimpleNamespace(volume=1000.0)
+    for bad in (float('nan'),float('inf'),float('-inf'),-1.0):
+        assert revision_overlap._score(bad,ref,ref,True) is None
+    assert revision_overlap._score(850.0,ref,ref,True) is not None
+
 
 def part(x, length, name):
     return describe(BRepPrimAPI_MakeBox(gp_Pnt(x, 0, 0), length, 10, 10).Shape(), name, name)
@@ -25,6 +33,10 @@ def test_two_real_revisions_survive_unrelated_overlapping_parts():
         (2, None, 'REMOVED'), (None, 2, 'ADDED')}
     assert not stats.get('incomplete')
     assert len(regions) == 2
+    assert stats['brep_calls_total'] >= stats['boolean_checks'] >= 2
+    assert sum(stats['brep_calls_by_phase'].values()) == stats['brep_calls_total']
+    assert set(stats['brep_seconds_by_phase']) == set(stats['brep_calls_by_phase'])
+    assert all(v >= 0 for v in stats['brep_seconds_by_phase'].values())
 
 def test_separate_budget_recovers_unchecked_real_revision(monkeypatch):
     a = [part(0, 10, 'old1'), part(100, 10, 'old2')]
@@ -35,6 +47,7 @@ def test_separate_budget_recovers_unchecked_real_revision(monkeypatch):
     assert stats['boolean_checks'] == 1
     assert stats['retry_budget_attempted'] == 1
     assert stats['retry_budget_recovered'] == 1
+    assert stats['brep_calls_by_phase'].get('revision_budget_retry_regions',0) == 1
     assert stats['accepted'] == 2 and not stats['incomplete']
     assert {r.status for r in out} == {'CHANGED'}
     assert len(regions) == 2

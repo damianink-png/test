@@ -98,3 +98,14 @@ force, granice tolerancji i duże rzadkie złożenie.
 - Ważne: zielony job nie jest dowodem rozwiązania każdej z sześciu trudnych par Boolean; do potwierdzenia na poziomie raportów par. Nie ma jeszcze porównywalnych danych baseline dla czasu/RSS/liczby Common/Cut i rozmiaru wyeksportowanego STEP ani potwierdzenia importu do ZW3D 2019. Nie deklarować tych bramek jako PASS.
 - Rozmiary *spakowanych artefaktów CI*, nie wynikowego STEP: Windows x64 195377587 B; V2 revision 149696937 B; Trident shift 100910382 B. Nie wolno mylić ich z rozmiarem STEP.
 - W tej iteracji wykonano audyt i uaktualnienie ewidencji; **bez zmian algorytmu** i bez uruchamiania duplikatów buildów. Następny krok: z artefaktów CAD wydobyć per-pair Boolean outcomes, RSS, czas i rozmiar STEP; następnie wdrożyć brakujące pomiary (nr 20).
+
+## Iteracja ręczna 2026-11-04 — poprawki i telemetria (do weryfikacji)
+- NaN/Inf i ujemne Common nie są dowodem zgodności.
+- Punktacja po ponowieniu B-Rep wynika z potwierdzonego podziału
+  Common/Cut, a nie wstępnej objętości Common. Progi bez zmian.
+- BUDGET_EXCEEDED ma odrębny kod od BOOLEAN_FAILED; kolejka retry
+  nie klasyfikuje błędów na podstawie polskiego tekstu komunikatu.
+- Liczone są wszystkie próby B-Rep, niepowodzenia i czas dla faz.
+  Stary boolean_checks to tylko pierwotne Common, nie wszystkie operacje.
+- Dodano regresje numeryczne i pomiarowe. Windows/real STEP i sześć
+  trudnych par B-Rep: DO WERYFIKACJI na nowym SHA.
