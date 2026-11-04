@@ -1,0 +1,44 @@
+name: DS Compare - mass HTML materials and Polish glyphs
+on:
+  push:
+    branches: [codex/rc9-palette-20261102]
+    paths:
+      - 'review/fix06/dsac29/name_encoding.py'
+      - 'review/fix06/dsac29/standalone_mass_materials.py'
+      - 'review/fix06/tests/test_mass_html_materials.py'
+      - 'portable/tests/test_mass_report_browser.py'
+      - '.github/workflows/mass-html-browser.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mass-html:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test UTF-8, Polish labels, HTML structure and script syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install -q pytest playwright==1.64.1
+          if ($LASTEXITCODE -ne 0) { throw 'Python test requirements failed' }
+          $env:PYTHONPATH=(Resolve-Path review/fix06).Path
+          python -m pytest -q review/fix06/tests/test_mass_html_materials.py
+          if ($LASTEXITCODE -ne 0) { throw 'Mass HTML unit regressions failed' }
+      - name: Validate actual offline report in Chromium, including material edits
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m playwright install chromium
+          if ($LASTEXITCODE -ne 0) { throw 'Chromium installation failed' }
+          New-Item portable-src -ItemType Directory -Force | Out-Null
+          Copy-Item review/fix06/dsac29 portable-src -Recurse -Force
+          python portable/tests/test_mass_report_browser.py
+          if ($LASTEXITCODE -ne 0) { throw 'Offline mass report browser test failed' }
