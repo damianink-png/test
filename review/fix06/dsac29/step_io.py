@@ -458,6 +458,14 @@ class ColoredDocument:
         from OCP.Interface import Interface_Static
         from OCP.STEPControl import STEPControl_Controller
         STEPControl_Controller.Init_s()
+        # Experimental, off only when explicitly requested. Many CAD
+        # importers rebuild these 2D parametric curves from the 3D edges.
+        # ZW3D 2019 compatibility must be checked before changing defaults.
+        pcurve_mode=os.getenv('DSCOMPARE_STEP_PCURVES','on').strip().lower()
+        if pcurve_mode not in ('on','off'):
+            raise ValueError('DSCOMPARE_STEP_PCURVES: dozwolone on/off')
+        if not Interface_Static.SetIVal_s('write.surfacecurve.mode',int(pcurve_mode=='on')):
+            raise RuntimeError('Nie mozna ustawic zapisu krzywych 2D STEP')
         schema=os.getenv('DSCOMPARE_STEP_SCHEMA','AP214IS')
         if schema not in ('AP214IS','AP242DIS'):schema='AP214IS'
         if not Interface_Static.SetCVal_s('write.step.schema',schema):
@@ -569,7 +577,16 @@ class ColoredDocument:
                     raise RuntimeError(f'Wynik STEP ma ukryte produkty zlozenia: produktow={products}, bryl={self.count}, wiazania={usages}, puste reprezentacje={reps}')
                 diag.update(produkty_step=products, powiazania_zlozenia=usages,
                             puste_reprezentacje_step=reps, eksport_plaski_bez_absr=True)
-            diag.update(definicje_unikalne=self.definitions_created,
+            # A compact output is never accepted if the parameter was
+            # silently ignored by the OCCT writer.
+            if pcurve_mode=='off':
+                from .step_structure import mapped_step
+                with mapped_step(temporary) as mapped:
+                    if b'PCURVE(' in mapped:
+                        raise RuntimeError('Kompaktowy STEP nadal zawiera PCURVE')
+            diag.update(krzywe_2d_step=('pominiete' if pcurve_mode=='off' else 'zapisane'),
+                eksperymentalny_step_bez_pcurves=(pcurve_mode=='off'),
+                definicje_unikalne=self.definitions_created,
                 ponownie_uzyte_definicje=self.definitions_reused,
                 grupowanie_zlozenia=bool(self.group_by_status),
                 grupy_warstw_step=self.layered_count,

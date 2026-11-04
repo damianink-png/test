@@ -124,3 +124,18 @@ force, granice tolerancji i duże rzadkie złożenie.
   pełny Chromium/WebGL i CAD Windows wymagają PASS na bieżącym SHA.
 - Ta zmiana celuje w czas otwarcia HTML i zużycie RAM/GPU; rozmiar
   pliku HTML/STEP ani czas importu STEP nie muszą się zmniejszyć.
+
+## 2026-11-04 — eksperyment bez pcurves
+- Rzeczywisty STEP Trident: 419,872,860 B; 1596 wystąpień,
+  578 unikalnych definicji (1018 użyć wspólnych);
+  59,045 stylowanych powierzchni.
+- PCURVE, PARAMETRIC_REPRESENTATION_CONTEXT, DEFINITIONAL_REPRESENTATION,
+  SURFACE_CURVE zajmują razem 85,036,726 B (20,3%) plus zależne punkty 2D.
+- Izolowana próba 14 wystąpień 2 źródłowych brył Trident:
+  on 791,480 B, off 323,464 B; po imporcie OCP zgodne bryły,
+  objętości, ściany/krawędzie. Nie testowano ZW3D 2019.
+- `DSCOMPARE_STEP_PCURVES=off` jest WYŁĄCZNIE opcją eksperymentalną;
+  domyślny tryb nadal `on`. Każdy zapis jawnie ustawia wartość OCCT.
+- Dodano test cylindra i bloku dla koloru i zachowania B-Rep po imporcie,
+  kontrolę obecności/braku PCURVE oraz blokadę błędnej wartości opcji.
+- Dopóki ZW3D 2019 nie zostanie zweryfikowany, nie włączać opcji domyślnie.
