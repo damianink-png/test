@@ -286,7 +286,10 @@ class ColoredDocument:
         try:
             if not BRepTools.Write_s(shape,filename):return None
             size=os.path.getsize(filename)
-            if size>4*1024*1024:return None
+            # Four MiB discarded exact grouping for larger repeated parts.
+            # Hash incrementally and support up to 32 MiB per definition.
+            # The fingerprint is evidence of equality, never an approximation.
+            if not 0<size<=32*1024*1024:return None
             digest=hashlib.sha256()
             with open(filename,'rb') as handle:
                 for chunk in iter(lambda:handle.read(1024*1024),b''):

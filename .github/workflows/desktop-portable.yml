@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: ['codex/rc9-boundary-ui-ci-20261030', 'codex/rc9-palette-20261102']
-    paths: ['portable/**', 'review/fix06/ci/patch_material_worker_failclosed.py', 'review/fix06/ci/patch_gui_minimal.py', 'review/fix06/ci/patch_legacy_ui_tests.py', 'review/fix06/ci/patch_step_polish_names.py', 'review/fix06/tests/test_gui_minimal.py', 'review/fix06/tests/test_material_worker_failclosed.py', 'review/fix06/tests/test_revision_overlap_policy.py', 'review/fix06/dsac29/**', '.github/workflows/desktop-portable.yml']
+    paths: ['portable/**', 'review/fix06/ci/patch_material_worker_failclosed.py', 'review/fix06/ci/patch_gui_minimal.py', 'review/fix06/ci/patch_legacy_ui_tests.py', 'review/fix06/ci/patch_step_polish_names.py', 'review/fix06/tests/test_gui_minimal.py', 'review/fix06/tests/test_material_worker_failclosed.py', 'review/fix06/tests/test_revision_overlap_policy.py', 'review/fix06/dsac29/**', 'review/fix06/ci/patch_geometry_registry_streaming.py', 'review/fix06/tests/test_20261104_audit_fixes.py', '.github/workflows/desktop-portable.yml']
 permissions:
   contents: read
   actions: read
@@ -36,6 +36,8 @@ jobs:
           foreach($file in @('revision_overlap.py','overlap_evidence.py','candidate_policy.py','worker_v37.py','common_exclusion.py','palette.py','preview3d.py','preview_template.html','cli.py','report.py','material_mass_report.py','standalone_mass_materials.py','step_io.py','deferred_alignment.py','progress_events.py')){
             Copy-Item "review/fix06/dsac29/$file" "portable-src/dsac29/$file" -Force
           }
+          python review/fix06/ci/patch_geometry_registry_streaming.py portable-src/dsac29/geometry_registry.py
+          if($LASTEXITCODE -ne 0){throw 'Streaming registry patch failed'}
           python review/fix06/ci/patch_common_exclusion_dispatch.py portable-src/dsac29/native_guard.py
           if($LASTEXITCODE -ne 0){throw 'Common exclusion patch failed'}
           python review/fix06/ci/patch_material_worker_failclosed.py portable-src
@@ -43,7 +45,7 @@ jobs:
           python review/fix06/ci/patch_legacy_ui_tests.py portable-src
           python review/fix06/ci/patch_step_polish_names.py portable-src
           if($LASTEXITCODE -ne 0){throw 'Material worker no-popup patch failed'}
-          foreach($file in @('test_overlap_evidence.py','test_candidate_policy.py','test_revision_overlap_policy.py','test_gui_minimal.py','test_partial_material_continue.py','test_material_worker_failclosed.py','test_progress_durable_phases.py','test_streamed_preview.py','test_translated_proof_index.py','test_semantic_palette_export.py','test_spatial_index_oracle.py','test_spatial_index_2500.py','test_spatial_index_dense.py')){
+          foreach($file in @('test_overlap_evidence.py','test_candidate_policy.py','test_revision_overlap_policy.py','test_gui_minimal.py','test_partial_material_continue.py','test_material_worker_failclosed.py','test_progress_durable_phases.py','test_streamed_preview.py','test_translated_proof_index.py','test_semantic_palette_export.py','test_spatial_index_oracle.py','test_spatial_index_2500.py','test_spatial_index_dense.py','test_20261104_audit_fixes.py')){
             Copy-Item "review/fix06/tests/$file" "portable-src/tests/$file" -Force
           }
           python -m compileall -q portable-src/dsac29
@@ -57,7 +59,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'CAD dependencies failed'}
           python -m pip install pytest
           if($LASTEXITCODE -ne 0){throw 'pytest install failed'}
-          python -m pytest -q tests/test_material_worker_failclosed.py tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_gui_minimal.py tests/test_partial_material_continue.py tests/test_progress_durable_phases.py tests/test_streamed_preview.py tests/test_translated_proof_index.py tests/test_semantic_palette_export.py tests/test_spatial_index_oracle.py tests/test_spatial_index_2500.py tests/test_spatial_index_dense.py
+          python -m pytest -q tests/test_material_worker_failclosed.py tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_gui_minimal.py tests/test_partial_material_continue.py tests/test_progress_durable_phases.py tests/test_streamed_preview.py tests/test_translated_proof_index.py tests/test_semantic_palette_export.py tests/test_spatial_index_oracle.py tests/test_spatial_index_2500.py tests/test_spatial_index_dense.py tests/test_20261104_audit_fixes.py
           if($LASTEXITCODE -ne 0){throw 'CAD regression tests failed'}
           ./BUDUJ_WINDOWS.ps1 -NoInstall
           if($LASTEXITCODE -ne 0){throw 'CAD build failed'}

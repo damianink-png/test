@@ -1,7 +1,7 @@
 from __future__ import annotations
 import argparse,sys,traceback
 from time import perf_counter
-from math import ceil
+from math import ceil, isfinite
 from pathlib import Path
 from .import_cache import load_step_persistent as load_step
 from .compare import compare, ShiftDetected
@@ -10,6 +10,16 @@ from . import trace_r22 as trace
 
 
 def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress=print,cancelled=None,colors=None,diff_step=True,preview3d=False,align=False,direct_scene=False,manual_review=None,revision_style=False,old_alpha=0.4,thumbnails=False,max_solids=20000,full_bom=True,bom_fast=False,bom_csv=True,auto_align=False,alignment_approval=None,force_unrelated=False,material_approval=None):
+    # Both the desktop UI and CLI use this entrypoint. Reject NaN/Inf and
+    # impossible settings before importing any CAD or touching output files.
+    if not isfinite(float(tolerance)) or float(tolerance)<=0:
+        raise ValueError('Tolerancja STEP musi być dodatnia i skończona')
+    if not isfinite(float(density)) or not 0<float(density)<=25000:
+        raise ValueError('Gęstość musi mieścić się w zakresie (0, 25000] kg/m³')
+    if not isfinite(float(old_alpha)) or not 0<=float(old_alpha)<=1:
+        raise ValueError('Przezroczystość musi mieścić się w zakresie 0–1')
+    if not isinstance(max_solids,int) or isinstance(max_solids,bool) or not 1<=max_solids<=50000:
+        raise ValueError('Limit brył musi wynosić od 1 do 50000')
     from .palette import semantic_overrides
     colors=semantic_overrides(colors)
     ts=perf_counter()

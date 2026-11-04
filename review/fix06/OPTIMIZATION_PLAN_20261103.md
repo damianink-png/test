@@ -139,3 +139,23 @@ force, granice tolerancji i duże rzadkie złożenie.
 - Dodano test cylindra i bloku dla koloru i zachowania B-Rep po imporcie,
   kontrolę obecności/braku PCURVE oraz blokadę błędnej wartości opcji.
 - Dopóki ZW3D 2019 nie zostanie zweryfikowany, nie włączać opcji domyślnie.
+
+## 2026-11-04 — ponowny audyt całego przepływu DS Compare
+- Zweryfikowano przebieg wejście/import → klasyfikacja/B-Rep → STEP/HTML/BOM
+  → testy Windows, z zachowaniem progu dopasowania i zgodności ZW3D.
+- `geometry_registry.exact_digest`: SHA-256 jest wyliczany strumieniowo w
+  blokach 1 MiB, zamiast wczytywać duży B-Rep w całości do RAM.
+- `ColoredDocument._serialized_brep_signature`: zwiększono limit
+  podpisów niezależnych definicji z 4 MiB do 32 MiB; po przekroczeniu
+  limitu brak dowodu zgodności (bez fałszywego zrównania).
+- `revision_overlap._score`: odrzuca niemożliwy `Common > min(Va,Vb)`
+  poza tolerancją wynikającą z zaokrągleń; w granicy tolerancji punktacja
+  jest ograniczona do fizycznie możliwej objętości.
+- B-Rep: alternatywny podział po błędnym Common rejestrowany teraz
+  w licznikach i pomiarach faz, a nie wykonywany bez telemetrii.
+- `cli.process`: sprawdza skończoność/dopuszczalność tolerancji,
+  gęstości, przezroczystości i limitu brył przed odczytem STEP.
+- Lokalnie: 7 krótkich regresji PASS + 2 wcześniej istniejące
+  geometria/STEP PASS. Pełne CI/EXE wymaga potwierdzenia na SHA commita.
+- Nadal DO WERYFIKACJI: niewyjaśnione bryły OpenArm, zmniejszenie
+  pełnego STEP kompaktowego w ZW3D 2019, realne zużycie GPU po HTML.

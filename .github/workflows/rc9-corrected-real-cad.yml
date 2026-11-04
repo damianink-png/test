@@ -20,6 +20,8 @@ on:
       - 'review/fix06/tests/test_partial_material_continue.py'
       - 'review/fix06/tests/test_revision_overlap_policy.py'
       - 'review/fix06/tests/test_step_compact.py'
+      - 'review/fix06/tests/test_20261104_audit_fixes.py'
+      - 'review/fix06/ci/patch_geometry_registry_streaming.py'
   pull_request:
     paths: ['.github/workflows/rc9-corrected-real-cad.yml', 'DSCompare_RC9_KOMPLET_ZRODLA.zip']
   workflow_dispatch:
@@ -74,6 +76,9 @@ jobs:
           python review/fix06/ci/patch_legacy_ui_tests.py dscompare_rc9_manual
           # Apply name fixes after overlaying the exact-BRep exporter.
           Copy-Item review/fix06/dsac29/step_io.py dscompare_rc9_manual/dsac29/step_io.py -Force
+          Copy-Item review/fix06/dsac29/cli.py dscompare_rc9_manual/dsac29/cli.py -Force
+          python review/fix06/ci/patch_geometry_registry_streaming.py dscompare_rc9_manual/dsac29/geometry_registry.py
+          if ($LASTEXITCODE -ne 0) { throw 'Streaming registry patch failed' }
           python review/fix06/ci/patch_step_polish_names.py dscompare_rc9_manual
           if ($LASTEXITCODE -ne 0) { throw 'Isolated material fail-closed patch failed' }
           if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
@@ -87,6 +92,7 @@ jobs:
           Copy-Item review/fix06/tests/test_revision_overlap_policy.py dscompare_rc9_manual/tests/test_revision_overlap_policy.py -Force
           Copy-Item review/fix06/tests/test_semantic_palette_export.py dscompare_rc9_manual/tests/test_semantic_palette_export.py -Force
           Copy-Item review/fix06/tests/test_step_compact.py dscompare_rc9_manual/tests/test_step_compact.py -Force
+          Copy-Item review/fix06/tests/test_20261104_audit_fixes.py dscompare_rc9_manual/tests/test_20261104_audit_fixes.py -Force
           python review/fix06/ci/patch_legacy_palette_test.py dscompare_rc9_manual/tests/test_output_palette.py
           if ($LASTEXITCODE -ne 0) { throw 'Neutral Common palette regression patch failed' }
           python review/fix06/ci/patch_legacy_dual_failure_tests.py dscompare_rc9_manual/tests
@@ -124,7 +130,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Corrected source regressions failed' }
           python -m pytest -q tests/test_progress_durable_phases.py tests/test_streamed_preview.py tests/test_translated_proof_index.py tests/test_spatial_index_oracle.py tests/test_spatial_index_2500.py tests/test_spatial_index_dense.py
           if ($LASTEXITCODE -ne 0) { throw 'Durable phase regression failed' }
-          python -m pytest -q tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_gui_minimal.py tests/test_semantic_palette_export.py tests/test_step_compact.py tests/test_material_worker_failclosed.py tests/test_partial_material_review.py tests/test_partial_material_continue.py tests/test_revision_common_recovery.py tests/test_revision_r4.py tests/test_r15_material_renamed.py
+          python -m pytest -q tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_gui_minimal.py tests/test_semantic_palette_export.py tests/test_step_compact.py tests/test_20261104_audit_fixes.py tests/test_material_worker_failclosed.py tests/test_partial_material_review.py tests/test_partial_material_continue.py tests/test_revision_common_recovery.py tests/test_revision_r4.py tests/test_r15_material_renamed.py
           if ($LASTEXITCODE -ne 0) { throw 'Patched material-recovery regressions failed' }
           python ci/test_rc9_original_boundary.py
           if ($LASTEXITCODE -ne 0) { throw 'Original boundary regression failed' }
@@ -228,6 +234,9 @@ jobs:
           python review/fix06/ci/patch_legacy_ui_tests.py dscompare_rc9_manual
           # Apply name fixes after overlaying the exact-BRep exporter.
           Copy-Item review/fix06/dsac29/step_io.py dscompare_rc9_manual/dsac29/step_io.py -Force
+          Copy-Item review/fix06/dsac29/cli.py dscompare_rc9_manual/dsac29/cli.py -Force
+          python review/fix06/ci/patch_geometry_registry_streaming.py dscompare_rc9_manual/dsac29/geometry_registry.py
+          if ($LASTEXITCODE -ne 0) { throw 'Streaming registry patch failed' }
           python review/fix06/ci/patch_step_polish_names.py dscompare_rc9_manual
           if ($LASTEXITCODE -ne 0) { throw 'Isolated material fail-closed patch failed' }
           if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
@@ -241,6 +250,7 @@ jobs:
           Copy-Item review/fix06/tests/test_revision_overlap_policy.py dscompare_rc9_manual/tests/test_revision_overlap_policy.py -Force
           Copy-Item review/fix06/tests/test_semantic_palette_export.py dscompare_rc9_manual/tests/test_semantic_palette_export.py -Force
           Copy-Item review/fix06/tests/test_step_compact.py dscompare_rc9_manual/tests/test_step_compact.py -Force
+          Copy-Item review/fix06/tests/test_20261104_audit_fixes.py dscompare_rc9_manual/tests/test_20261104_audit_fixes.py -Force
           python review/fix06/ci/patch_legacy_palette_test.py dscompare_rc9_manual/tests/test_output_palette.py
           if ($LASTEXITCODE -ne 0) { throw 'Neutral Common palette regression patch failed' }
           python review/fix06/ci/patch_legacy_dual_failure_tests.py dscompare_rc9_manual/tests

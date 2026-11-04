@@ -81,10 +81,15 @@ def _score(v,a,b,same):
         return None
     top=max(a.volume,b.volume)
     lo=min(a.volume,b.volume)
-    union=a.volume+b.volume-v
-    if top<=0 or lo<=0 or union<=0:return None
-    frac=v/top
-    iou=v/union
+    if top<=0 or lo<=0:return None
+    # Common cannot contain more material than either source solid. Ignore
+    # only rounding-level OCCT noise and never reward impossible volumes.
+    if v>lo+1e-6*top:return None
+    common=min(v,lo)
+    union=a.volume+b.volume-common
+    if union<=0:return None
+    frac=common/top
+    iou=common/union
     if frac<(SAME_NAME_MIN if same else OTHER_NAME_MIN) or v/lo<0.80 or iou<MIN_IOU:
         return None
     return 0.65*iou+0.35*frac+(0.015 if same else 0.)
@@ -351,7 +356,8 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                         stat['invalid_boolean']+=1
                         trace.mark('revision_common_cache','RECOMPUTE',a_index=i,b_index=j,error=str(exc))
                         if progress:progress(f'Zmiany materiału: ponowne obliczenie podziału A[{i}] ↔ B[{j}] po odrzuceniu pomocniczego Common')
-                        recovered_regions=calculate(ref,b[j],tolerance)
+                        recovered_regions=measured_brep('revision_invalid_common_fresh_regions',i,j,
+                                                        calculate,ref,b[j],tolerance)
                         bind_regions(recovered_regions,ref,b[j],tolerance)
                         shape=recovered_regions.common
                     common=volume(shape)
