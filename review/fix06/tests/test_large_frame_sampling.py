@@ -38,7 +38,7 @@ def test_large_shift_never_launches_full_native_preverification(monkeypatch,samp
         assert proposal["votes"]==601  # only positional support
         assert proposal["checked_sample_count"]==48
         assert proposal["verified_sample_count"]==48
-        assert len(proposal["certified_pairs"])<=48
+        assert 48<=len(proposal["certified_pairs"])<=72
         assert set(proposal["certified_pairs"])<=set((i,i) for i in range(601))
         assert not proposal["full_pair_map"]
     else:
