@@ -5,9 +5,12 @@ derived masses in the report, never STEP or the original BOM source.
 """
 from __future__ import annotations
 
+import csv
+import io
 import json
 import re
 from html import escape, unescape
+from math import isfinite
 from pathlib import Path
 
 from .name_encoding import repair_polish_name
@@ -44,6 +47,81 @@ def _repair_table_text(markup: str) -> str:
     return re.sub(r"(?is)<td\b[^>]*>.*?</td\s*>", fix_body, markup)
 
 
+class MassReportFormatError(ValueError):
+    """The optional material editor could not interpret the rendered BOM."""
+
+
+def _editable_bom_table_present(markup: str) -> bool:
+    """Look at one table's header, not unrelated text elsewhere in the page.
+
+    The offline JavaScript expects a THEAD with these four distinct columns.
+    Checking the same contract here prevents claiming that materials are
+    editable in a batch-summary or nonstandard legacy report.
+    """
+    for table in re.findall(r"(?is)<table\b[^>]*>.*?</table\s*>", markup):
+        thead = re.search(r"(?is)<thead\b[^>]*>(.*?)</thead\s*>", table)
+        if not thead:
+            continue
+        headings = [unescape(re.sub(r"(?s)<[^>]*>", "", h)).strip()
+                    for h in re.findall(r"(?is)<th\b[^>]*>(.*?)</th\s*>", thead.group(1))]
+        patterns = (r"obj[eę]to[sś][cć]", r"ilo[sś][cć]",
+                    r"masa (jednej|1|jednostk)", r"masa (łą|l[aą]cz|całkow|razem)")
+        has_data_row = bool(re.search(r"(?is)<tr\b[^>]*>\s*<td\b", table[thead.end():]))
+        if has_data_row and all(any(re.search(pattern, h, re.I) for h in headings)
+                                for pattern in patterns):
+            return True
+    return False
+
+
+def _restore_bom_from_csv(folder: Path) -> str:
+    """Reconstruct an editable display only from previously computed masses.
+
+    Never synthesize a missing mass or silently accept invalid CSV rows.
+    The original CSV, model and summary are never modified.
+    """
+    source = folder / "MASY_CZESCI.csv"
+    if not source.is_file():
+        raise MassReportFormatError("Raport masy nie zawiera tabeli BOM lub wymaganych kolumn; brak MASY_CZESCI.csv")
+    try:
+        contents = source.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        contents = source.read_text(encoding="cp1250")
+    reader = csv.reader(io.StringIO(contents, newline=""), delimiter=";")
+    headers = next(reader, None)
+    if not headers:
+        raise MassReportFormatError("Zestawienie MASY_CZESCI.csv jest puste")
+    # Both the single-model and multi-model mass writers emit these columns.
+    expected = ("Nazwa części", "Ilość", "Objętość jednej sztuki [mm³]",
+                "Masa jednej sztuki [kg]", "Masa łączna [kg]")
+    if [unescape(h).strip() for h in headers[:5]] != list(expected):
+        raise MassReportFormatError("Zestawienie CSV nie ma wymaganych kolumn masy")
+    rows = []
+    for line_no, values in enumerate(reader, 2):
+        if not values or not any(v.strip() for v in values):
+            continue
+        if len(values) < 5:
+            raise MassReportFormatError(f"Niepełny wiersz BOM w CSV: {line_no}")
+        try:
+            qty = int(values[1].strip())
+            numbers = [float(value.strip().replace(" ", "").replace(",", "."))
+                       for value in values[2:5]]
+        except ValueError as exc:
+            raise MassReportFormatError(f"Nieliczbowe wartości BOM w CSV: {line_no}") from exc
+        if qty <= 0 or any(not isfinite(v) or v < 0 for v in numbers):
+            raise MassReportFormatError(f"Niepoprawne wartości masy w CSV: {line_no}")
+        name = values[0].strip()
+        if name.startswith('="') and name.endswith('"'):
+            name = name[2:-1]  # Undo Excel's leading-zero display wrapper.
+        rows.append("<tr>" + "".join("<td>" + escape(v, quote=False) + "</td>"
+                                        for v in (name, *values[1:5])) + "</tr>")
+    if not rows:
+        raise MassReportFormatError("Brak pozycji BOM w MASY_CZESCI.csv")
+    return ("<section id=\"ds-restored-bom\"><h2>Szczegółowy BOM z obliczonego CSV</h2>"
+            "<p>Źródło danych: MASY_CZESCI.csv — geometria i masy nie są liczone ponownie.</p>"
+            "<table><thead><tr>" + "".join("<th>" + escape(h) + "</th>" for h in expected)
+            + "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></section>")
+
+
 def enhance_mass_html(folder, density=7850):
     path = Path(folder) / "RAPORT_MASY.html"
     if not path.is_file():
@@ -59,12 +137,18 @@ def enhance_mass_html(folder, density=7850):
     base_density = float(density)
     if not 0 < base_density <= 100000:
         raise ValueError("Nieprawidłowa gęstość do raportu masy")
-    if not re.search(r"(?is)<table\b", initial):
-        raise ValueError("Raport masy nie zawiera tabeli BOM")
-    if not all(re.search(pattern, initial, re.I) for pattern in
-               (r"objętość|objetosc", r"ilość|ilosc", r"masa")):
-        raise ValueError("Raport masy nie ma wymaganych kolumn BOM")
     html = _repair_table_text(initial)
+    if not _editable_bom_table_present(html):
+        # New or older HTML may contain just a model summary table; rebuild
+        # the editable BOM from the CSV already written by the CAD engine.
+        # Failure to do so is handled by the mass worker as a warning, not
+        # a failed geometry/volume calculation.
+        restored = _restore_bom_from_csv(Path(folder))
+        if re.search(r"(?i)</body\s*>", html):
+            html = re.sub(r"(?i)</body\s*>",
+                          lambda _: restored + "\n</body>", html, count=1)
+        else:
+            html += restored
     # A meta charset is mandatory; writing UTF-8 bytes alone is insufficient
     # for browsers that open the file directly from disk.
     legacy_charset = re.search(r"(?is)<meta\b[^>]*charset\s*=[^>]*>", html)
