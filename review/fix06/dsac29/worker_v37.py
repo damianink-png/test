@@ -130,14 +130,32 @@ def main(argv=None):
                 output,s=analyze_many(files,ns.output,ns.density,progress=emit,max_solids=ns.max_solids)
             else:
                 output,s=analyze_single(ns.input,ns.output,ns.density,progress=emit,preview=not ns.no_preview,max_solids=ns.max_solids)
-            from .standalone_mass_materials import enhance_mass_html
-            if enhance_mass_html(output,ns.density):
+            from .standalone_mass_materials import enhance_mass_html, MassReportFormatError
+            editable=False
+            try:
+                editable=enhance_mass_html(output,ns.density)
+            except MassReportFormatError as exc:
+                # The geometry and computed CSV/JSON are already finished.
+                emit('UWAGA: Masa została obliczona; edytor materiałów niedostępny: '+str(exc))
+                try:
+                    (Path(output)/'UWAGI_RAPORT_MASY.txt').write_text(str(exc),encoding='utf-8')
+                except OSError:
+                    pass
+            except Exception:
+                # Preserve the successful CAD mass calculation, and log any
+                # unexpected optional HTML-editor failure for diagnosis.
+                details=traceback.format_exc()
+                emit('UWAGA: Masa została obliczona, lecz raport materiałów nie został rozszerzony. Sprawdź DIAGNOSTYKA_RAPORT_MASY.txt.')
+                try:
+                    (Path(output)/'DIAGNOSTYKA_RAPORT_MASY.txt').write_text(details,encoding='utf-8')
+                except OSError:
+                    pass
+            if editable:
                 emit('Raport masy: edytowalne materiały i gęstości dla każdej pozycji BOM; zapis JSON i CSV.')
-            else:
-                # Never silently claim materials are editable when there was
-                # no matching HTML in the output directory.
-                emit('UWAGA: Brak RAPORT_MASY.html — nie wygenerowano edytowalnego raportu materiałów.')
-            payload={'ok':True,'folder':str(output),'podsumowanie':s}
+            elif not (Path(output)/'RAPORT_MASY.html').is_file():
+                emit('UWAGA: Brak RAPORT_MASY.html — zachowano obliczoną masę i plik CSV.')
+            payload={'ok':True,'folder':str(output),'podsumowanie':s,
+                     'materials_editable':bool(editable)}
         else:
             from .mesh_v37 import make_mesh
             info=make_mesh(ns.input,folder/'SCENA_3D.npz',ns.quality,notify=emit)
