@@ -52,6 +52,27 @@ def run():
             csv=Path(download_info.value.path()).read_bytes().decode("utf-8-sig")
             assert "Płyta dolna" in csv and "Aluminium 6061" in csv
             assert "\r\n" in csv and ";" in csv
+            # Legacy model-summary HTML has no editable BOM columns. Rebuild
+            # from previously calculated CSV and verify material editing.
+            fallback=Path(td)/"legacy"
+            fallback.mkdir()
+            (fallback/"RAPORT_MASY.html").write_text(
+                '<html><head><meta charset="utf-8"></head><body><h1>Waga modeli</h1>'
+                '<table><thead><tr><th>Plik</th><th>Masa [kg]</th></tr></thead>'
+                '<tbody><tr><td>Model</td><td>24</td></tr></tbody></table></body></html>',
+                encoding="utf-8")
+            (fallback/"MASY_CZESCI.csv").write_text(
+                "Nazwa części;Ilość;Objętość jednej sztuki [mm³];Masa jednej sztuki [kg];Masa łączna [kg];Ścieżka w złożeniu\n"
+                "Płyta dolna;2;1000000;8;16;Model/1\n"
+                "Uchwyt koła;1;1000000;8;8;Model/2\n",
+                encoding="utf-8-sig")
+            assert enhance_mass_html(fallback,8000)
+            page.goto((fallback/"RAPORT_MASY.html").as_uri())
+            page.locator(".ds-material-select").first.wait_for()
+            assert page.locator(".ds-material-select").count()==2
+            assert "24,0000 kg" in page.locator(".ds-material-totals").inner_text()
+            page.locator(".ds-material-select").first.select_option("Aluminium 6061")
+            assert "13,4000 kg" in page.locator(".ds-material-totals").inner_text()
             assert not errors,errors
             browser.close()
     print("OFFLINE_MASS_HTML_POLISH_AND_PER_PART_MATERIALS_PASS")
