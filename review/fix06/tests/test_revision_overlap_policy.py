@@ -471,3 +471,34 @@ def test_exact_definitions_cannot_reuse_at_same_location_or_different_rotation()
     from dsac29.geometry import describe
     rotated_b=describe(rotated_b.shape.Moved(TopLoc_Location(rot)),'rotated','rotated')
     assert index.find(shifted_a,rotated_b) is None
+
+
+def test_failed_early_occurrences_recover_from_later_exact_positive_proof(monkeypatch):
+    """Two failed occurrences cannot taint the whole repeated revision cohort."""
+    from dsac29 import native_guard,common_exclusion
+    from dsac29.native_guard import NativeGeometryFailure
+    a=[_distinct_occurrence(10,x,'Entwurf_11067438_Oese.1') for x in (0,40,80,120)]
+    b=[_distinct_occurrence(11,x,'Ringoese') for x in (0,40,80,120)]
+    original_common=native_guard.guarded_common
+    original_regions=revision_overlap.calculate
+    called=[]
+    def flaky_common(x,y,*args,**kwargs):
+        called.append(1)
+        if len(called)<=2:
+            raise NativeGeometryFailure('synthetic OCCT native failure')
+        return original_common(x,y,*args,**kwargs)
+    def flaky_regions(old,new,*args,**kwargs):
+        if old.path.endswith(('/0','/40')):
+            raise NativeGeometryFailure('synthetic regions failure')
+        return original_regions(old,new,*args,**kwargs)
+    monkeypatch.setattr(native_guard,'guarded_common',flaky_common)
+    monkeypatch.setattr(revision_overlap,'calculate',flaky_regions)
+    def exclusion_failure(*args,**kwargs):
+        raise NativeGeometryFailure('unproven exclusion')
+    monkeypatch.setattr(common_exclusion,'guarded_exclusion',exclusion_failure)
+    out,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,records(a,b),review_approval=lambda _:'review')
+    assert stat['earlier_failures_recovered_by_exact_repeat']==2
+    assert stat.get('retry_failure_attempted',0)==0
+    assert {r.status for r in out}=={'CHANGED'}
+    assert len(regions)==4 and not stat['incomplete']
