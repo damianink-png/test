@@ -15,6 +15,7 @@ on:
       - 'review/fix06/ci/patch_material_worker_failclosed.py'
       - 'review/fix06/ci/patch_material_timeout.py'
       - 'review/fix06/ci/patch_native_completion_read.py'
+      - 'review/fix06/tests/test_native_completion_read.py'
       - 'review/fix06/ci/patch_stale_failed_pairs.py'
       - 'review/fix06/ci/patch_assignment_uniqueness.py'
       - 'review/fix06/ci/patch_legacy_audit_tests.py'
@@ -128,6 +129,7 @@ jobs:
           Copy-Item review/fix06/tests/test_alignment_stage2_guard.py dscompare_rc9_manual/tests/test_alignment_stage2_guard.py -Force
           Copy-Item review/fix06/tests/test_mass_html_materials.py dscompare_rc9_manual/tests/test_mass_html_materials.py -Force
           Copy-Item review/fix06/tests/test_large_frame_sampling.py dscompare_rc9_manual/tests/test_large_frame_sampling.py -Force
+          Copy-Item review/fix06/tests/test_native_completion_read.py dscompare_rc9_manual/tests/test_native_completion_read.py -Force
           python review/fix06/ci/patch_legacy_palette_test.py dscompare_rc9_manual/tests/test_output_palette.py
           if ($LASTEXITCODE -ne 0) { throw 'Neutral Common palette regression patch failed' }
           python review/fix06/ci/patch_legacy_dual_failure_tests.py dscompare_rc9_manual/tests
