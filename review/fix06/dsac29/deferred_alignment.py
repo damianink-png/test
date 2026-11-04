@@ -230,27 +230,73 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
             'full_pair_map':(certified if not sampled and len(certified)==len(a)==len(b) else [])}
 
 
-def _periodic_global_offset_possible(a,b,tolerance,population,free_a=(),free_b=()):
-    """Don't bypass shift checks on high (but misleading) stage-1 overlap.
+def _periodic_global_offset_possible(a,b,tolerance,population,free_a=(),free_b=(),baseline=0):
+    """Only request a new frame when a nonzero pose can BEAT stage-1 matches.
 
-    Offsets of balanced repeated definitions may indicate a whole assembly
-    shifted by one pitch while N-1 of N identical occurrences still overlap.
-    This returns only a suspicion; the B-Rep hypothesis verifier decides.
+    An occurrence-count delta is not evidence of global displacement. Offsets
+    are proposals only: later B-Rep checks still authorize any relocation.
     """
+    from collections import Counter
+    from math import floor
+    from itertools import product
     if population<4:return False
-    buckets_a=defaultdict(list);buckets_b=defaultdict(list)
-    for p in a:buckets_a[signature(p)].append(p.center)
-    for p in b:buckets_b[signature(p)].append(p.center)
-    unmatched_keys={signature(a[i]) for i in free_a} & {signature(b[j]) for j in free_b}
-    for key in buckets_a.keys() & buckets_b.keys():
-        aa,bb=buckets_a[key],buckets_b[key]
-        if min(len(aa),len(bb))<max(3,ceil(population*.10)):
-            continue
-        if len(aa)!=len(bb):
-            if key in unmatched_keys:return True
-            continue
-        delta=np.mean(aa,axis=0)-np.mean(bb,axis=0)
-        if np.linalg.norm(delta)>tolerance:return True
+    groups_a=defaultdict(list);groups_b=defaultdict(list)
+    for i,p in enumerate(a):groups_a[signature(p)].append((i,np.asarray(p.center,dtype=float)))
+    for j,p in enumerate(b):groups_b[signature(p)].append((j,np.asarray(p.center,dtype=float)))
+    common=groups_a.keys() & groups_b.keys()
+    grid=max(float(tolerance),1e-6)
+    proposals=Counter();transforms={}
+    def offer(offset,weight):
+        if not np.all(np.isfinite(offset)) or np.linalg.norm(offset)<=tolerance:return
+        key=tuple(round(float(d)/grid) for d in offset)
+        proposals[key]+=weight
+        transforms[key]=np.asarray(offset,dtype=float)
+    significant=max(3,ceil(population*.10))
+    for key in common:
+        ga,gb=groups_a[key],groups_b[key]
+        if min(len(ga),len(gb))<significant:continue
+        if len(ga)==len(gb):
+            offer(np.mean([x[1] for x in ga],axis=0)-np.mean([x[1] for x in gb],axis=0),len(ga))
+        else:
+            # A periodic shift may alter occurrence counts: try dominant pitch,
+            # but never treat count changes themselves as a matching proof.
+            for group in (ga,gb):
+                points=sorted((tuple(x[1]) for x in group))
+                if len(points)<3:continue
+                sample=points if len(points)<=41 else [points[round(k*(len(points)-1)/40)] for k in range(41)]
+                steps=Counter(tuple(round((q[d]-p[d])/grid) for d in range(3))
+                              for p,q in zip(sample,sample[1:]))
+                for values,count in steps.most_common(2):
+                    v=np.asarray(values,dtype=float)*grid
+                    offer(v,count);offer(-v,count)
+    freeA=defaultdict(list);freeB=defaultdict(list)
+    for i in free_a:freeA[signature(a[i])].append(i)
+    for j in free_b:freeB[signature(b[j])].append(j)
+    for key in freeA.keys() & freeB.keys():
+        for i in freeA[key][:3]:
+            for j in freeB[key][:3]:offer(a[i].center-b[j].center,1)
+    if not proposals:return False
+    buckets=defaultdict(list)
+    for i,p in enumerate(a):
+        pos=tuple(floor(float(v)/grid) for v in p.center)
+        buckets[(signature(p),pos)].append(i)
+    adjacent=list(product((-1,0,1),repeat=3))
+    for key,_ in proposals.most_common(12):
+        offset=transforms[key]
+        assigned=set();support=0
+        for index,p in enumerate(b):
+            center=np.asarray(p.center,dtype=float)+offset
+            base=tuple(floor(float(v)/grid) for v in center)
+            sig=signature(p)
+            found=False
+            for delta in adjacent:
+                cell=tuple(base[k]+delta[k] for k in range(3))
+                for i in buckets.get((sig,cell),()):
+                    if i not in assigned and np.linalg.norm(a[i].center-center)<=tolerance:
+                        assigned.add(i);support+=1;found=True;break
+                if found:break
+            if support+len(b)-index-1<=baseline:break
+        if support>baseline:return True
     return False
 
 
@@ -267,7 +313,7 @@ def propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress=None,cancel
     # Exact equality of both occurrence lists means no global relocation.
     if baseline==population:return None
     if (baseline/population>=.90 and
-        not _periodic_global_offset_possible(a,b,tolerance,population,free_a,free_b)):
+        not _periodic_global_offset_possible(a,b,tolerance,population,free_a,free_b,baseline)):
         if progress:progress(f'Etap 1: {baseline}/{population} brył zgodnych w miejscu; pomijam wyrównanie.')
         return None
     # The matched records have WORLD-space B-Rep proof from compare stage 1.
@@ -338,15 +384,25 @@ def _step_reexport_fallback(a,b,baseline,tolerance,progress=None,cancelled=None)
             # Keep validity, exact bounds and face/edge operations in the same
             # crash-contained path as the main hypothesis verifier.
             shifted_all=[_relocate(p,np.eye(3),off) for p in b]
-            support=frame_support(a,shifted_all,tolerance,verify_all=True,
-                                  progress=progress,cancelled=cancelled)
-            if support['count']>=minimum and support['count']>baseline:
-                winners.append((support['count'],off,support['pairs']))
+            # Legacy fallback did up to 600+ native checks before the final
+            # comparison. Sample at most 48 real B-Rep proofs. Every unproven
+            # part must still pass the independent final comparison.
+            from .registration_gate import FrameProofCache
+            evidence=FrameProofCache()
+            support=frame_support(a,shifted_all,tolerance,proofs=48,
+                                  progress=progress,cancelled=cancelled,proof_cache=evidence)
+            checked=int(support.get('checked',0))
+            verified=int(support.get('proofs',0))
+            count=int(support.get('count',0))
+            if (count>=minimum and count>baseline and checked>=min(40,count)
+                    and verified>=max(24,ceil(.90*checked))):
+                certified=sorted(evidence.results)
+                winners.append((count,off,certified,True,checked,verified))
             elif suspect is None or len(pairs)>suspect['candidate_pairs']:
                 suspect={'status':'unresolved','method':'step_reexport_not_certified',
-                         'candidate_pairs':len(pairs),'verified_pairs':support['count'],
+                         'candidate_pairs':len(pairs),'verified_pairs':verified,
                          'translation_candidate_mm':off.tolist(),
-                         'reason':'Nie potwierdzono wystarczającej liczby par B-Rep; '
+                         'reason':'Próbka B-Rep nie potwierdziła przesunięcia; '
                                   'nie zastosowano przesunięcia.'}
             continue
         # A strong geometric-descriptor consensus is a suspicion, never proof.
@@ -382,18 +438,21 @@ def _step_reexport_fallback(a,b,baseline,tolerance,progress=None,cancelled=None)
                 proof+=1
                 proven.append((i,j))
         if proof>=minimum and proof>baseline:
-            winners.append((proof,off,proven))
+            winners.append((proof,off,proven,False,proof,proof))
     if not winners:return suspect
-    winners.sort(key=lambda row:-row[0]);votes,off,proven=winners[0]
+    winners.sort(key=lambda row:-row[0]);votes,off,proven,sampled,checked,verified=winners[0]
     if any(score>=votes-max(1,ceil(.1*votes)) and np.linalg.norm(other-off)>tolerance
-           for score,other,_ in winners[1:]):
+           for score,other,*_ in winners[1:]):
         return {'status':'unresolved','reason':'Niejednoznaczne przesunięcie po ponownym zapisie STEP.'}
-    if progress:progress(f'B-Rep STEP: {votes}/{population} niezależnie potwierdzonych odpowiadających powierzchni po przesunięciu.')
+    if progress:
+        progress(f'B-Rep STEP: {verified}/{checked} sprawdzonych dowodów, '
+                 f'{votes}/{population} kandydatów po przesunięciu. '+
+                 ('Reszta wymaga końcowej kontroli.' if sampled else 'Pełne dowody.'))
     return {'status':'registered','method':'step_reexport_translation_consensus',
             'translation_B_to_A_mm':off.tolist(),'rotation_B_to_A':np.eye(3).tolist(),
             'votes':votes,'previous_world_matches':baseline,'support_ratio':round(votes/population,4),
             'requested':True,'enabled':True,'step_reexport_tolerance':True,
-            # Certified 1:1 face topology mapping; reuse when FULLY matching
-            # instead of serializing / comparing complex shapes a third time.
+            'verification_scope':('sample_then_final_compare' if sampled else 'full_brep'),
+            'checked_sample_count':checked,'verified_sample_count':verified,
             'certified_pairs':sorted(proven),
-            'full_pair_map':sorted(proven) if len(proven)==len(a)==len(b) else []}
+            'full_pair_map':sorted(proven) if not sampled and len(proven)==len(a)==len(b) else []}
