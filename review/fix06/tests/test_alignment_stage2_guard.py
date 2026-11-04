@@ -35,3 +35,11 @@ def test_failure_requires_an_explicit_original_choice():
         confirm_original_after_failed_search(lambda q:'search','2/2 only')
     with pytest.raises(InterruptedError,match='Nie potwierdzono'):
         confirm_original_after_failed_search(None,'2/2 only')
+
+
+def test_legacy_progress_does_not_call_two_anchors_a_completed_alignment():
+    import inspect
+    from dsac29 import alignment
+    code=inspect.getsource(alignment._align_anchors)
+    assert 'Kandydat B do A:' in code
+    assert "Wyrównano B do A:" not in code

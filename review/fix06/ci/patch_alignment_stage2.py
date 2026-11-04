@@ -46,7 +46,14 @@ def patch(path):
         if source.count("A translation supported by 2/2 selected anchors") == 1:
             return
         raise RuntimeError('Unknown alignment.py; refusing unsafe patch')
-    target.write_text(source.replace(original,replacement),encoding='utf8')
+    revised=source.replace(original,replacement)
+    # This was displayed before verifying the full assembly, so its
+    # past-tense wording incorrectly implied a successful registration.
+    old_message="if progress:progress(f'Wyrównano B do A: {votes}/{len(pairs)} sprawdzonych baz; translacja [mm]: {np.round(t,3).tolist()}')"
+    new_message="if progress:progress(f'Kandydat B do A: {votes}/{len(pairs)} wstępnie sprawdzonych baz; translacja [mm]: {np.round(t,3).tolist()}. Wyrównanie całego złożenia NIE jest jeszcze potwierdzone.')"
+    if revised.count(old_message)!=1:
+        raise RuntimeError('Unknown legacy alignment progress; refuse misleading output')
+    target.write_text(revised.replace(old_message,new_message),encoding='utf8')
     print('DSCOMPARE_ALIGNMENT_2ANCHOR_GATE_PASS',target)
 
 
