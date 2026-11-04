@@ -64,3 +64,28 @@ def test_small_assembly_keeps_full_native_proof(monkeypatch):
     assert proposal["verification_scope"]=="full_brep"
     assert len(proposal["certified_pairs"])==40
     assert operations.count(True)>0
+
+
+def test_sparse_shift_requires_explicit_confirmation_even_with_all_brep_proofs():
+    from test_r14_sparse_shift import case
+    a,b,records=case()
+    proposal=reg.propose(a,b,records,.01)
+    assert proposal["status"]=="registered"
+    assert proposal["requires_confirmation"] is True
+    assert len(proposal["certified_pairs"])==8
+    assert not proposal["full_pair_map"]
+
+
+def test_logging_automatic_alignment_does_not_crash(tmp_path,monkeypatch):
+    from dsac29 import cli
+    from test_r14_stage1_shift import parts
+    a,b=parts(n=40,stable=40,offset=1000)
+    pa=tmp_path/"a.step";pb=tmp_path/"b.step"
+    pa.write_text("x");pb.write_text("y")
+    monkeypatch.setattr(cli,"load_step",lambda path,**kwargs:a if path==pa else b)
+    out=tmp_path/"results";out.mkdir()
+    messages=[]
+    cli.process(pa,pb,out,step=False,diff_step=False,full_bom=False,
+                revision_style=True,auto_align=True,progress=messages.append)
+    assert any("Wyrównuję automatycznie" in m for m in messages)
+    assert (out/"PODSUMOWANIE.json").exists()

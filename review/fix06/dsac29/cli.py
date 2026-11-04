@@ -202,13 +202,14 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                     (pop>=600 and sample_checked>=40 and
                      sample_proven>=ceil(.90*sample_checked) and
                      votes>=ceil(.70*pop) and original<=ceil(.15*pop)))
-                if sample_safe and ((fully_verified_small and alignment_approval is None) or
+                if (not proposal.get('requires_confirmation',False) and sample_safe
+                    and ((fully_verified_small and alignment_approval is None) or
                     (pop>=8 and votes>=max(2*original,original+ceil(.30*pop))
-                     and votes>=max(8,ceil(.50*pop)))):
+                     and votes>=max(8,ceil(.50*pop))))):
                     decision='align'
                     automatic=True
                     if progress:progress('Jednoznaczne przesunięcie B→A: '+
-                        str(proposal.get('translation_B_to_A_mm'))+' mm; '
+                        str(proposal.get('translation_B_to_A_mm'))+' mm; '+
                         (f'{votes} dopasowań pozycji, {sample_proven}/{sample_checked} prób B-Rep'
                          if sample_only else f'{votes} potwierdzeń B-Rep')+
                         f' vs {original} bez przesunięcia. Wyrównuję automatycznie. '+

@@ -189,9 +189,20 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     votes,offset,certified,verified_volume,sampled,n_sample,p_sample=winners[0]
     total_volume=sum(max(0.0,float(p.volume)) for p in a)
     volume_ratio=verified_volume/max(total_volume,1e-12)
-    # A handful of small repeated fasteners must not anchor a large assembly.
-    if population>=40 and votes<ceil(.50*population) and volume_ratio<.15:
-        return {'status':'unresolved','reason':('Kandydat obejmuje tylko '+f'{volume_ratio:.1%}'+' objętości i '+str(votes)+' brył; możliwe dopasowanie drobnych powtarzalnych części.')}
+    # Sparse revisions can have 8/80 verified unchanged occurrences. Never
+    # auto-relocate a large assembly from low-volume evidence: allow explicit
+    # approval only after all proposed pairs have independent world B-Rep proof.
+    weak_volume=(population>=40 and votes<ceil(.50*population) and volume_ratio<.15)
+    proven_sparse=(low_overlap and not sampled and votes>=minimum
+                   and len(certified)==votes and n_sample==p_sample==votes
+                   and len({i for i,_ in certified})==votes
+                   and len({j for _,j in certified})==votes)
+    if weak_volume and not proven_sparse:
+        return {'status':'unresolved','reason':('Kandydat obejmuje tylko '+f'{volume_ratio:.1%}'+' objętości i '+str(votes)+' brył; brakuje pełnych niezależnych dowodów B-Rep.')}
+    if weak_volume and progress:
+        progress(f'Przesunięcie rzadkiej rewizji: {votes} par B-Rep, tylko '
+                 f'{volume_ratio:.1%} objętości; wymagana decyzja użytkownika. '
+                 'Pozostałe bryły będą porównane w całości po wyrównaniu.')
     if progress:
         progress(f'Wyrównanie: kandydat {votes}/{population}, '+
                  ('szacunkowa zgodność objętości' if sampled else 'potwierdzona objętość')+
@@ -210,6 +221,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     return {'status':'registered','method':'comparison_translation_consensus',
             'translation_B_to_A_mm':offset.tolist(),'rotation_B_to_A':np.eye(3).tolist(),
             'votes':votes,'previous_world_matches':baseline,
+            'requires_confirmation':bool(weak_volume),
             'support_ratio':round(votes/max(1,population),4),
              'verified_volume_ratio':round(volume_ratio,4),
             'requested':True,'enabled':True,'certified_pairs':certified,
