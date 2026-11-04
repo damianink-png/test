@@ -1,5 +1,6 @@
 """Timestamped progress. Counters describe a named stage, never a guessed total."""
 import json
+import os
 import re
 import time
 
@@ -8,6 +9,7 @@ class ProgressEvents:
     def __init__(self, path):
         self.path = path
         self.phase = 'Uruchamianie'
+        self.durable_phases = os.environ.get('DSCOMPARE_DURABLE_PHASES', '') == '1'
 
     def __call__(self, message):
         message = str(message)
@@ -22,6 +24,7 @@ class ProgressEvents:
             ('Generowanie niezależnego podglądu', 'Podgląd 3D'),
             ('Finalizowanie', 'Finalizacja'), ('Gotowe:', 'Zakończono'),
         )
+        previous_phase = self.phase
         for trigger, label in stages:
             if trigger in message:
                 self.phase = label
@@ -37,3 +40,7 @@ class ProgressEvents:
         with self.path.open('a', encoding='utf-8') as stream:
             stream.write(json.dumps(data, ensure_ascii=False) + '\n')
             stream.flush()
+            # Crash triage: persist phase transitions before entering native OCCT.
+            # Opt-in avoids an fsync on every progress event in normal operation.
+            if self.durable_phases and self.phase != previous_phase:
+                os.fsync(stream.fileno())
