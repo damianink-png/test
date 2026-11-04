@@ -366,3 +366,29 @@ def test_unresolved_candidate_is_not_discarded_by_weak_alternative(monkeypatch):
         review_approval=lambda _:'review')
     assert stat['incomplete'] is True
     assert {r.status for r in out}=={'UNCERTAIN'}
+
+
+def test_repeated_renamed_changed_definition_reuses_proven_common_and_cut():
+    """Real geometry changes must not be hidden, but need no per-occurrence recheck."""
+    from OCP.gp import gp_Trsf, gp_Vec
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    def make_occurrences(length,prefix):
+        prototype=BRepPrimAPI_MakeBox(length,10,10).Shape()
+        parts=[]
+        for number in range(4):
+            tr=gp_Trsf()
+            tr.SetTranslation(gp_Vec(float(number*40),0,0))
+            parts.append(describe(prototype.Moved(TopLoc_Location(tr)),
+                                  prefix+str(number),prefix+'/'+str(number)))
+        return parts
+    a=make_occurrences(10,'old')
+    b=make_occurrences(11,'renamed_new')
+    records=([Record(i,None,'REMOVED','') for i in range(4)]+
+             [Record(None,j,'ADDED','') for j in range(4)])
+    out,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,records,review_approval=lambda _:'review')
+    assert {r.status for r in out}=={'CHANGED'}
+    assert stat['accepted']==4 and not stat['incomplete']
+    assert stat['boolean_checks']<=2
+    assert stat['region_proof_reuse']>=2
