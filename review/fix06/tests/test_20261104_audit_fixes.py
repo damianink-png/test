@@ -75,3 +75,14 @@ def test_cli_rejects_nonfinite_inputs_before_touching_files(tmp_path):
         with pytest.raises(ValueError):
             process(source,source,tmp_path/'results',progress=None,**{option:value})
     assert not (tmp_path/'results').exists()
+
+
+def test_revision_proof_cache_is_real_function_local_not_commented_out():
+    """Catch escaped-newline edits that hide the cache assignment in a comment.
+
+    A syntax-only compilation passes even when a referenced local becomes an
+    undefined global; this guard catches that packaging-wide regression early.
+    Functional tests in test_revision_overlap_policy cover the actual path.
+    """
+    fn=revision_overlap._merge_material_revisions_strict
+    assert 'common_cache' in fn.__code__.co_varnames
