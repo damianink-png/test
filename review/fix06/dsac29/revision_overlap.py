@@ -260,9 +260,13 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                         tested.add(record_id)
                         if fallback:stat['repeated_signature_fallback_checks']+=1
                         source=own[record_id]
-                        target=opposite[getattr(record,other_field)]
-                        if (known_same_definition(part,source) and
-                            known_same_definition(part,target)):
+                        # The existing SAME/RENAMED/MOVED record is an
+                        # independently confirmed A↔B geometry proof. A
+                        # repeat needs exact identity only to that survivor
+                        # ON ITS OWN revision side. Requiring byte-identical
+                        # B-Rep across two separately exported STEP revisions
+                        # wrongly rejects genuine occurrences.
+                        if known_same_definition(part,source):
                             if fallback:stat['repeated_signature_fallback_proofs']+=1
                             return True
                     return False

@@ -286,3 +286,41 @@ def test_similar_signature_and_name_cannot_replace_exact_geometry_proof():
     assert stat['added_repeated_occurrences_excluded']==0
     # The unmatched pair remains eligible for independent Common/Cut.
     assert stat['boolean_checks']>=1
+
+
+def test_repeat_uses_proven_surviving_pair_without_requiring_cross_step_brep_bytes():
+    """A and B independently exported same geometry; only within-A copies are exact."""
+    a=[part(x,10,'A_copy_'+str(k)) for k,x in enumerate([0,25,50,75,100])]
+    b=[part(100,10,'B_exported_survivor'),part(0,11,'new_part')]
+    within_a={id(p) for p in a}
+    class IndependentExports:
+        def has_rigid_proof(self,left,right,tolerance):return False
+        def same_definition(self,left,right):
+            # Neither A nor its duplicates are byte-equal to B's STEP B-Rep.
+            return id(left) in within_a and id(right) in within_a
+    existing=[Record(i,None,'REMOVED','') for i in range(4)]
+    existing += [Record(4,0,'SAME','geometrically proven surviving pair'),
+                 Record(None,1,'ADDED','')]
+    result,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,existing,geometry_context=IndependentExports(),
+        review_approval=lambda _: 'review')
+    assert stat['removed_repeated_occurrences_excluded']==4
+    assert stat['boolean_checks']==0 and not stat.get('incomplete')
+    assert len([r for r in result if r.status=='REMOVED'])==4
+    assert not any(r.status=='UNCERTAIN' for r in result)
+
+
+def test_unverified_surviving_record_cannot_be_used_to_suppress_material_comparison():
+    """A placeholder UNCERTAIN pair is not a positive reference for duplicates."""
+    a=[part(0,10,'repeat'),part(100,10,'repeat')]
+    b=[part(100,10,'repeat'),part(0,11,'revision')]
+    class LocalCopy:
+        def has_rigid_proof(self,left,right,tolerance):return False
+        def same_definition(self,left,right):
+            return id(left) in {id(a[0]),id(a[1])} and id(right) in {id(a[0]),id(a[1])}
+    existing=[Record(0,None,'REMOVED',''),Record(1,0,'UNCERTAIN','not verified'),
+              Record(None,1,'ADDED','')]
+    result,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,existing,geometry_context=LocalCopy(),review_approval=lambda _: 'review')
+    assert stat['removed_repeated_occurrences_excluded']==0
+    assert stat['boolean_checks']>0

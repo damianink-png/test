@@ -195,3 +195,12 @@ force, granice tolerancji i duże rzadkie złożenie.
 - Ograniczenie: gdy części są geometrycznie takie same, ale mają różne
   reprezentacje B-Rep i brak jakiegokolwiek potwierdzonego dowodu,
   nadal mogą pozostać UNCERTAIN. Potrzebne są pliki lub logi do oceny.
+
+### Dodatkowa korekta: transytywność pozytywnego dowodu
+- Powtórzenie A muszą być dokładnie identyczne z wystąpieniem A w
+  ZWERYFIKOWANEJ istniejącej parze A↔B. Parę A↔B już wcześniej
+  potwierdził silnik R16, dlatego nie wymagamy dodatkowo takiej samej
+  serializacji B-Rep między dwoma niezależnymi eksportami STEP.
+- Działa symetrycznie dla nowych wystąpień B. Nie dotyczy pozycji
+  UNCERTAIN, żadnego domysłu na podstawie nazwy/wymiaru ani
+  prawdziwych zmian geometrii.
