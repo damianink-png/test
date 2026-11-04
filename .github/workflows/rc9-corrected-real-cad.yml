@@ -14,6 +14,7 @@ on:
       - 'review/fix06/ci/patch_openarm_auto_partial.py'
       - 'review/fix06/ci/patch_material_worker_failclosed.py'
       - 'review/fix06/ci/patch_material_timeout.py'
+      - 'review/fix06/ci/patch_native_completion_read.py'
       - 'review/fix06/ci/patch_stale_failed_pairs.py'
       - 'review/fix06/ci/patch_assignment_uniqueness.py'
       - 'review/fix06/ci/patch_legacy_audit_tests.py'
@@ -86,6 +87,8 @@ jobs:
           python review/fix06/ci/patch_material_worker_failclosed.py dscompare_rc9_manual
           python review/fix06/ci/patch_material_timeout.py dscompare_rc9_manual/dsac29/material_guard.py
           if ($LASTEXITCODE -ne 0) { throw 'Material Common/Cut deadline patch failed' }
+          python review/fix06/ci/patch_native_completion_read.py dscompare_rc9_manual/dsac29/native_session.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native completion mailbox read patch failed' }
           python review/fix06/ci/patch_stale_failed_pairs.py dscompare_rc9_manual/dsac29/compare.py
           python review/fix06/ci/patch_assignment_uniqueness.py dscompare_rc9_manual/dsac29/assignment.py
           if ($LASTEXITCODE -ne 0) { throw 'Large assignment proof patch failed' }
