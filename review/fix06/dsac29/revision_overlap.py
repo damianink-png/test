@@ -319,7 +319,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     stat['spatial_candidates_scanned']=0
     edges={}
     best_common={}
-    common_cache=_TranslatedProofIndex()
+    # Store verified reusable Common proofs for large assemblies, not only the first 128.\n    common_cache=_TranslatedProofIndex(limit=min(4096,max(128,len(old_ids)+len(new_ids))))
     failed_old=set();failed_new=set();failures=[]
     def mark_failure(i,j,error,code='BOOLEAN_FAILED'):
         failed_old.add(i);failed_new.add(j)
@@ -334,8 +334,12 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     stat['exclusion_witnesses']=[]
     guarded_large = True  # every unresolved Common is isolated, including small assemblies
     guarded_started=perf_counter()
-    guarded_budget_s=min(900.0,max(240.0,0.5*(len(old_ids)+len(new_ids))))
-    stat['guarded_budget_seconds']=guarded_budget_s
+    # Native calls have independent per-pair deadlines. An assembly-wide
+    # wall-clock cutoff discards valid later candidates on large CAD models.
+    # Keep the separate native-call count cap as a safety fallback.
+    guarded_budget_s=None
+    stat['guarded_budget_seconds']=None
+    stat['guarded_budget_mode']='per_pair'
     trace.mark('revision_overlap_guard','BEGIN',guarded=guarded_large,unresolved=len(old_ids)+len(new_ids),budget_seconds=guarded_budget_s)
     for idx,i in enumerate(sorted(old_ids)):
         if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
@@ -362,19 +366,22 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
         candidates.sort()
         stat['candidate_pairs']+=len(candidates)
         for _,j in candidates:
+            if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
             # A verified rigidly congruent definition is not changed material.
             # If population changes kept these as separate ADDED/REMOVED
             # occurrences, retain that classification; never invent a pairing.
             if geometry_context is not None and geometry_context.has_rigid_proof(ref,b[j],tolerance):
                 stat['rigid_pairs_excluded']+=1
                 continue
-            if stat['boolean_checks']>=MAX_CHECKS or perf_counter()-guarded_started>=guarded_budget_s:
+            # A cached, independently verified geometric proof does not run
+            # another native operation, even if the scan reached MAX_CHECKS.
+            cached=common_cache.find(ref,b[j])
+            if cached is None and stat['boolean_checks']>=MAX_CHECKS:
                 stat['budget_exceeded']=True
                 if not recover_failures:
-                    raise NativeGeometryFailure('Limit czasu lub liczby testów materiału — analiza niekompletna')
-                mark_failure(i,j,'Nie wykonano testu: przekroczony limit czasu lub liczby operacji',code='BUDGET_EXCEEDED')
+                    raise NativeGeometryFailure('Limit liczby testów materiału — analiza niekompletna')
+                mark_failure(i,j,'Nie wykonano testu: przekroczony limit liczby operacji',code='BUDGET_EXCEEDED')
                 continue
-            cached=common_cache.find(ref,b[j])
             shape=None
             evidence=None
             recovered_regions=None
@@ -413,7 +420,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 # An independently isolated shared-filler Common+Cuts method
                 # can recover a malformed Common. Never accept it unless all
                 # source-bound material regions pass strict conservation.
-                if shape is None and cached is None and not stat['budget_exceeded']:
+                if shape is None and cached is None:
                     try:
                         recovered_regions=measured_brep('revision_common_alternative_regions',i,j,calculate,ref,b[j],tolerance)
                         bind_regions(recovered_regions,ref,b[j],tolerance)
@@ -529,21 +536,17 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             if k<len(geometry_pending):pending.append(geometry_pending[k])
             if k<len(budget_pending):pending.append(budget_pending[k])
         seen=set()
-        # Give unresolved pairs a separate bounded recovery window. The
-        # original 240 s shared deadline could stop before all six were tried.
-        retry_budget_s=min(600.0,max(240.0,90.0*min(len(pending),6)))
-        stat['retry_budget_seconds']=retry_budget_s
+        # Each unique unresolved pair gets one retry, bounded by the native
+        # worker's per-pair timeout. Earlier slow pairs cannot exhaust a
+        # shared recovery deadline and starve later independent parts.
+        stat['retry_budget_seconds']=None
+        stat['retry_budget_mode']='per_pair'
         stat['retry_skipped_due_to_time']=0
         stat['retry_failure_attempted']=0
         stat['retry_failure_recovered']=0
         stat['retry_failure_excluded']=0
         stat['retry_failure_failed']=0
         for failure in pending:
-            if perf_counter()-retry_started>=retry_budget_s:
-                stat['retry_skipped_due_to_time']=len(pending)-len(seen)
-                trace.mark('revision_postpass_retry','TIME_BUDGET_EXHAUSTED',remaining=stat['retry_skipped_due_to_time'],budget_seconds=retry_budget_s)
-                if progress:progress(f'Ponowienia B-Rep: limit {retry_budget_s:.0f} s, pozostalo {stat["retry_skipped_due_to_time"]} par')
-                break
             if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
             i,j=failure['a_index'],failure['b_index']
             if (i,j) in seen:continue
@@ -602,6 +605,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             except (NativeGeometryFailure,ValueError,RuntimeError,OSError) as exc:
                 if not is_budget:stat['retry_failure_failed']+=1
                 trace.mark('revision_postpass_retry','UNRESOLVED',a_index=i,b_index=j,error=str(exc))
+        stat['retry_elapsed_s']=round(perf_counter()-retry_started,3)
         failed_old={f['a_index'] for f in failures}
         failed_new={f['b_index'] for f in failures}
     # A speculative Common failure must not erase a decisively stronger

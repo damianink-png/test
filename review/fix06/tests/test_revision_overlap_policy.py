@@ -502,3 +502,42 @@ def test_failed_early_occurrences_recover_from_later_exact_positive_proof(monkey
     assert stat.get('retry_failure_attempted',0)==0
     assert {r.status for r in out}=={'CHANGED'}
     assert len(regions)==4 and not stat['incomplete']
+
+
+def test_assembly_wallclock_does_not_skip_later_native_pairs(monkeypatch):
+    """Elapsed time is telemetry, never proof that later candidates were checked."""
+    old=[part(0,10,'old_first'),part(100,10,'old_second')]
+    new=[part(0,11,'new_first'),part(100,11,'new_second')]
+    ticks=[0.0]
+    def fake_clock():
+        ticks[0]+=1000.0  # exceed the former 240-900 s shared budget
+        return ticks[0]
+    monkeypatch.setattr(revision_overlap,'perf_counter',fake_clock)
+    result,regions,stats=revision_overlap.merge_material_revisions(
+        old,new,records(old,new),review_approval=lambda _:'review')
+    assert stats['guarded_budget_seconds'] is None
+    assert stats['guarded_budget_mode']=='per_pair'
+    assert stats['boolean_checks']==2
+    assert not stats['budget_exceeded'] and not stats['incomplete']
+    assert len(regions)==2 and {r.status for r in result}=={'CHANGED'}
+
+
+def test_recovery_wallclock_does_not_starve_later_pairs(monkeypatch):
+    """Each distinct unverified pair is retried despite earlier long operations."""
+    old=[part(50*i,10,'old_'+str(i)) for i in range(4)]
+    new=[part(50*i,11,'new_'+str(i)) for i in range(4)]
+    monkeypatch.setattr(revision_overlap,'MAX_CHECKS',1)
+    ticks=[0.0]
+    def fake_clock():
+        ticks[0]+=1000.0  # previously skipped the entire retry queue
+        return ticks[0]
+    monkeypatch.setattr(revision_overlap,'perf_counter',fake_clock)
+    result,regions,stats=revision_overlap.merge_material_revisions(
+        old,new,records(old,new),review_approval=lambda _:'review')
+    assert stats['retry_budget_seconds'] is None
+    assert stats['retry_budget_mode']=='per_pair'
+    assert stats['retry_skipped_due_to_time']==0
+    assert stats['retry_budget_attempted']==3
+    assert stats['retry_budget_recovered']==3
+    assert stats['accepted']==4 and not stats['incomplete']
+    assert len(regions)==4 and {r.status for r in result}=={'CHANGED'}
