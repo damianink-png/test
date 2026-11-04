@@ -6,6 +6,10 @@ on:
       - 'review/fix06/dsac29/revision_overlap.py'
       - 'review/fix06/dsac29/cli.py'
       - 'review/fix06/dsac29/step_io.py'
+      - 'review/fix06/dsac29/name_encoding.py'
+      - 'review/fix06/dsac29/standalone_mass_materials.py'
+      - 'review/fix06/dsac29/material_mass_report.py'
+      - 'review/fix06/tests/test_mass_html_materials.py'
       - 'review/fix06/ci/patch_geometry_registry_streaming.py'
       - 'review/fix06/ci/patch_alignment_stage2.py'
       - 'review/fix06/tests/test_alignment_stage2_guard.py'
@@ -71,6 +75,9 @@ jobs:
           python review/fix06/ci/patch_gui_minimal.py dscompare_rc9_manual
           python review/fix06/ci/patch_legacy_ui_tests.py dscompare_rc9_manual
           Copy-Item review/fix06/dsac29/step_io.py dscompare_rc9_manual/dsac29/step_io.py -Force
+          Copy-Item review/fix06/dsac29/name_encoding.py dscompare_rc9_manual/dsac29/name_encoding.py -Force
+          Copy-Item review/fix06/dsac29/standalone_mass_materials.py dscompare_rc9_manual/dsac29/standalone_mass_materials.py -Force
+          Copy-Item review/fix06/dsac29/material_mass_report.py dscompare_rc9_manual/dsac29/material_mass_report.py -Force
           Copy-Item review/fix06/dsac29/cli.py dscompare_rc9_manual/dsac29/cli.py -Force
           python review/fix06/ci/patch_geometry_registry_streaming.py dscompare_rc9_manual/dsac29/geometry_registry.py
           if ($LASTEXITCODE -ne 0) { throw 'Streaming registry patch failed' }
@@ -87,6 +94,7 @@ jobs:
           Copy-Item review/fix06/tests/test_revision_overlap_policy.py dscompare_rc9_manual/tests/test_revision_overlap_policy.py -Force
           Copy-Item review/fix06/tests/test_20261104_audit_fixes.py dscompare_rc9_manual/tests/test_20261104_audit_fixes.py -Force
           Copy-Item review/fix06/tests/test_alignment_stage2_guard.py dscompare_rc9_manual/tests/test_alignment_stage2_guard.py -Force
+          Copy-Item review/fix06/tests/test_mass_html_materials.py dscompare_rc9_manual/tests/test_mass_html_materials.py -Force
           Copy-Item review/fix06/tests/test_streamed_preview.py dscompare_rc9_manual/tests/test_streamed_preview.py -Force
           Copy-Item review/fix06/tests/test_semantic_palette_export.py dscompare_rc9_manual/tests/test_semantic_palette_export.py -Force
           # Legacy tests simulated failure of just one algorithm; to model
@@ -108,7 +116,7 @@ jobs:
           ./BUDUJ_WINDOWS.ps1 -InstallOnly
           if ($LASTEXITCODE -ne 0) { throw 'Dependency install failed' }
           python -m pip install pytest
-          python -m pytest -q tests/test_material_worker_failclosed.py tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_20261104_audit_fixes.py tests/test_alignment_stage2_guard.py tests/test_streamed_preview.py tests/test_gui_minimal.py tests/test_semantic_palette_export.py tests/test_partial_material_review.py tests/test_partial_material_continue.py tests/test_revision_common_recovery.py tests/test_revision_r4.py tests/test_r15_material_renamed.py
+          python -m pytest -q tests/test_material_worker_failclosed.py tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_20261104_audit_fixes.py tests/test_alignment_stage2_guard.py tests/test_mass_html_materials.py tests/test_streamed_preview.py tests/test_gui_minimal.py tests/test_semantic_palette_export.py tests/test_partial_material_review.py tests/test_partial_material_continue.py tests/test_revision_common_recovery.py tests/test_revision_r4.py tests/test_r15_material_renamed.py
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
       - name: Compile patched engine
         working-directory: dscompare_rc9_manual

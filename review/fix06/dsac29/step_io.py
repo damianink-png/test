@@ -17,12 +17,13 @@ from OCP.TopLoc import TopLoc_Location
 from OCP.Quantity import Quantity_Color,Quantity_ColorRGBA,Quantity_TOC_RGB
 from OCP.IFSelect import IFSelect_RetDone
 from .geometry import SolidInfo,describe
+from .name_encoding import repair_polish_name
 
 
 def _label_name(label: TDF_Label, default=''): 
     attr=TDataStd_Name()
     if label.FindAttribute(TDataStd_Name.GetID_s(),attr):
-        txt=attr.Get().ToExtString().strip()
+        txt=repair_polish_name(attr.Get().ToExtString().strip())
         if txt: return txt
     return default
 

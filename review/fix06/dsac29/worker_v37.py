@@ -131,7 +131,12 @@ def main(argv=None):
             else:
                 output,s=analyze_single(ns.input,ns.output,ns.density,progress=emit,preview=not ns.no_preview,max_solids=ns.max_solids)
             from .standalone_mass_materials import enhance_mass_html
-            if enhance_mass_html(output,ns.density):emit('Raport masy: aktywne materiały i gęstości dla każdej pozycji BOM.')
+            if enhance_mass_html(output,ns.density):
+                emit('Raport masy: edytowalne materiały i gęstości dla każdej pozycji BOM; zapis JSON i CSV.')
+            else:
+                # Never silently claim materials are editable when there was
+                # no matching HTML in the output directory.
+                emit('UWAGA: Brak RAPORT_MASY.html — nie wygenerowano edytowalnego raportu materiałów.')
             payload={'ok':True,'folder':str(output),'podsumowanie':s}
         else:
             from .mesh_v37 import make_mesh

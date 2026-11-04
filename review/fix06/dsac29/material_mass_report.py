@@ -17,15 +17,21 @@ MATERIALS = {
 }
 
 def render_mass_report(bom_a, bom_b, density=7850):
+    available = dict(MATERIALS)
+    initial = next((name for name, value in available.items()
+                    if value == float(density)), None)
+    if initial is None:
+        initial = "Gęstość z analizy ({} kg/m³)".format(float(density))
+        available[initial] = float(density)
     rows = []
     for side, bom in (("A", bom_a), ("B", bom_b)):
         for name, count, volume, _unit, _total, path in bom:
             rows.append(dict(side=side, name=name, count=int(count),
                              volume=float(volume), path=path,
-                             material="Stal konstrukcyjna S235/S355/S690",
+                             material=initial,
                              density=float(density)))
     payload=json.dumps(rows,ensure_ascii=False).replace("<","\\u003c")
-    library=json.dumps(MATERIALS,ensure_ascii=False).replace("<","\\u003c")
+    library=json.dumps(available,ensure_ascii=False).replace("<","\\u003c")
     return """<!doctype html><html lang="pl"><meta charset="utf-8"><title>DS Compare — Masa części</title>
 <style>body{font:14px system-ui;background:#141a22;color:#e9edf4;margin:30px}h1{font-size:23px}
 button,input,select{background:#242e3c;color:#fff;border:1px solid #536070;border-radius:6px;padding:7px}
