@@ -108,3 +108,42 @@ def test_centroid_shift_never_accepts_unproven_sample(monkeypatch):
         lambda *a,**k:{'ratio':1,'count':20,'checked':8,'proofs':0})
     with pytest.raises(alignment.AlignmentUnavailable,match='0/8'):
         _align_global_centroid_translation(a,b,.01)
+
+
+def test_two_independently_exported_step_assemblies_with_only_translation(tmp_path):
+    """Real STEP write/read regression, not only in-memory OCCT locations."""
+    from OCP.STEPControl import STEPControl_Writer, STEPControl_AsIs
+    from OCP.TopoDS import TopoDS_Builder, TopoDS_Compound
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from OCP.gp import gp_Pnt, gp_Trsf, gp_Vec
+    from OCP.TopLoc import TopLoc_Location
+    from dsac29.step_io import load_step
+    from dsac29.alignment import align_assembly
+    def write(path,shift):
+        compound=TopoDS_Compound()
+        builder=TopoDS_Builder()
+        builder.MakeCompound(compound)
+        for i in range(16):
+            item=BRepPrimAPI_MakeBox(gp_Pnt(float(i*30),float((i%3)*20),0.),
+                                    10.+i%5,12.,7.).Shape()
+            if shift!=(0,0,0):
+                location=gp_Trsf()
+                location.SetTranslation(gp_Vec(*map(float,shift)))
+                item=item.Moved(TopLoc_Location(location))
+            builder.Add(compound,item)
+        writer=STEPControl_Writer()
+        assert int(writer.Transfer(compound,STEPControl_AsIs))==1
+        assert int(writer.Write(str(path)))==1
+    old=tmp_path/'unchanged.step'
+    shifted=tmp_path/'shifted.step'
+    write(old,(0,0,0))
+    write(shifted,(1000,1300,500))
+    a=load_step(str(old))
+    b=load_step(str(shifted))
+    assert len(a)==len(b)==16
+    _,proposal=align_assembly(a,b,.01)
+    assert proposal['status']=='registered'
+    assert proposal['translation_B_to_A_mm']==pytest.approx([-1000.,-1300.,-500.])
+    assert proposal['checked_sample_count']==12
+    assert proposal['verified_sample_count']==12
+    assert proposal['verification_scope']=='sample_then_final_compare'
