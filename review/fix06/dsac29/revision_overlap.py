@@ -324,7 +324,17 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     failed_old=set();failed_new=set();failures=[]
     def mark_failure(i,j,error,code='BOOLEAN_FAILED'):
         failed_old.add(i);failed_new.add(j)
-        entry={'a_index':i,'b_index':j,'error':str(error),'code':code}
+        message=str(error)
+        # A fatal input-tolerance mismatch is an input invariant, not a
+        # transient numerical operation. Two native timeouts on the same
+        # unchanged operands likewise cannot be repaired by repeating the
+        # same Common + Cut deadlines. Keep both explicitly unverified.
+        if 'Original STEP stored tolerance exceeds CAD budget' in message:
+            code='INVALID_INPUT_TOLERANCE'
+        elif ('Timeout odizolowanej operacji Common' in message and
+              'Obliczenie Common/Cut nieukończone' in message):
+            code='REPEATED_NATIVE_TIMEOUT'
+        entry={'a_index':i,'b_index':j,'error':message,'code':code}
         failures.append(entry)
         trace.mark('revision_material_pair','UNVERIFIED',**entry)
         if progress:progress(f'Niepotwierdzona para A[{i}] / B[{j}]: {error}; kontynuuję inne pary.')
@@ -527,8 +537,20 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     # still requires an independently validated Common/Cut partition.
     if recover_failures and failures and MAX_CHECKS>0:
         retry_started=perf_counter()
+        # Do not repeat known deterministic failures; preserve all as
+        # UNCERTAIN unless an independently proven alternative dominates.
+        unproductive={'INVALID_INPUT_TOLERANCE','REPEATED_NATIVE_TIMEOUT'}
+        stat['retry_skipped_unproductive']=sum(
+            f['code'] in unproductive for f in failures)
+        for failure in failures:
+            if failure['code'] in unproductive:
+                trace.mark('revision_postpass_retry','SKIP_UNPRODUCTIVE',
+                           a_index=failure['a_index'],
+                           b_index=failure['b_index'],reason=failure['code'])
         budget_pending=[f for f in failures if f['code']=='BUDGET_EXCEEDED']
-        geometry_pending=[f for f in failures if f['code']!='BUDGET_EXCEEDED']
+        geometry_pending=[f for f in failures
+                          if f['code'] not in unproductive
+                          and f['code']!='BUDGET_EXCEEDED']
         # Retry all failed candidate pairs fairly: isolated comparisons can pass
         # even when the assembly-wide scan exhausted its shared budget.
         # Interleave geometry errors and budget omissions so neither starves.

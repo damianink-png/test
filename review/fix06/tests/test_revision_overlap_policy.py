@@ -541,3 +541,59 @@ def test_recovery_wallclock_does_not_starve_later_pairs(monkeypatch):
     assert stats['retry_budget_recovered']==3
     assert stats['accepted']==4 and not stats['incomplete']
     assert len(regions)==4 and {r.status for r in result}=={'CHANGED'}
+
+
+def test_invalid_source_tolerance_does_not_repeat_native_probe(monkeypatch):
+    """OpenArm: the original STEP cannot pass a lower tolerance on a retry."""
+    from dsac29 import native_guard, common_exclusion
+    a=[part(0,10,'bad_tolerance_old')]
+    b=[part(0,11,'bad_tolerance_new')]
+    calls={'common':0,'regions':0,'exclude':0}
+    def invalid_common(*args,**kwargs):
+        calls['common']+=1
+        raise native_guard.NativeGeometryFailure(
+            'UnprovenRepair: Original STEP stored tolerance exceeds CAD budget')
+    def invalid_regions(*args,**kwargs):
+        calls['regions']+=1
+        raise native_guard.NativeGeometryFailure('INVALID_BREP_AFTER_REPAIR')
+    def invalid_exclusion(*args,**kwargs):
+        calls['exclude']+=1
+        raise native_guard.NativeGeometryFailure('No exclusion proof')
+    monkeypatch.setattr(native_guard,'guarded_common',invalid_common)
+    monkeypatch.setattr(revision_overlap,'calculate',invalid_regions)
+    monkeypatch.setattr(common_exclusion,'guarded_exclusion',invalid_exclusion)
+    out,_,stat=revision_overlap.merge_material_revisions(
+        a,b,records(a,b),review_approval=lambda _:'review')
+    assert calls=={'common':1,'regions':1,'exclude':1}
+    assert stat['retry_skipped_unproductive']==1
+    assert stat['retry_failure_attempted']==0
+    assert stat['failed_pairs'][0]['code']=='INVALID_INPUT_TOLERANCE'
+    assert stat['incomplete'] and {r.status for r in out}=={'UNCERTAIN'}
+
+
+def test_both_native_timeouts_do_not_repeat_unchanged_pair(monkeypatch):
+    """Once Common and the independent material fallback timed out, stop retrying."""
+    from dsac29 import native_guard,common_exclusion
+    a=[part(0,10,'timeout_old')]
+    b=[part(0,11,'timeout_new')]
+    calls={'common':0,'regions':0}
+    def common_timeout(*args,**kwargs):
+        calls['common']+=1
+        raise native_guard.NativeGeometryFailure(
+            'Timeout odizolowanej operacji Common — wynik rewizji niekompletny')
+    def regions_timeout(*args,**kwargs):
+        calls['regions']+=1
+        raise native_guard.NativeGeometryFailure(
+            'Obliczenie Common/Cut nieukończone (limit 180 s)')
+    monkeypatch.setattr(native_guard,'guarded_common',common_timeout)
+    monkeypatch.setattr(revision_overlap,'calculate',regions_timeout)
+    monkeypatch.setattr(common_exclusion,'guarded_exclusion',
+                        lambda *args,**kwargs: (_ for _ in ()).throw(
+                            native_guard.NativeGeometryFailure('no proof')))
+    out,_,stat=revision_overlap.merge_material_revisions(
+        a,b,records(a,b),review_approval=lambda _:'review')
+    assert calls=={'common':1,'regions':1}
+    assert stat['retry_skipped_unproductive']==1
+    assert stat['retry_failure_attempted']==0
+    assert stat['failed_pairs'][0]['code']=='REPEATED_NATIVE_TIMEOUT'
+    assert stat['incomplete'] and {r.status for r in out}=={'UNCERTAIN'}
