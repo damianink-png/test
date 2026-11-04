@@ -195,15 +195,24 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                 # small assemblies, even when every sample matches. Users
                 # must still be able to cancel a proposed shift (and avoid
                 # publishing comparison results in a refused frame).
-                if ((fully_verified_small and alignment_approval is None) or
+                sample_only=proposal.get('verification_scope')=='sample_then_final_compare'
+                sample_checked=int(proposal.get('checked_sample_count',0))
+                sample_proven=int(proposal.get('verified_sample_count',0))
+                sample_safe=(not sample_only or
+                    (pop>=600 and sample_checked>=40 and
+                     sample_proven>=ceil(.90*sample_checked) and
+                     votes>=ceil(.70*pop) and original<=ceil(.15*pop)))
+                if sample_safe and ((fully_verified_small and alignment_approval is None) or
                     (pop>=8 and votes>=max(2*original,original+ceil(.30*pop))
                      and votes>=max(8,ceil(.50*pop)))):
                     decision='align'
                     automatic=True
                     if progress:progress('Jednoznaczne przesunięcie B→A: '+
                         str(proposal.get('translation_B_to_A_mm'))+' mm; '
-                        f'{votes} potwierdzeń B-Rep vs {original} bez przesunięcia. '
-                        'Wyrównuję automatycznie.')
+                        (f'{votes} dopasowań pozycji, {sample_proven}/{sample_checked} prób B-Rep'
+                         if sample_only else f'{votes} potwierdzeń B-Rep')+
+                        f' vs {original} bez przesunięcia. Wyrównuję automatycznie. '+
+                        ('Końcowe porównanie zweryfikuje resztę.' if sample_only else ''))
             if decision is None:
                 if alignment_approval is None:
                     raise RuntimeError('Niepewne przesunięcie wymaga decyzji użytkownika.')
@@ -285,6 +294,21 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                 # Only one FULL comparison runs. The first pass stopped at stage 1.
                 with trace.phase('final_comparison_after_alignment',certified_pairs=len(certified_pairs)):
                     rec=do_compare()
+        if alignment.get('applied') and alignment.get('verification_scope')=='sample_then_final_compare':
+            # Sampled candidates are never permission to publish unproven
+            # changes. Verify a strong majority of the proposed frame in
+            # the final, independent CAD comparison before writing STEP.
+            final_same=sum(r.status in ('SAME','RENAMED') for r in rec)
+            required_final=max(int(alignment.get('verified_sample_count',0)),
+                               ceil(.60*float(alignment.get('votes',0))))
+            if final_same<required_final:
+                raise RuntimeError(f'Przesunięcie niepotwierdzone końcowym B-Rep: '
+                                   f'{final_same}/{int(alignment.get("votes",0))} '
+                                   f'zgodnych brył; wymagane {required_final}. '
+                                   'Nie zapisano STEP.')
+            alignment['verification_status']='confirmed_by_final_comparison'
+            alignment['final_verified_same']=final_same
+            if progress:progress(f'Końcowa kontrola przesunięcia: {final_same} zgodnych brył.')
         trace.mark('alignment','END',applied=bool(alignment.get('applied')),certified_pairs=len(certified_pairs))
         deferred_s=perf_counter()-shift_start
         alignment_s+=deferred_s

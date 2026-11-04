@@ -147,12 +147,36 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
                 and preliminary['count']>baseline
                 and checked>=min(8,preliminary['count'])
                 and confirmed>=min(preliminary['count'],max(4,ceil(.65*checked)))):
-            # All accepted pairs must still be independently B-Rep proven.
-            support=frame_support(a,shifted,tolerance,verify_all=True,
-                                  progress=progress,cancelled=cancelled,proof_cache=proof_cache)
-            if support['count']>=minimum and support['count']>baseline:
-                verified_volume=sum(max(0.0,float(a[i].volume)) for i,_ in support['pairs'])
-                winners.append((support['count'],offset,support['pairs'],verified_volume))
+            # On assemblies of 600+ solids, the original verify_all pass
+            # repeatedly launched hundreds of native OCCT operations before
+            # the final compare; the V2 revision_shift crashed after 412.
+            # A strong sample proves only its own pairs. All other pairs
+            # must still undergo the normal final comparison.
+            if population>=600 and preliminary['count']>=max(300,ceil(.55*population)):
+                sample=frame_support(a,shifted,tolerance,proofs=48,
+                                     progress=progress,cancelled=cancelled,
+                                     proof_cache=proof_cache)
+                n=sample['checked'];verified=sample['proofs']
+                if (n>=min(40,sample['count']) and
+                    verified>=max(24,ceil(.90*n)) and
+                    sample['count']>baseline):
+                    # Only proven B-Rep pairs are safe to reuse, never the
+                    # provisional descriptor-only pair map.
+                    certified=sorted(proof_cache.results)
+                    winners.append((sample['count'],offset,certified,
+                                    _covered_volume,True,n,verified))
+                    if progress:
+                        progress(f'Wyrównanie: próbka {verified}/{n} B-Rep; '
+                                 f'{sample["count"]-len(certified)} pozostałych '
+                                 'kandydatów wymaga weryfikacji końcowej.')
+            else:
+                support=frame_support(a,shifted,tolerance,verify_all=True,
+                                      progress=progress,cancelled=cancelled,
+                                      proof_cache=proof_cache)
+                if support['count']>=minimum and support['count']>baseline:
+                    verified_volume=sum(max(0.0,float(a[i].volume)) for i,_ in support['pairs'])
+                    winners.append((support['count'],offset,support['pairs'],
+                                    verified_volume,False,support['checked'],support['proofs']))
         from . import trace_r22 as trace
         trace.mark('registration_proof_cache','END',hits=proof_cache.hits,
                    proof_calls=proof_cache.proof_calls,stored=len(proof_cache.results),
@@ -161,19 +185,25 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
             progress(f'Przesunięcie: próbka B-Rep {confirmed}/{checked}, '
                      f'pełne dowody {len(winners)}, kandydaci {len(evaluated)}')
     if not winners:return {'status':'unresolved','reason':'Hipotezy nie przeszły kontroli geometrii.'}
-    winners.sort(key=lambda v:(-v[3],-v[0]));votes,offset,certified,verified_volume=winners[0]
+    winners.sort(key=lambda v:(-v[3],-v[0]))
+    votes,offset,certified,verified_volume,sampled,n_sample,p_sample=winners[0]
     total_volume=sum(max(0.0,float(p.volume)) for p in a)
     volume_ratio=verified_volume/max(total_volume,1e-12)
     # A handful of small repeated fasteners must not anchor a large assembly.
     if population>=40 and votes<ceil(.50*population) and volume_ratio<.15:
         return {'status':'unresolved','reason':('Kandydat obejmuje tylko '+f'{volume_ratio:.1%}'+' objętości i '+str(votes)+' brył; możliwe dopasowanie drobnych powtarzalnych części.')}
-    if progress:progress(f'Wyrównanie: najlepszy kandydat {votes}/{population} brył, potwierdzona objętość {volume_ratio:.1%}, przesunięcie {offset.tolist()} mm')
+    if progress:
+        progress(f'Wyrównanie: kandydat {votes}/{population}, '+
+                 ('szacunkowa zgodność objętości' if sampled else 'potwierdzona objętość')+
+                 f' {volume_ratio:.1%}; przesunięcie {offset.tolist()} mm. '+
+                 (f'Próbka B-Rep {p_sample}/{n_sample}; reszta w porównaniu końcowym.'
+                  if sampled else 'Pełne dowody B-Rep.'))
     # Sparse revisions (e.g. 8/80 unchanged parts) require a convincing
     # winner, not just any 8 matching generic bolts. Compare all verified
     # runner-ups with a tolerance for nearly identical vote totals.
     ambiguity_margin=max(1,ceil(.10*votes)) if low_overlap else 0
     if any(score>=votes-ambiguity_margin and np.linalg.norm(other-offset)>tolerance
-           for score,other,_,other_volume in winners[1:] if other_volume>=verified_volume*.90):
+           for score,other,_,other_volume,*_ in winners[1:] if other_volume>=verified_volume*.90):
         return {'status':'unresolved',
                 'reason':'Kilka przesunięć ma podobne potwierdzenie B-Rep. '
                          'Nie zmieniono układu bez jednoznacznego wyniku.'}
@@ -183,7 +213,9 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
             'support_ratio':round(votes/max(1,population),4),
              'verified_volume_ratio':round(volume_ratio,4),
             'requested':True,'enabled':True,'certified_pairs':certified,
-            'full_pair_map':certified if len(certified)==len(a)==len(b) else []}
+            'verification_scope':('sample_then_final_compare' if sampled else 'full_brep'),
+            'checked_sample_count':n_sample,'verified_sample_count':p_sample,
+            'full_pair_map':(certified if not sampled and len(certified)==len(a)==len(b) else [])}
 
 
 def _periodic_global_offset_possible(a,b,tolerance,population,free_a=(),free_b=()):

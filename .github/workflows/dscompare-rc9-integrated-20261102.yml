@@ -6,6 +6,8 @@ on:
       - 'review/fix06/apply_rc9_20261102.py'
       - 'review/fix06/dsac29/revision_overlap.py'
       - 'review/fix06/dsac29/cli.py'
+      - 'review/fix06/dsac29/deferred_alignment.py'
+      - 'review/fix06/tests/test_large_frame_sampling.py'
       - 'review/fix06/dsac29/step_io.py'
       - 'review/fix06/dsac29/name_encoding.py'
       - 'review/fix06/dsac29/standalone_mass_materials.py'
@@ -62,8 +64,9 @@ jobs:
           Copy-Item review/fix06/tests/test_20261104_audit_fixes.py baseline/dscompare_rc9_manual/tests/ -Force
           Copy-Item review/fix06/tests/test_alignment_stage2_guard.py baseline/dscompare_rc9_manual/tests/ -Force
           Copy-Item review/fix06/tests/test_mass_html_materials.py baseline/dscompare_rc9_manual/tests/ -Force
+          Copy-Item review/fix06/tests/test_large_frame_sampling.py baseline/dscompare_rc9_manual/tests/ -Force
           python review/fix06/apply_rc9_20261102.py baseline/dscompare_rc9_manual
-          foreach ($module in @('revision_overlap.py','candidate_policy.py','overlap_evidence.py','cli.py','report.py','material_mass_report.py','standalone_mass_materials.py','name_encoding.py','worker_v37.py','preview3d.py','preview_template.html','step_io.py')) {
+          foreach ($module in @('revision_overlap.py','candidate_policy.py','overlap_evidence.py','cli.py','report.py','material_mass_report.py','standalone_mass_materials.py','name_encoding.py','worker_v37.py','deferred_alignment.py','preview3d.py','preview_template.html','step_io.py')) {
             Copy-Item "review/fix06/dsac29/$module" "baseline/dscompare_rc9_manual/dsac29/$module" -Force
           }
           python review/fix06/ci/patch_geometry_registry_streaming.py baseline/dscompare_rc9_manual/dsac29/geometry_registry.py
@@ -87,7 +90,7 @@ jobs:
           python -m pip install pytest cadquery-ocp==7.9.3.1.1 numpy
           # Run native OCCT tests in fresh Python processes; combined pytest
           # can retain worker state and stall unrelated subsequent tests.
-          foreach ($test in @('test_revision_overlap_policy.py','test_revision_common_recovery.py','test_rc9_retry_after_assembly_failure.py','test_output_palette.py','test_stability.py','test_streamed_preview.py','test_20261104_audit_fixes.py','test_alignment_stage2_guard.py','test_mass_html_materials.py')) {
+          foreach ($test in @('test_revision_overlap_policy.py','test_revision_common_recovery.py','test_rc9_retry_after_assembly_failure.py','test_output_palette.py','test_stability.py','test_streamed_preview.py','test_20261104_audit_fixes.py','test_alignment_stage2_guard.py','test_mass_html_materials.py','test_large_frame_sampling.py')) {
             python -m pytest -q "tests/$test"
             if ($LASTEXITCODE -ne 0) { throw "Regression failed: $test" }
           }
