@@ -81,3 +81,86 @@ def test_legacy_mass_html_without_tbody_and_declared_windows_charset(tmp_path):
     assert "koła linowego" in fixed
     assert "<meta charset=\"utf-8\">" in fixed
     assert "windows-1250" not in fixed
+
+
+CSV_SAMPLE = """Nazwa części;Ilość;Objętość jednej sztuki [mm³];Masa jednej sztuki [kg];Masa łączna [kg];Ścieżka w złożeniu
+04244050_G_RELEASED;2;125000,5;0,981254;1,962508;Złożenie/Element
+Płyta wspornika;1;100000;0,785;0,785;Złożenie/Podzespół
+"""
+
+
+def test_report_with_legacy_headers_restored_from_computed_csv(tmp_path):
+    report = tmp_path / "RAPORT_MASY.html"
+    original = ('<!doctype html><html lang="pl"><head><meta charset="utf-8"></head><body>'
+                '<h1>Masa części i złożeń</h1><table><thead><tr><th>Element</th><th>Waga</th></tr></thead>'
+                '<tbody><tr><td>04244050_G_RELEASED</td><td>2,7475</td></tr></tbody></table></body></html>')
+    report.write_text(original, encoding='utf8')
+    (tmp_path / 'MASY_CZESCI.csv').write_text(CSV_SAMPLE, encoding='utf-8-sig')
+    assert enhance_mass_html(tmp_path, 7850)
+    result = report.read_text(encoding='utf8')
+    assert 'id="ds-restored-bom"' in result
+    assert '04244050_G_RELEASED' in result
+    assert 'Płyta wspornika' in result
+    assert '125000,5' in result
+    assert 'Materiał dla wszystkich' in result
+    assert result.count('id="ds-restored-bom"') == 1
+    assert enhance_mass_html(tmp_path, 7850)
+    assert report.read_text(encoding='utf8') == result
+
+
+def test_multi_model_summary_restores_all_bom_rows(tmp_path):
+    report = tmp_path / 'RAPORT_MASY.html'
+    report.write_text('<html><body><table><thead><tr><th>Plik</th><th>Masa [kg]</th></tr></thead>'
+                      '<tbody><tr><td>A</td><td>2</td></tr></tbody></table></body></html>', encoding='utf8')
+    (tmp_path / 'MASY_CZESCI.csv').write_text(CSV_SAMPLE, encoding='utf8')
+    assert enhance_mass_html(tmp_path, 7850)
+    html=report.read_text(encoding='utf8')
+    assert '<th>Ilość</th>' in html
+    assert '<th>Objętość jednej sztuki [mm³]</th>' in html
+    assert 'id="ds-materials-script"' in html
+
+
+def test_missing_csv_does_not_destroy_original_report(tmp_path):
+    import pytest
+    from dsac29.standalone_mass_materials import MassReportFormatError
+    report=tmp_path/'RAPORT_MASY.html'
+    original='<html><body><table><tr><td>Waga</td></tr></table></body></html>'
+    report.write_text(original,encoding='utf8')
+    with pytest.raises(MassReportFormatError,match='brak MASY_CZESCI.csv'):
+        enhance_mass_html(tmp_path,7850)
+    assert report.read_text(encoding='utf8')==original
+
+
+def test_malformed_csv_does_not_fabricate_mass_or_modify_html(tmp_path):
+    import pytest
+    from dsac29.standalone_mass_materials import MassReportFormatError
+    original='<html><body><h1>Raport</h1></body></html>'
+    report=tmp_path/'RAPORT_MASY.html'
+    report.write_text(original,encoding='utf8')
+    (tmp_path/'MASY_CZESCI.csv').write_text(CSV_SAMPLE.replace('125000,5','NaN'),encoding='utf8')
+    with pytest.raises(MassReportFormatError):
+        enhance_mass_html(tmp_path,7850)
+    assert report.read_text(encoding='utf8')==original
+
+
+def test_mass_worker_preserves_calculated_summary_when_optional_html_fails(tmp_path,monkeypatch):
+    import json
+    from dsac29 import worker_v37,process_lifetime,single_mass,standalone_mass_materials
+    monkeypatch.setattr(process_lifetime,'contain_children',lambda:None)
+    folder=tmp_path/'out';folder.mkdir()
+    def analyze(*args,**kwargs):
+        (folder/'MASY_CZESCI.csv').write_text('valid mass data',encoding='utf8')
+        (folder/'PODSUMOWANIE_MASY.json').write_text('{"masa_calosci_kg":12.3}',encoding='utf8')
+        (folder/'RAPORT_MASY.html').write_text('<html>incompatible</html>',encoding='utf8')
+        return folder,{'masa_calosci_kg':12.3}
+    monkeypatch.setattr(single_mass,'analyze_single',analyze)
+    def fail(*args,**kwargs):
+        raise standalone_mass_materials.MassReportFormatError('Legacy columns')
+    monkeypatch.setattr(standalone_mass_materials,'enhance_mass_html',fail)
+    code=worker_v37.main(['--worker','mass','--input',str(tmp_path/'dummy.stp'),'--output',str(folder)])
+    assert code==0
+    result=json.loads((folder/'_WYNIK_V37.json').read_text(encoding='utf8'))
+    assert result['ok'] is True and result['podsumowanie']['masa_calosci_kg']==12.3
+    assert result['materials_editable'] is False
+    assert (folder/'MASY_CZESCI.csv').exists()
+    assert (folder/'UWAGI_RAPORT_MASY.txt').exists()
