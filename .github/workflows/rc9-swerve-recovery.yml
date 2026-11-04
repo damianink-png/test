@@ -26,6 +26,7 @@ on:
       - 'review/fix06/ci/patch_stale_failed_pairs.py'
       - 'review/fix06/tests/test_material_timeout_policy.py'
       - 'review/fix06/tests/test_stale_failed_pair_guard.py'
+      - 'review/fix06/tests/test_translated_proof_index.py'
       - 'review/fix06/tests/test_material_worker_failclosed.py'
       - 'review/fix06/dsac29/common_exclusion.py'
       - 'review/fix06/dsac29/palette.py'

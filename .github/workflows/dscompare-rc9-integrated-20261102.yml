@@ -20,6 +20,7 @@ on:
       - 'review/fix06/tests/test_material_timeout_policy.py'
       - 'review/fix06/tests/test_stale_failed_pair_guard.py'
       - 'review/fix06/tests/test_alignment_stage2_guard.py'
+      - 'review/fix06/tests/test_translated_proof_index.py'
       - 'review/fix06/tests/test_20261104_audit_fixes.py'
       - 'review/fix06/dsac29/report.py'
       - 'review/fix06/dsac29/preview3d.py'

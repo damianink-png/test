@@ -24,6 +24,7 @@ on:
       - 'review/fix06/tests/test_material_worker_failclosed.py'
       - 'review/fix06/tests/test_partial_material_continue.py'
       - 'review/fix06/tests/test_revision_overlap_policy.py'
+      - 'review/fix06/tests/test_translated_proof_index.py'
       - 'review/fix06/tests/test_step_compact.py'
       - 'review/fix06/tests/test_mass_html_materials.py'
       - 'review/fix06/tests/test_20261104_audit_fixes.py'
