@@ -413,3 +413,61 @@ def test_repeated_material_timeout_is_not_retried_on_unchanged_operands(monkeypa
     assert stat['region_retry_skipped_timeout']==1
     assert stat['incomplete']
     assert {r.status for r in out}=={'UNCERTAIN'}
+
+
+def _distinct_occurrence(length, position, name):
+    """Separate TopoDS definitions, identical LOCAL geometry, different placement."""
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from OCP.gp import gp_Trsf, gp_Vec
+    from OCP.TopLoc import TopLoc_Location
+    shape=BRepPrimAPI_MakeBox(float(length),10.,10.).Shape()
+    tr=gp_Trsf()
+    tr.SetTranslation(gp_Vec(float(position),0,0))
+    return describe(shape.Moved(TopLoc_Location(tr)),name,f'{name}/{position}')
+
+
+def test_separately_exported_repeated_revisions_reuse_full_brep_evidence():
+    from dsac29.geometry_registry import GeometryRegistry
+    a=[_distinct_occurrence(10,x,'old_ring') for x in (0,40,80,120)]
+    b=[_distinct_occurrence(11,x,'renamed_ring') for x in (0,40,80,120)]
+    assert not a[0].shape.IsPartner(a[1].shape)
+    assert GeometryRegistry().same_definition(a[0],a[1])
+    out,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,records(a,b),review_approval=lambda _:'review')
+    assert {r.status for r in out}=={'CHANGED'}
+    assert stat['boolean_checks']==1
+    assert stat['common_proof_reuse']==3
+    assert stat['region_proof_reuse']==3
+    assert len(regions)==4 and not stat['incomplete']
+
+
+def test_full_brep_proof_reuse_rejects_wrong_relative_placement_and_geometry():
+    a=[_distinct_occurrence(10,x,'old') for x in (0,40)]
+    b=[_distinct_occurrence(11,x,'renamed') for x in (0,40)]
+    saved=revision_overlap._TranslatedProofIndex()
+    saved.save(a[0],b[0],123.0)
+    assert saved.find(a[1],b[1])[2]==123.0
+    assert saved.find(a[0],b[1]) is None
+    other=_distinct_occurrence(12,40,'renamed_but_other_geometry')
+    assert saved.find(a[1],other) is None
+
+
+def test_exact_definitions_cannot_reuse_at_same_location_or_different_rotation():
+    from OCP.gp import gp_Trsf, gp_Ax1, gp_Dir, gp_Pnt
+    from OCP.TopLoc import TopLoc_Location
+    from math import pi
+    a0=_distinct_occurrence(10,0,'a0')
+    b0=_distinct_occurrence(11,0,'b0')
+    same_location_a=_distinct_occurrence(10,0,'copy')
+    same_location_b=_distinct_occurrence(11,0,'copy')
+    index=revision_overlap._TranslatedProofIndex()
+    index.save(a0,b0,1.0)
+    # Overlapping occurrences must not collapse into one-to-many aliases.
+    assert index.find(same_location_a,same_location_b) is None
+    shifted_a=_distinct_occurrence(10,50,'x')
+    rotated_b=_distinct_occurrence(11,50,'x')
+    rot=gp_Trsf()
+    rot.SetRotation(gp_Ax1(gp_Pnt(0,0,0),gp_Dir(0,0,1)),pi/2)
+    from dsac29.geometry import describe
+    rotated_b=describe(rotated_b.shape.Moved(TopLoc_Location(rot)),'rotated','rotated')
+    assert index.find(shifted_a,rotated_b) is None
