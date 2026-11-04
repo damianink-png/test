@@ -148,10 +148,16 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     step_reexport_tol=False
     certified_pairs=[]
     def do_compare(stage_hook=None):
-        return compare(a,b,tolerance,progress=progress,cancelled=cancelled,
-                       revision_only=revision_style and not manual_review,
-                       exact_serialization=True,geometry_context=geometry_context,
-                       stage1_check=stage_hook,step_reexport_tolerance=step_reexport_tol,certified_pairs=certified_pairs)
+        # A large translated STEP frame can require thousands of independent
+        # B-Rep checks after sampled alignment. Recycle the crash-contained
+        # OCCT process, NOT its verdicts, across those checks. Each request
+        # retains its own input B-Rep and 90s bounded deadline.
+        from .native_session import world_session
+        with world_session(max(len(a),len(b))>=600 and bool(certified_pairs)):
+            return compare(a,b,tolerance,progress=progress,cancelled=cancelled,
+                           revision_only=revision_style and not manual_review,
+                           exact_serialization=True,geometry_context=geometry_context,
+                           stage1_check=stage_hook,step_reexport_tolerance=step_reexport_tol,certified_pairs=certified_pairs)
 
     proposal=None
     with trace.phase('initial_comparison'):

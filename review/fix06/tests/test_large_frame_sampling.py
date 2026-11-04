@@ -89,3 +89,30 @@ def test_logging_automatic_alignment_does_not_crash(tmp_path,monkeypatch):
                 revision_style=True,auto_align=True,progress=messages.append)
     assert any("Wyrównuję automatycznie" in m for m in messages)
     assert (out/"PODSUMOWANIE.json").exists()
+
+
+def test_recycled_world_session_preserves_independent_pair_verdicts(monkeypatch):
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from dsac29.geometry import describe
+    from dsac29 import native_guard, native_session
+    left = describe(BRepPrimAPI_MakeBox(8,7,9).Shape(), 'a', 'a')
+    same = describe(BRepPrimAPI_MakeBox(8,7,9).Shape(), 'b', 'b')
+    changed = describe(BRepPrimAPI_MakeBox(10,7,9).Shape(), 'c', 'c')
+    starts = []
+    original_start = native_session.WorldSession._start
+    def counted_start(self):
+        starts.append(1)
+        return original_start(self)
+    monkeypatch.setattr(native_session.WorldSession, '_start', counted_start)
+    with native_session.world_session(True):
+        assert native_guard.guarded_world_reexport(left, same, .01) is True
+        assert native_guard.guarded_world_reexport(left, changed, .01) is False
+        assert native_guard.guarded_world_reexport(left, same, .01) is True
+    assert len(starts) == 1
+
+
+def test_large_registered_final_comparison_uses_native_session():
+    from dsac29 import cli
+    import inspect
+    source = inspect.getsource(cli.process)
+    assert 'with world_session(max(len(a),len(b))>=600 and bool(certified_pairs))' in source
