@@ -20,8 +20,13 @@ def test_translated_positive_proofs_only():
     shifted_a=_at(a_shape,(40,0,0),'A');shifted_b=_at(b_shape,(40,0,0),'B')
     assert proofs.find(shifted_a,shifted_b)[2]==100.0
     assert proofs.find(_at(a_shape,(40,0,0),'A'),_at(b_shape,(41,0,0),'B')) is None
-    assert proofs.find(_at(BRepPrimAPI_MakeBox(10,10,10).Shape(),(40,0,0),'A'),shifted_b) is None
-    assert proofs.saved==1 and proofs.candidates_checked==2
+    # A separately exported STEP occurrence may have a different native
+    # TShape while its entire LOCAL serialized B-Rep is byte identical.
+    # Such an occurrence is safe ONLY with the same old/new relative pose.
+    independent=_at(BRepPrimAPI_MakeBox(10,10,10).Shape(),(40,0,0),'A')
+    assert not independent.shape.IsPartner(shifted_a.shape)
+    assert proofs.find(independent,shifted_b)[2]==100.0
+    assert proofs.saved==1 and proofs.candidates_checked==3
 
 
 def test_never_store_failure_and_limit():
