@@ -752,6 +752,22 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 mark_failure(i,j,f'Podział materiału przekroczył limit czasu: {exc}. '
                                'Nie powtórzono identycznej kosztownej operacji.')
                 continue
+            # A native worker that returned a *verified failure code* for a
+            # deterministic Boolean/topology defect will run the exact same
+            # operands again in the fresh retry. OpenArm 2026-11-04: 13/13
+            # such retries failed, wasting ~110 seconds. Fail closed instead:
+            # leave the pair for explicit review, never classify it as SAME.
+            # Do not skip unknown exceptions: those can be transient.
+            reason_text=str(exc)
+            if any(code in reason_text for code in (
+                    'MATERIAL_BOOLEAN_UNVERIFIED:',
+                    'INVALID_BREP_AFTER_REPAIR:',
+                    'Original STEP stored tolerance exceeds CAD budget')):
+                stat['region_retry_skipped_deterministic']=stat.get('region_retry_skipped_deterministic',0)+1
+                trace.mark('revision_material_regions_retry','SKIP_DETERMINISTIC_FAILURE',
+                           a_index=i,b_index=j,reason=reason_text)
+                mark_failure(i,j,'Niepotwierdzony podział materiału (bez ponawiania identycznej operacji): '+reason_text)
+                continue
             # Critical: initial Common can succeed but the final region split
             # can fail in the large assembly. Retry this SAME verified pair
             # independently, with no cached Common or translated regions.
