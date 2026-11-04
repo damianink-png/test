@@ -109,3 +109,18 @@ force, granice tolerancji i duże rzadkie złożenie.
   Stary boolean_checks to tylko pierwotne Common, nie wszystkie operacje.
 - Dodano regresje numeryczne i pomiarowe. Windows/real STEP i sześć
   trudnych par B-Rep: DO WERYFIKACJI na nowym SHA.
+
+## Iteracja 2026-11-04 — współdzielone bufory HTML 3D (nowe SHA, do CI)
+- Ustalono, że dotychczasowy plik HTML współdzielił dane siatek w JSON,
+  ale tworzył osobne CPU/GPU bufory wierzchołków i normalnych dla każdego
+  wystąpienia. Na Trident poprzednia scena: 3191 wystąpień i 1202 definicje
+  siatki (potencjalnie 1989 powtórzeń, które nie muszą tworzyć nowych buforów).
+- Widok WebGL korzysta teraz z jednej pary buforów per unikalna siatka,
+  transformuje każde wystąpienie osobną macierzą uniform `instance`.
+  Centra, bounding box, clipping, wybieranie i przesunięcie są liczone
+  w tym samym położeniu co poprzednio; geometryczny STEP jest nietknięty.
+- Dodano testy macierzy transformacji i struktury współdzielenia buforów.
+- Sprawdzono składnię JS oraz 30 przekształceń liczbowych lokalnie;
+  pełny Chromium/WebGL i CAD Windows wymagają PASS na bieżącym SHA.
+- Ta zmiana celuje w czas otwarcia HTML i zużycie RAM/GPU; rozmiar
+  pliku HTML/STEP ani czas importu STEP nie muszą się zmniejszyć.

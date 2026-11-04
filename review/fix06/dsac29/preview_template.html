@@ -86,31 +86,74 @@ try{
 const gl=canvas.getContext('webgl',{antialias:true,depth:true,preserveDrawingBuffer:false});
 if(!gl)throw Error('WebGL niedostępny. Otwórz HTML w Edge, Chrome lub Firefox.');
 canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();fail(Error('Utracono kontekst WebGL. Odśwież stronę.'));});
-const vertex=`attribute vec3 pos;attribute vec3 normal;uniform mat4 mat;uniform mat4 rotation;uniform mat4 placement;varying float light;varying vec3 world;void main(){vec4 p=placement*vec4(pos,1.0);world=p.xyz;gl_Position=mat*p;vec3 n=normalize((rotation*placement*vec4(normal,0.0)).xyz);light=.42+.58*abs(dot(n,normalize(vec3(.4,.8,1.0))));}`;
+const vertex=`attribute vec3 pos;attribute vec3 normal;uniform mat4 mat;uniform mat4 rotation;uniform mat4 placement;uniform mat4 instance;varying float light;varying vec3 world;void main(){vec4 p=placement*instance*vec4(pos,1.0);world=p.xyz;gl_Position=mat*p;vec3 n=normalize((rotation*placement*instance*vec4(normal,0.0)).xyz);light=.42+.58*abs(dot(n,normalize(vec3(.4,.8,1.0))));}`;
 const fragment=`precision mediump float;uniform vec3 color;uniform float opacity;uniform float pickMode;uniform vec4 clipPlane;varying float light;varying vec3 world;void main(){if(dot(clipPlane.xyz,world)>clipPlane.w)discard;gl_FragColor=vec4(color*(pickMode>.5?1.0:light),opacity);}`;
 function shader(kind,src){const s=gl.createShader(kind);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;}
 const pr=gl.createProgram();gl.attachShader(pr,shader(gl.VERTEX_SHADER,vertex));gl.attachShader(pr,shader(gl.FRAGMENT_SHADER,fragment));gl.linkProgram(pr);
 if(!gl.getProgramParameter(pr,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(pr));gl.useProgram(pr);
-const loc=gl.getAttribLocation(pr,'pos'),nloc=gl.getAttribLocation(pr,'normal'),matLoc=gl.getUniformLocation(pr,'mat'),rotLoc=gl.getUniformLocation(pr,'rotation'),colLoc=gl.getUniformLocation(pr,'color'),alphaLoc=gl.getUniformLocation(pr,'opacity'),pickModeLoc=gl.getUniformLocation(pr,'pickMode'),placementLoc=gl.getUniformLocation(pr,'placement'),clipLoc=gl.getUniformLocation(pr,'clipPlane');
+const loc=gl.getAttribLocation(pr,'pos'),nloc=gl.getAttribLocation(pr,'normal'),matLoc=gl.getUniformLocation(pr,'mat'),rotLoc=gl.getUniformLocation(pr,'rotation'),colLoc=gl.getUniformLocation(pr,'color'),alphaLoc=gl.getUniformLocation(pr,'opacity'),pickModeLoc=gl.getUniformLocation(pr,'pickMode'),placementLoc=gl.getUniformLocation(pr,'placement'),instanceLoc=gl.getUniformLocation(pr,'instance'),clipLoc=gl.getUniformLocation(pr,'clipPlane');
 let chunks=[],lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity],visible={},itemVisible=[],rows=[];
 const meshDefinitions=new Map();
 for(const piece of scene){
- if(piece.mesh_data!==undefined){const str=atob(piece.mesh_data),bytes=new Uint8Array(str.length);for(let i=0;i<str.length;i++)bytes[i]=str.charCodeAt(i);meshDefinitions.set(piece.mesh_id,new Float32Array(bytes.buffer));delete piece.mesh_data;}
- const local=meshDefinitions.get(piece.mesh_id);if(!local)throw Error('Brak definicji siatki '+piece.mesh_id);
- const pts=new Float32Array(local.length),m=piece.matrix;
- for(let i=0;i<local.length;i+=3)for(let k=0;k<3;k++)pts[i+k]=m[k*4]*local[i]+m[k*4+1]*local[i+1]+m[k*4+2]*local[i+2]+m[k*4+3];
-for(let i=0;i<pts.length;i+=3)for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],pts[i+k]);hi[k]=Math.max(hi[k],pts[i+k]);}
-chunks.push({...piece,pts});visible[piece.status]=true;itemVisible.push(true);}
-meshDefinitions.clear();
+ if(piece.mesh_data!==undefined){
+  const str=atob(piece.mesh_data),bytes=new Uint8Array(str.length);
+  for(let i=0;i<str.length;i++)bytes[i]=str.charCodeAt(i);
+  meshDefinitions.set(piece.mesh_id,{points:new Float32Array(bytes.buffer)});
+  delete piece.mesh_data;
+ }
+ const mesh=meshDefinitions.get(piece.mesh_id);
+ if(!mesh)throw Error('Brak definicji siatki '+piece.mesh_id);
+ const m=piece.matrix,local=mesh.points;
+ if(!m||m.length!==12)throw Error('Nieprawidlowa macierz wystapienia '+piece.mesh_id);
+ const c={...piece,mesh,center:[0,0,0],min:[Infinity,Infinity,Infinity],max:[-Infinity,-Infinity,-Infinity]};
+ // The first pass computes *only* bounds and centroid. A second per-instance
+ // Float32Array and a separate GPU buffer are not necessary.
+ for(let i=0;i<local.length;i+=3){
+  for(let k=0;k<3;k++){
+   const value=m[k*4]*local[i]+m[k*4+1]*local[i+1]+m[k*4+2]*local[i+2]+m[k*4+3];
+   lo[k]=Math.min(lo[k],value);hi[k]=Math.max(hi[k],value);
+   c.min[k]=Math.min(c.min[k],value);c.max[k]=Math.max(c.max[k],value);
+   c.center[k]+=value;
+  }
+ }
+ for(let k=0;k<3;k++)c.center[k]/=local.length/3;
+ chunks.push(c);visible[piece.status]=true;itemVisible.push(true);
+}
 if(!chunks.length)throw Error('Brak brył w scenie HTML.');
 const center=lo.map((v,i)=>(v+hi[i])/2),span=Math.max(...hi.map((v,i)=>v-lo[i]),1e-8);
-// Never present uncertain or unverified full bodies as proven material differences.
 document.getElementById('material').disabled=!chunks.some(c=>['CHANGED_ADDED','CHANGED_REMOVED'].includes(c.status));
 function buffer(data){const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);return b;}
-for(const c of chunks){const p=c.pts;for(let i=0;i<p.length;i+=3)for(let k=0;k<3;k++)p[i+k]=(p[i+k]-center[k])*2/span;
-const normals=new Float32Array(p.length);for(let i=0;i<p.length;i+=9){const u=[p[i+3]-p[i],p[i+4]-p[i+1],p[i+5]-p[i+2]],v=[p[i+6]-p[i],p[i+7]-p[i+1],p[i+8]-p[i+2]],n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]],length=Math.hypot(...n)||1;for(let j=0;j<9;j++)normals[i+j]=n[j%3]/length;}
-c.center=[0,0,0];c.min=[Infinity,Infinity,Infinity];c.max=[-Infinity,-Infinity,-Infinity];for(let i=0;i<p.length;i++){const k=i%3;c.center[k]+=p[i]/(p.length/3);c.min[k]=Math.min(c.min[k],p[i]);c.max[k]=Math.max(c.max[k],p[i]);}
-c.buf=buffer(p);c.nbuf=buffer(normals);c.len=p.length/3;delete c.pts;delete c.data;}
+// One pair of GPU buffers per exact mesh definition, regardless of the
+// number of STEP occurrences. Placement stays per draw via an instance uniform.
+for(const mesh of meshDefinitions.values()){
+ const local=mesh.points,normals=new Float32Array(local.length);
+ for(let i=0;i<local.length;i+=9){
+  const u=[local[i+3]-local[i],local[i+4]-local[i+1],local[i+5]-local[i+2]];
+  const v=[local[i+6]-local[i],local[i+7]-local[i+1],local[i+8]-local[i+2]];
+  const n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+  const length=Math.hypot(...n)||1;
+  for(let j=0;j<9;j++)normals[i+j]=n[j%3]/length;
+ }
+ mesh.buf=buffer(local);mesh.nbuf=buffer(normals);mesh.len=local.length/3;
+ delete mesh.points;
+}
+for(const c of chunks){
+ const m=c.matrix,k=2/span;
+ c.instance=new Float32Array([
+  m[0]*k,m[4]*k,m[8]*k,0,
+  m[1]*k,m[5]*k,m[9]*k,0,
+  m[2]*k,m[6]*k,m[10]*k,0,
+  (m[3]-center[0])*k,(m[7]-center[1])*k,(m[11]-center[2])*k,1
+ ]);
+ for(let axis=0;axis<3;axis++){
+  c.center[axis]=(c.center[axis]-center[axis])*k;
+  c.min[axis]=(c.min[axis]-center[axis])*k;
+  c.max[axis]=(c.max[axis]-center[axis])*k;
+ }
+ c.buf=c.mesh.buf;c.nbuf=c.mesh.nbuf;c.len=c.mesh.len;
+ delete c.mesh;delete c.data;
+}
+meshDefinitions.clear();
 const checks=[],legend=document.getElementById('legend');
 for(const status of Object.keys(visible)){const group=chunks.filter(c=>c.status===status),label=document.createElement('label'),check=document.createElement('input'),swatch=document.createElement('span');
 check.type='checkbox';check.checked=true;check.dataset.status=status;checks.push(check);swatch.className='swatch';swatch.style.background=`rgb(${group[0].rgb.map(c=>Math.round(c*255)).join(',')})`;
@@ -143,7 +186,7 @@ function isVisible(c,i){return !!visible[c.status] && itemVisible[i] && (!isolat
 function camera(){const w=viewWidth||canvas.clientWidth||innerWidth,h=viewHeight||canvas.clientHeight||innerHeight,dpr=Math.min(devicePixelRatio||1,2),cw=Math.round(w*dpr),ch=Math.round(h*dpr);
 const aspect=w/h,f=2.1*scale*Math.min(1,aspect),proj=new Float32Array([f/aspect,0,0,0,0,f,0,0,0,0,-1.002,-1,0,0,-.2002,0]),view=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,panX,panY,-4.7,1]),rotation=mul(rx(pitch),ry(yaw));
 const target=new Float32Array(identity);target[12]=-cameraTarget[0];target[13]=-cameraTarget[1];target[14]=-cameraTarget[2];const fit=new Float32Array(identity);fit[0]=fit[5]=fit[10]=fitScale;gl.uniformMatrix4fv(matLoc,false,mul(proj,mul(view,mul(rotation,mul(fit,target)))));gl.uniformMatrix4fv(rotLoc,false,rotation);return rotation;}
-function draw(c,alpha,rgb,pickMode){gl.uniformMatrix4fv(placementLoc,false,placement(c));const k=sectionAxis.value,plane=[0,0,0,1];if(k!=='off'){const a=Number(k);plane[a]=1;plane[3]=clipBounds[0][a]+(clipBounds[1][a]-clipBounds[0][a])*Number(sectionPosition.value)/100;}gl.uniform4fv(clipLoc,plane);gl.bindBuffer(gl.ARRAY_BUFFER,c.buf);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);gl.bindBuffer(gl.ARRAY_BUFFER,c.nbuf);gl.enableVertexAttribArray(nloc);gl.vertexAttribPointer(nloc,3,gl.FLOAT,false,0,0);gl.uniform3fv(colLoc,rgb);gl.uniform1f(alphaLoc,alpha);gl.uniform1f(pickModeLoc,pickMode?1:0);gl.drawArrays(gl.TRIANGLES,0,c.len);}
+function draw(c,alpha,rgb,pickMode){gl.uniformMatrix4fv(placementLoc,false,placement(c));gl.uniformMatrix4fv(instanceLoc,false,c.instance);const k=sectionAxis.value,plane=[0,0,0,1];if(k!=='off'){const a=Number(k);plane[a]=1;plane[3]=clipBounds[0][a]+(clipBounds[1][a]-clipBounds[0][a])*Number(sectionPosition.value)/100;}gl.uniform4fv(clipLoc,plane);gl.bindBuffer(gl.ARRAY_BUFFER,c.buf);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);gl.bindBuffer(gl.ARRAY_BUFFER,c.nbuf);gl.enableVertexAttribArray(nloc);gl.vertexAttribPointer(nloc,3,gl.FLOAT,false,0,0);gl.uniform3fv(colLoc,rgb);gl.uniform1f(alphaLoc,alpha);gl.uniform1f(pickModeLoc,pickMode?1:0);gl.drawArrays(gl.TRIANGLES,0,c.len);}
 function renderPass(picking=false){gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.depthMask(true);gl.disable(gl.BLEND);gl.clearColor(picking?0:.055,picking?0:.082,picking?0:.12,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);const rotation=camera();
 function color(i){return picking?[((i+1)&255)/255,(((i+1)>>8)&255)/255,(((i+1)>>16)&255)/255]:chunks[i].rgb;}
 const seen=[];for(let i=0;i<chunks.length;i++){const c=chunks[i];if(!isVisible(c,i))continue;seen.push([i,c]);if(c.role!=='A'||oldAlpha>=1){draw(c,1,color(i),picking);}}
