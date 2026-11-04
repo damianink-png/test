@@ -324,3 +324,45 @@ def test_unverified_surviving_record_cannot_be_used_to_suppress_material_compari
         a,b,existing,geometry_context=LocalCopy(),review_approval=lambda _: 'review')
     assert stat['removed_repeated_occurrences_excluded']==0
     assert stat['boolean_checks']>0
+
+
+def test_dominated_failed_candidate_cannot_erase_a_proven_renamed_revision(monkeypatch):
+    """An unrelated Common error must not taint a decisive verified alternative."""
+    from dsac29 import native_guard
+    from dsac29.geometry import _precise_world_bounds
+    a=[part(0,10,'old_repeated')]
+    b=[part(0,11,'renamed_revised'),part(2,11,'unrelated_second')]
+    real_common=native_guard.guarded_common
+    real_regions=revision_overlap.calculate
+    def broken_wrong_candidate(sa,sb,*args,**kwargs):
+        if _precise_world_bounds(sb)[0]>=1:
+            raise native_guard.NativeGeometryFailure('OCCT Common failed on unrelated candidate')
+        return real_common(sa,sb,*args,**kwargs)
+    def broken_wrong_regions(left,right,*args,**kwargs):
+        if right.name=='unrelated_second':
+            raise native_guard.NativeGeometryFailure('Unrelated isolated Cut also failed')
+        return real_regions(left,right,*args,**kwargs)
+    monkeypatch.setattr(native_guard,'guarded_common',broken_wrong_candidate)
+    monkeypatch.setattr(revision_overlap,'calculate',broken_wrong_regions)
+    out,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,[Record(0,None,'REMOVED',''),Record(None,0,'ADDED',''),Record(None,1,'ADDED','')],
+        review_approval=lambda _:'review')
+    assert {(r.a_index,r.b_index,r.status) for r in out}=={
+        (0,0,'CHANGED'),(None,1,'ADDED')}
+    assert stat['dominated_failed_candidates']>=1
+    assert stat['accepted']==1 and not stat['incomplete']
+
+
+def test_unresolved_candidate_is_not_discarded_by_weak_alternative(monkeypatch):
+    from dsac29 import native_guard
+    a=[part(0,10,'old')]
+    b=[part(2,11,'renamed_new')]
+    def fail(*args,**kwargs):
+        raise native_guard.NativeGeometryFailure('Native OCC failed')
+    monkeypatch.setattr(native_guard,'guarded_common',fail)
+    monkeypatch.setattr(revision_overlap,'calculate',fail)
+    out,regions,stat=revision_overlap.merge_material_revisions(
+        a,b,[Record(0,None,'REMOVED',''),Record(None,0,'ADDED','')],
+        review_approval=lambda _:'review')
+    assert stat['incomplete'] is True
+    assert {r.status for r in out}=={'UNCERTAIN'}

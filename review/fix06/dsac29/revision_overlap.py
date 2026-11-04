@@ -558,8 +558,63 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 trace.mark('revision_postpass_retry','UNRESOLVED',a_index=i,b_index=j,error=str(exc))
         failed_old={f['a_index'] for f in failures}
         failed_new={f['b_index'] for f in failures}
-    # Failed edges can change the winner among similar parts.
-    # Never accept a competing candidate involving an unverified operand.
+    # A speculative Common failure must not erase a decisively stronger
+    # independently verified alternative. Even an IDEAL (upper-bound)
+    # intersection for the failed pair must score below the verified edge
+    # by MIN_MARGIN. A candidate with unresolved competing claims remains
+    # uncertain: exceptions are NEVER converted to geometric evidence.
+    stat['dominated_failed_candidates']=0
+    if recover_failures and failures:
+        def upper_score(i,j):
+            optimistic=min(max(0.,float(a[i].volume)),
+                           max(0.,float(b[j].volume)),
+                           _bbox_intersect(ba[i],bb[j]))
+            return _score(optimistic,a[i],b[j],_name_eq(a[i],b[j]))
+        verified_by_old=defaultdict(list)
+        verified_by_new=defaultdict(list)
+        failures_by_new=defaultdict(list)
+        for (old_index,new_index),score in edges.items():
+            verified_by_old[old_index].append((score,new_index))
+            verified_by_new[new_index].append((score,old_index))
+        for failure in failures:
+            failures_by_new[failure['b_index']].append(failure['a_index'])
+        for group in verified_by_old.values():
+            group.sort(reverse=True)
+
+        def decisive_alternative(i,j):
+            limit=upper_score(i,j)
+            for score,k in verified_by_old.get(i,()):
+                if k==j:continue
+                if limit is not None and score-limit<=MIN_MARGIN:continue
+                if any(ee!=i and ss>=score-MIN_MARGIN
+                       for ss,ee in verified_by_new[k]):
+                    continue
+                if any(other_j!=k and ss>=score-MIN_MARGIN
+                       for ss,other_j in verified_by_old[i]):
+                    continue
+                rival_unknown=False
+                for ee in failures_by_new[k]:
+                    if ee==i:continue
+                    bound=upper_score(ee,k)
+                    if bound is None or bound>=score-MIN_MARGIN:
+                        rival_unknown=True
+                        break
+                if rival_unknown:continue
+                return True
+            return False
+        retained=[]
+        for failure in failures:
+            if decisive_alternative(failure['a_index'],failure['b_index']):
+                stat['dominated_failed_candidates']+=1
+                trace.mark('revision_failed_candidate','DOMINATED_BY_VERIFIED',
+                           a_index=failure['a_index'],b_index=failure['b_index'])
+            else:
+                retained.append(failure)
+        failures=retained
+        failed_old={f['a_index'] for f in failures}
+        failed_new={f['b_index'] for f in failures}
+    # A genuinely unresolved candidate could still be the better match;
+    # its operands stay UNCERTAIN instead of accepting a guessed edge.
     if recover_failures:
         edges={key:score for key,score in edges.items()
                if key[0] not in failed_old and key[1] not in failed_new}
