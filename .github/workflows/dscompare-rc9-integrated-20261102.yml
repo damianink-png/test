@@ -15,6 +15,10 @@ on:
       - 'review/fix06/tests/test_mass_html_materials.py'
       - 'review/fix06/ci/patch_geometry_registry_streaming.py'
       - 'review/fix06/ci/patch_alignment_stage2.py'
+      - 'review/fix06/ci/patch_material_timeout.py'
+      - 'review/fix06/ci/patch_stale_failed_pairs.py'
+      - 'review/fix06/tests/test_material_timeout_policy.py'
+      - 'review/fix06/tests/test_stale_failed_pair_guard.py'
       - 'review/fix06/tests/test_alignment_stage2_guard.py'
       - 'review/fix06/tests/test_20261104_audit_fixes.py'
       - 'review/fix06/dsac29/report.py'
@@ -64,6 +68,8 @@ jobs:
           Copy-Item review/fix06/tests/test_20261104_audit_fixes.py baseline/dscompare_rc9_manual/tests/ -Force
           Copy-Item review/fix06/tests/test_alignment_stage2_guard.py baseline/dscompare_rc9_manual/tests/ -Force
           Copy-Item review/fix06/tests/test_mass_html_materials.py baseline/dscompare_rc9_manual/tests/ -Force
+          Copy-Item review/fix06/tests/test_material_timeout_policy.py baseline/dscompare_rc9_manual/tests/ -Force
+          Copy-Item review/fix06/tests/test_stale_failed_pair_guard.py baseline/dscompare_rc9_manual/tests/ -Force
           Copy-Item review/fix06/tests/test_large_frame_sampling.py baseline/dscompare_rc9_manual/tests/ -Force
           python review/fix06/apply_rc9_20261102.py baseline/dscompare_rc9_manual
           foreach ($module in @('revision_overlap.py','candidate_policy.py','overlap_evidence.py','cli.py','report.py','material_mass_report.py','standalone_mass_materials.py','name_encoding.py','worker_v37.py','deferred_alignment.py','preview3d.py','preview_template.html','step_io.py')) {
@@ -72,6 +78,10 @@ jobs:
           python review/fix06/ci/patch_geometry_registry_streaming.py baseline/dscompare_rc9_manual/dsac29/geometry_registry.py
           if ($LASTEXITCODE -ne 0) { throw 'Streaming registry patch failed' }
           python review/fix06/ci/patch_alignment_stage2.py baseline/dscompare_rc9_manual/dsac29/alignment.py
+          python review/fix06/ci/patch_material_timeout.py baseline/dscompare_rc9_manual/dsac29/material_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Material Common/Cut deadline patch failed' }
+          python review/fix06/ci/patch_stale_failed_pairs.py baseline/dscompare_rc9_manual/dsac29/compare.py
+          if ($LASTEXITCODE -ne 0) { throw 'Stale alternative-pair guard patch failed' }
           if ($LASTEXITCODE -ne 0) { throw 'Alignment stage2 guard patch failed' }
           if ($LASTEXITCODE -ne 0) { throw 'Source patch failed' }
       - name: Build real Windows executable from patched sources
@@ -90,7 +100,7 @@ jobs:
           python -m pip install pytest cadquery-ocp==7.9.3.1.1 numpy
           # Run native OCCT tests in fresh Python processes; combined pytest
           # can retain worker state and stall unrelated subsequent tests.
-          foreach ($test in @('test_revision_overlap_policy.py','test_revision_common_recovery.py','test_rc9_retry_after_assembly_failure.py','test_output_palette.py','test_stability.py','test_streamed_preview.py','test_20261104_audit_fixes.py','test_alignment_stage2_guard.py','test_mass_html_materials.py','test_large_frame_sampling.py')) {
+          foreach ($test in @('test_revision_overlap_policy.py','test_revision_common_recovery.py','test_rc9_retry_after_assembly_failure.py','test_output_palette.py','test_stability.py','test_streamed_preview.py','test_20261104_audit_fixes.py','test_alignment_stage2_guard.py','test_material_timeout_policy.py','test_stale_failed_pair_guard.py','test_mass_html_materials.py','test_large_frame_sampling.py')) {
             python -m pytest -q "tests/$test"
             if ($LASTEXITCODE -ne 0) { throw "Regression failed: $test" }
           }

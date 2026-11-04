@@ -13,6 +13,10 @@ on:
       - 'review/fix06/ci/patch_partial_audit.py'
       - 'review/fix06/ci/patch_openarm_auto_partial.py'
       - 'review/fix06/ci/patch_material_worker_failclosed.py'
+      - 'review/fix06/ci/patch_material_timeout.py'
+      - 'review/fix06/ci/patch_stale_failed_pairs.py'
+      - 'review/fix06/tests/test_material_timeout_policy.py'
+      - 'review/fix06/tests/test_stale_failed_pair_guard.py'
       - 'review/fix06/ci/patch_gui_minimal.py'
       - 'review/fix06/ci/patch_legacy_ui_tests.py'
       - 'review/fix06/ci/patch_step_polish_names.py'
@@ -76,6 +80,10 @@ jobs:
           Copy-Item review/fix06/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/common_exclusion.py -Force
           python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
           python review/fix06/ci/patch_material_worker_failclosed.py dscompare_rc9_manual
+          python review/fix06/ci/patch_material_timeout.py dscompare_rc9_manual/dsac29/material_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Material Common/Cut deadline patch failed' }
+          python review/fix06/ci/patch_stale_failed_pairs.py dscompare_rc9_manual/dsac29/compare.py
+          if ($LASTEXITCODE -ne 0) { throw 'Stale alternative-pair guard patch failed' }
           python review/fix06/ci/patch_gui_minimal.py dscompare_rc9_manual
           python review/fix06/ci/patch_legacy_ui_tests.py dscompare_rc9_manual
           # Apply name fixes after overlaying the exact-BRep exporter.
@@ -94,6 +102,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
           Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
           Copy-Item review/fix06/tests/test_material_worker_failclosed.py dscompare_rc9_manual/tests/test_material_worker_failclosed.py -Force
+          Copy-Item review/fix06/tests/test_material_timeout_policy.py dscompare_rc9_manual/tests/test_material_timeout_policy.py -Force
+          Copy-Item review/fix06/tests/test_stale_failed_pair_guard.py dscompare_rc9_manual/tests/test_stale_failed_pair_guard.py -Force
           python review/fix06/ci/patch_openarm_auto_partial.py dscompare_rc9_manual/ci/real_openarm_review.py
           if ($LASTEXITCODE -ne 0) { throw 'OpenArm automatic partial audit patch failed' }
           Copy-Item review/fix06/tests/test_overlap_evidence.py dscompare_rc9_manual/tests/test_overlap_evidence.py -Force
@@ -143,7 +153,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Corrected source regressions failed' }
           python -m pytest -q tests/test_progress_durable_phases.py tests/test_streamed_preview.py tests/test_translated_proof_index.py tests/test_spatial_index_oracle.py tests/test_spatial_index_2500.py tests/test_spatial_index_dense.py
           if ($LASTEXITCODE -ne 0) { throw 'Durable phase regression failed' }
-          python -m pytest -q tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_gui_minimal.py tests/test_semantic_palette_export.py tests/test_step_compact.py tests/test_20261104_audit_fixes.py tests/test_alignment_stage2_guard.py tests/test_mass_html_materials.py tests/test_large_frame_sampling.py tests/test_material_worker_failclosed.py tests/test_partial_material_review.py tests/test_partial_material_continue.py tests/test_revision_common_recovery.py tests/test_revision_r4.py tests/test_r15_material_renamed.py
+          python -m pytest -q tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_gui_minimal.py tests/test_semantic_palette_export.py tests/test_step_compact.py tests/test_20261104_audit_fixes.py tests/test_alignment_stage2_guard.py tests/test_mass_html_materials.py tests/test_large_frame_sampling.py tests/test_material_worker_failclosed.py tests/test_material_timeout_policy.py tests/test_stale_failed_pair_guard.py tests/test_partial_material_review.py tests/test_partial_material_continue.py tests/test_revision_common_recovery.py tests/test_revision_r4.py tests/test_r15_material_renamed.py
           if ($LASTEXITCODE -ne 0) { throw 'Patched material-recovery regressions failed' }
           python ci/test_rc9_original_boundary.py
           if ($LASTEXITCODE -ne 0) { throw 'Original boundary regression failed' }
@@ -243,6 +253,10 @@ jobs:
           Copy-Item review/fix06/dsac29/common_exclusion.py dscompare_rc9_manual/dsac29/common_exclusion.py -Force
           python review/fix06/ci/patch_common_exclusion_dispatch.py dscompare_rc9_manual/dsac29/native_guard.py
           python review/fix06/ci/patch_material_worker_failclosed.py dscompare_rc9_manual
+          python review/fix06/ci/patch_material_timeout.py dscompare_rc9_manual/dsac29/material_guard.py
+          if ($LASTEXITCODE -ne 0) { throw 'Material Common/Cut deadline patch failed' }
+          python review/fix06/ci/patch_stale_failed_pairs.py dscompare_rc9_manual/dsac29/compare.py
+          if ($LASTEXITCODE -ne 0) { throw 'Stale alternative-pair guard patch failed' }
           python review/fix06/ci/patch_gui_minimal.py dscompare_rc9_manual
           python review/fix06/ci/patch_legacy_ui_tests.py dscompare_rc9_manual
           # Apply name fixes after overlaying the exact-BRep exporter.
@@ -261,6 +275,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Verified Common/Cut dispatch patch failed' }
           Copy-Item review/fix06/tests/test_partial_material_continue.py dscompare_rc9_manual/tests/test_partial_material_continue.py -Force
           Copy-Item review/fix06/tests/test_material_worker_failclosed.py dscompare_rc9_manual/tests/test_material_worker_failclosed.py -Force
+          Copy-Item review/fix06/tests/test_material_timeout_policy.py dscompare_rc9_manual/tests/test_material_timeout_policy.py -Force
+          Copy-Item review/fix06/tests/test_stale_failed_pair_guard.py dscompare_rc9_manual/tests/test_stale_failed_pair_guard.py -Force
           python review/fix06/ci/patch_openarm_auto_partial.py dscompare_rc9_manual/ci/real_openarm_review.py
           if ($LASTEXITCODE -ne 0) { throw 'OpenArm automatic partial audit patch failed' }
           Copy-Item review/fix06/tests/test_overlap_evidence.py dscompare_rc9_manual/tests/test_overlap_evidence.py -Force
