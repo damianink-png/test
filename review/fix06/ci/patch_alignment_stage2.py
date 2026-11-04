@@ -40,8 +40,28 @@ def patch(path):
         if sample['count']<required or sample['checked']<min(4,required) or sample['proofs']<min(4,sample['checked']):
             raise AlignmentUnavailable(
                 f'Próbka B-Rep nie potwierdziła przesunięcia z baz: {sample["proofs"]}/{sample["checked"]} dowodów, {sample["count"]} kandydatów.')
-    support=frame_support(a,aligned,tolerance,verify_all=True,progress=progress)
-    if support['ratio']>=.60 and support['count']>=min(2,min(len(a),len(b))):"""
+    if population>=600:
+        # Legacy 2-anchor rescue used to run >600 Boolean verifications
+        # BEFORE the final comparison. Share only 48 positive proofs; leave
+        # all other positions for the final, independently checked B-Rep pass.
+        from .registration_gate import FrameProofCache
+        cache=FrameProofCache()
+        support=frame_support(a,aligned,tolerance,proofs=48,
+                              progress=progress,proof_cache=cache)
+        sampled_ok=(support['ratio']>=.60 and support['checked']>=40
+                    and support['proofs']>=ceil(.90*support['checked']))
+        if sampled_ok:
+            info.update(votes=support['count'],
+                        certified_pairs=sorted(cache.results),
+                        full_pair_map=[],
+                        verification_scope='sample_then_final_compare',
+                        checked_sample_count=support['checked'],
+                        verified_sample_count=support['proofs'])
+    else:
+        support=frame_support(a,aligned,tolerance,verify_all=True,progress=progress)
+        sampled_ok=True
+    if (sampled_ok and support['ratio']>=.60
+            and support['count']>=min(2,min(len(a),len(b))):"""
     if source.count(original)!=1:
         if source.count("A translation supported by 2/2 selected anchors") == 1:
             return
