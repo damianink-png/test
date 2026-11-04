@@ -145,6 +145,11 @@ def test_malformed_csv_does_not_fabricate_mass_or_modify_html(tmp_path):
 
 def test_mass_worker_preserves_calculated_summary_when_optional_html_fails(tmp_path,monkeypatch):
     import json
+    import pytest
+    # The standalone HTML workflow intentionally ships no OCCT/worker engine.
+    # Run this integration test in the full portable/Windows CAD suite only.
+    pytest.importorskip('dsac29.process_lifetime')
+    pytest.importorskip('OCP')
     from dsac29 import worker_v37,process_lifetime,single_mass,standalone_mass_materials
     monkeypatch.setattr(process_lifetime,'contain_children',lambda:None)
     folder=tmp_path/'out';folder.mkdir()
