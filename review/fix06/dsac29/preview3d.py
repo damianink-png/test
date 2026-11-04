@@ -6,6 +6,7 @@ geometry, and never substitutes for the original STEP geometry or the BOM.
 from __future__ import annotations
 import base64
 import json
+import shutil
 from pathlib import Path
 import numpy as np
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
@@ -102,45 +103,54 @@ def create_preview(path, records, a_parts, b_parts, colors=None, max_triangles=3
     if not entries:raise ValueError('Podgląd 3D: brak brył do wyświetlenia.')
     entries.sort(key=lambda item: (item[1]=='SAME', item[2]!='A'))
     origin=np.mean([p.center for p,_,_,_,_,_ in entries],axis=0)
-    packed=[];total=0;omitted=0
+    # Stream the potentially very large mesh scene to disk rather than
+    # retaining the base64 data for every occurrence in the Python heap.
+    path=Path(path)
+    scene_draft=path.with_suffix('.scene.json.tmp')
+    draft=path.with_suffix('.html.tmp')
+    packed_count=0;total=0;omitted=0
     from .shared_mesh import SharedMesh
     mesh_cache=SharedMesh()
-    for i,(part,key,role,alpha,record_index,part_index) in enumerate(entries):
-        extent=max(float(v) for v in part.bbox)
-        payload,count=mesh_cache.pack(part.shape,max(0.15,min(3.0,extent*0.003)),origin,_faces_meshed)
-        total+=count//3
-        record=records[record_index]
-        source_a=a_parts[record.a_index] if record.a_index is not None else None
-        source_b=b_parts[record.b_index] if record.b_index is not None else None
-        packed.append({'status':key,'role':role,'rgb':list(palette[key]),'alpha':float(alpha),
-                       'name':str(part.name),'record_index':record_index,'part_index':part_index,
-                       'pair_id':f'PAIR_{record_index:06d}',
-                       'path_A':str(source_a.path) if source_a else '',
-                       'path_B':str(source_b.path) if source_b else '',
-                       'name_A':str(source_a.name) if source_a else '',
-                       'name_B':str(source_b.name) if source_b else '',
-                       **payload})
-        if progress and i%100==0:progress(f'Podgląd HTML: {i+1}/{len(entries)} wystąpień')
-    if not packed:raise ValueError('Podgląd 3D: brak pełnych brył w limicie siatki.')
-    info={'elementy':len(packed),'wszystkie':len(entries),'trojkaty':total,'pominiete':omitted,
-          'dual_revisions':bool(dual_revisions),'alignment':alignment or {},'world_origin':origin.tolist(),
-          'mesh_cache_hits':mesh_cache.hits,'unique_meshes':mesh_cache.definitions,'ograniczony':False,'limit_trojkatow':max_triangles,'przekroczony_cel_siatki':total>max_triangles}
-    template=Path(__file__).with_name('preview_template.html').read_text(encoding='utf-8')
-    # Write scene fragments directly. A large assembly otherwise creates
-    # multiple simultaneous full JSON/HTML copies in the Python heap.
-    before,after=template.split('/*__SCENE__*/',1)
-    statistics=json.dumps(info,ensure_ascii=False).replace('<',r'\u003c')
-    before=before.replace('/*__STATS__*/',statistics)
-    after=after.replace('/*__STATS__*/',statistics)
-    path=Path(path);draft=path.with_suffix('.html.tmp')
     try:
+        with scene_draft.open('w',encoding='utf-8') as scene:
+            scene.write('[')
+            for i,(part,key,role,alpha,record_index,part_index) in enumerate(entries):
+                extent=max(float(v) for v in part.bbox)
+                payload,count=mesh_cache.pack(part.shape,max(0.15,min(3.0,extent*0.003)),origin,_faces_meshed)
+                total+=count//3
+                record=records[record_index]
+                source_a=a_parts[record.a_index] if record.a_index is not None else None
+                source_b=b_parts[record.b_index] if record.b_index is not None else None
+                packed_item={'status':key,'role':role,'rgb':list(palette[key]),'alpha':float(alpha),
+                             'name':str(part.name),'record_index':record_index,'part_index':part_index,
+                             'pair_id':f'PAIR_{record_index:06d}',
+                             'path_A':str(source_a.path) if source_a else '',
+                             'path_B':str(source_b.path) if source_b else '',
+                             'name_A':str(source_a.name) if source_a else '',
+                             'name_B':str(source_b.name) if source_b else '',
+                             **payload}
+                if packed_count:scene.write(',')
+                scene.write(json.dumps(packed_item,separators=(',',':'),ensure_ascii=False).replace('<',r'\u003c'))
+                packed_count+=1
+                if progress and i%100==0:progress(f'Podgląd HTML: {i+1}/{len(entries)} wystąpień')
+            scene.write(']')
+        if not packed_count:raise ValueError('Podgląd 3D: brak pełnych brył w limicie siatki.')
+        info={'elementy':packed_count,'wszystkie':len(entries),'trojkaty':total,'pominiete':omitted,
+              'dual_revisions':bool(dual_revisions),'alignment':alignment or {},'world_origin':origin.tolist(),
+              'mesh_cache_hits':mesh_cache.hits,'unique_meshes':mesh_cache.definitions,'ograniczony':False,'limit_trojkatow':max_triangles,'przekroczony_cel_siatki':total>max_triangles}
+        template=Path(__file__).with_name('preview_template.html').read_text(encoding='utf-8')
+        before,after=template.split('/*__SCENE__*/',1)
+        statistics=json.dumps(info,ensure_ascii=False).replace('<',r'\u003c')
+        before=before.replace('/*__STATS__*/',statistics)
+        after=after.replace('/*__STATS__*/',statistics)
         with draft.open('w',encoding='utf-8') as stream:
             stream.write(before)
-            for chunk in json.JSONEncoder(separators=(',',':'),ensure_ascii=False).iterencode(packed):
-                stream.write(chunk.replace('<',r'\u003c'))
+            with scene_draft.open('r',encoding='utf-8') as scene:
+                shutil.copyfileobj(scene,stream,length=1024*1024)
             stream.write(after)
         draft.replace(path)
     finally:
+        scene_draft.unlink(missing_ok=True)
         draft.unlink(missing_ok=True)
-    if progress:progress(f'Podgląd 3D: {len(packed)} wystąpień, {total} trójkątów; pominięto {omitted}')
+    if progress:progress(f'Podgląd 3D: {packed_count} wystąpień, {total} trójkątów; pominięto {omitted}')
     return info

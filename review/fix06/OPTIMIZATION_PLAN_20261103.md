@@ -67,3 +67,25 @@ Nie zmieniono progów IoU, Common/Cut ani reguł doboru par.
 Testy w `test_revision_overlap_policy.py` sprawdzają zgodność z brute
 force, granice tolerancji i duże rzadkie złożenie.
 **Wynik realnego CI: do sprawdzenia na ostatnim SHA.**
+
+## Iteracja 2026-11-04 — zintegrowany pakiet optymalizacji
+- Nr 4/9: _TranslatedProofIndex dla dodatnich, źródłowo potwierdzonych
+  dowodów Common/regionów. Hash lokalnych kształtów wyłącznie zawęża
+  kandydatów; nadal obowiązuje pełne _reuse_common_volume.
+  Cache nie przechowuje awarii, nie zmienia tolerancji ani progów.
+  Statystyki: common_cache_entries / common_cache_candidates_checked,
+  region_cache_entries / region_cache_candidates_checked.
+- Nr 16: indeks dokładnych podpisów BRep ogranicza ponowne skanowanie
+  listy definicji STEP o tej samej nazwie, orientacji, RGBA.
+  Żadne przybliżone podobieństwo nie staje się dowodem.
+- Nr 18/20: podgląd HTML 3D zapisuje dane siatki strumieniowo przez
+  plik tymczasowy, bez trzymania całej listy binarnych payloadów
+  w RAM. Zachowuje identyczny JSON/HTML dla sprawdzonego przypadku.
+- Nr 13/20: Windows portable otrzymuje trwałe znaczniki faz,
+  a oba workflow wykonują testy nowego cache, HTML oraz wszystkich
+  wariantów indeksu przestrzennego.
+- Lokalnie: testy semantyki STEP i HTML 8 PASS, testy nowej sceny
+  2 PASS, testy indeksu dowodów 2 PASS; 9 PASS w regresjach
+  revision_overlap z wyłączeniem jednego długotrwałego testu.
+- Rzeczywisty Windows/duże złożenia, pomiar szczytu RAM,
+  liczba B-Rep i rozmiar STEP po zmianach: DO WERYFIKACJI w CI.

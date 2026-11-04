@@ -267,6 +267,10 @@ class ColoredDocument:
         self.definitions_created=0
         self.definitions_reused=0
         self._named_definitions={}
+        # Only previously serialized exact BRep signatures are indexed;
+        # hash lookup by itself never bypasses the original byte fingerprint.
+        self._named_fingerprint_index={}
+        self._exact_index_hits=0
         self._exact_reuse_attempts=0
         self._exact_reuse_seconds=0.0
 
@@ -396,13 +400,21 @@ class ColoredDocument:
                 self._exact_reuse_attempts+=1
                 fingerprint=self._serialized_brep_signature(local)
                 if fingerprint is not None:
-                    for candidate in candidates:
-                        if not candidate['checked']:
-                            candidate['fingerprint']=self._serialized_brep_signature(candidate['shape'])
-                            candidate['checked']=True
-                        if candidate['fingerprint'] is not None and fingerprint==candidate['fingerprint']:
-                            label=candidate['label'];num_faces=candidate['faces']
-                            break
+                    index=self._named_fingerprint_index.setdefault(source_key,{})
+                    candidate=index.get(fingerprint)
+                    if candidate is not None:
+                        self._exact_index_hits+=1
+                        label=candidate['label'];num_faces=candidate['faces']
+                    else:
+                        for candidate in candidates:
+                            if not candidate['checked']:
+                                candidate['fingerprint']=self._serialized_brep_signature(candidate['shape'])
+                                candidate['checked']=True
+                                if candidate['fingerprint'] is not None:
+                                    index.setdefault(candidate['fingerprint'],candidate)
+                            if candidate['fingerprint'] is not None and fingerprint==candidate['fingerprint']:
+                                label=candidate['label'];num_faces=candidate['faces']
+                                break
                 self._exact_reuse_seconds+=time.perf_counter()-started
         if label is None:
             # Do not modify the source shape. Copy only once per native definition.

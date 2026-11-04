@@ -108,6 +108,39 @@ def _reuse_common_volume(a, b, saved_a, saved_b):
     return bool(np.max(np.abs((a.center-saved_a.center)-(b.center-saved_b.center))) < 1.e-9)
 
 
+class _TranslatedProofIndex:
+    """Index only previously verified native proofs; local hashes are hints.
+
+    Each cache hit still requires _reuse_common_volume to check partner
+    identity, orientation, rotation and relative translation. No failed
+    Boolean result can become a positive proof.
+    """
+    def __init__(self, limit=128):
+        self.groups=defaultdict(list)
+        self.limit=limit
+        self.saved=0
+        self.candidates_checked=0
+
+    @staticmethod
+    def _key(a,b):
+        from OCP.TopLoc import TopLoc_Location
+        sa=a.shape.Located(TopLoc_Location())
+        sb=b.shape.Located(TopLoc_Location())
+        return (hash(sa),int(sa.Orientation()),hash(sb),int(sb.Orientation()))
+
+    def find(self,a,b):
+        for old_a,old_b,proof in self.groups.get(self._key(a,b),()):
+            self.candidates_checked+=1
+            if _reuse_common_volume(a,b,old_a,old_b):
+                return (old_a,old_b,proof)
+        return None
+
+    def save(self,a,b,proof):
+        if self.saved>=self.limit:return
+        self.groups[self._key(a,b)].append((a,b,proof))
+        self.saved+=1
+
+
 def _translated_regions(regions, offset):
     """Only rigidly relocate independently verified Common/Cut results."""
     from OCP.gp import gp_Trsf, gp_Vec
@@ -216,7 +249,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     stat['spatial_candidates_scanned']=0
     edges={}
     best_common={}
-    common_cache=[]
+    common_cache=_TranslatedProofIndex()
     failed_old=set();failed_new=set();failures=[]
     def mark_failure(i,j,error):
         failed_old.add(i);failed_new.add(j)
@@ -271,8 +304,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                     raise NativeGeometryFailure('Limit czasu lub liczby testów materiału — analiza niekompletna')
                 mark_failure(i,j,'Nie wykonano testu: przekroczony limit czasu lub liczby operacji')
                 continue
-            cached=next((entry for entry in common_cache
-                         if _reuse_common_volume(ref,b[j],entry[0],entry[1])),None)
+            cached=common_cache.find(ref,b[j])
             shape=None
             evidence=None
             recovered_regions=None
@@ -303,8 +335,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                         bind_regions(recovered_regions,ref,b[j],tolerance)
                         shape=recovered_regions.common
                     common=volume(shape)
-                    if len(common_cache)<128:
-                        common_cache.append((ref,b[j],common))
+                    common_cache.save(ref,b[j],common)
             except NativeGeometryFailure as exc:
                 failure=NativeGeometryFailure(f'Para A[{i}] „{ref.name}” / B[{j}] „{b[j].name}”: '+str(exc))
                 failure.failed_pair={'a_index':i,'b_index':j}
@@ -489,7 +520,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             (len(new_edges)>1 and score-new_edges[1][0]<MIN_MARGIN)):
             stat['ambiguous']+=1;continue
         chosen.append((i,j))
-    accepted={};regions={};region_cache=[]
+    accepted={};regions={};region_cache=_TranslatedProofIndex()
     stat['region_proof_reuse']=0
     selected=set(chosen)
     best_common={i:value for i,value in best_common.items() if (i,value[1]) in selected}
@@ -507,8 +538,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
         if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
         if progress:progress(f'Zmiany materiału: podział Common/Cut A[{i}] ↔ B[{j}]; limit 90 s')
         cached=best_common.pop(i,None)
-        reuse=next((entry for entry in region_cache
-                    if _reuse_common_volume(a[i],b[j],entry[0],entry[1])),None)
+        reuse=region_cache.find(a[i],b[j])
         try:
             if cached is not None and cached[1]==j and cached[3] is not None:
                 reg=cached[3]
@@ -549,8 +579,8 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
         accepted[i]=(j,record);regions[i]=bound
         # Cache only complete, source-bound material partitions. An unverified
         # result must NEVER be reused by a later occurrence.
-        if reuse is None and len(region_cache)<128:
-            region_cache.append((a[i],b[j],reg))
+        if reuse is None:
+            region_cache.save(a[i],b[j],reg)
     used_a=set(accepted);used_b={v[0] for v in accepted.values()}
     out=[r for r in records if not (
       (r.status=='REMOVED' and r.b_index is None and r.a_index in used_a) or
@@ -592,6 +622,10 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
              if r.status=='CHANGED' and r.a_index in regions and r.b_index==accepted[r.a_index][0]}
     assert len({r.a_index for r in out if r.a_index is not None})==len(a)
     assert len({r.b_index for r in out if r.b_index is not None})==len(b)
+    stat['common_cache_entries']=common_cache.saved
+    stat['common_cache_candidates_checked']=common_cache.candidates_checked
+    stat['region_cache_entries']=region_cache.saved
+    stat['region_cache_candidates_checked']=region_cache.candidates_checked
     stat['accepted']=len(accepted)
     stat['incomplete']=bool(failures)
     if failures:

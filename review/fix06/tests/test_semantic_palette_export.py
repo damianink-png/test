@@ -206,3 +206,22 @@ def test_exact_brep_definition_reuse_for_independent_instances(tmp_path):
     assert diagnostics['ponownie_uzyte_definicje']==1
     assert diagnostics['rzeczywiste_bryly_step']==4
     assert diagnostics['dokladne_porownania_brep']>=2
+
+
+def test_exact_brep_fingerprint_index_only_matches_exact_styles(tmp_path):
+    """Independently constructed solids use the exact serialized fingerprint index."""
+    from dsac29.step_io import ColoredDocument
+    doc=ColoredDocument(group_by_status=True)
+    for i in range(8):
+        doc.add(BRepPrimAPI_MakeBox(10,10,10).Shape(),f'part-{i}',
+                (0.2,0.7,0.3),group='SAME',source_name='same-definition')
+    doc.add(BRepPrimAPI_MakeBox(11,10,10).Shape(),'different-shape',
+            (0.2,0.7,0.3),group='SAME',source_name='same-definition')
+    doc.add(BRepPrimAPI_MakeBox(10,10,10).Shape(),'different-color',
+            (0.3,0.7,0.3),group='SAME',source_name='same-definition')
+    assert doc.count==10 and doc.definitions_created==3
+    assert doc.definitions_reused==7
+    assert doc._exact_index_hits>=6
+    audit=doc.write(tmp_path/'indexed.step')
+    assert audit['rzeczywiste_bryly_step']==10
+    assert audit['definicje_unikalne']==3
