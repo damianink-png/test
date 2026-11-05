@@ -1,0 +1,66 @@
+name: Transfer build 41993792471 to SwissTransfer
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/transfer-41993792471.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  transfer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      XDG_CONFIG_HOME: /tmp/swissfer-config
+    steps:
+      - name: Build transfer utility
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout -q --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+      - name: Restore sender verification
+        run: |
+          set -euo pipefail
+          mkdir -p pending "$XDG_CONFIG_HOME/swissfer"
+          gh run download 41838393837 --repo "$GITHUB_REPOSITORY" --name swissfer-validation-state --dir pending
+          cp pending/email-validations.json "$XDG_CONFIG_HOME/swissfer/email-validations.json"
+      - name: Package OneEXE
+        run: |
+          set -euo pipefail
+          mkdir -p input outgoing
+          gh run download 41993792471 --repo "$GITHUB_REPOSITORY" --name DSCompare-0.6.0-Portable-OneEXE --dir input
+          test -s input/DSCompare.exe
+          python3 - <<'PY'
+          from zipfile import ZipFile, ZIP_STORED
+          from pathlib import Path
+          exe=Path('input/DSCompare.exe')
+          assert exe.stat().st_size > 100_000_000
+          dest=Path('outgoing/DSCompare-OneEXE-41993792471.zip')
+          with ZipFile(dest, 'w', compression=ZIP_STORED) as f:
+              f.write(exe, arcname='DSCompare.exe')
+          with ZipFile(dest) as f:
+              assert f.namelist()==['DSCompare.exe']
+          print('ZIP size:',dest.stat().st_size)
+          PY
+      - name: Upload through SwissTransfer
+        timeout-minutes: 18
+        run: |
+          set -euo pipefail
+          timeout 900s swissfer/target/release/swissfer outgoing/DSCompare-OneEXE-41993792471.zip \
+            --email damianink@gmail.com --duration 30 \
+            --message 'DSCompare build 41993792471' </dev/null > transfer.log 2>&1
+          cat transfer.log
+          link=$(grep -Eo 'https://(www\.)?swisstransfer\.com/dl/[a-zA-Z0-9-]+' transfer.log | tail -n 1 || true)
+          test -n "$link"
+          echo "Download: $link" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transfer-41993792471-logs
+          path: transfer.log
+          retention-days: 3
+          if-no-files-found: warn
