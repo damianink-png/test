@@ -13,6 +13,8 @@ from test_repeated_revision_policy import parts
     ('12345_rev.01','12345_rev.02'),
     ('12345_A','12345_B'),
     ('12345_01','12345_02'),
+    ('Pokrywa_01','Pokrywa_02'),
+    ('WSPORNIK_A1','WSPORNIK_B2'),
     ('PLATE_123_A2','plate_123_B3.step'),
     ('WSPORNIK_123_REWIZJA_A','WSPORNIK_123_REWIZJA_B'),
     ('12345_REV_A:1','12345_REV_B:8'),
@@ -26,6 +28,8 @@ def test_separated_revisions_share_whole_name_family(old,new):
 
 @pytest.mark.parametrize('old,new',[
     ('PART_100','PART_200'),
+    ('BRACKET_100','BRACKET_200'),
+    ('MODEL_01','MODEL_02'),
     ('MODEL_P1','MODEL_P2'),
     ('ABC123_REV_A','ABC1234_REV_B'),
     ('12345_LEFT','12345_RIGHT'),

@@ -30,7 +30,10 @@ def material_name_key(value):
         stem,suffix=text.rsplit('_',1)
         key=canonical(stem)
         numeric=any(c.isdigit() for c in suffix)
+        generic={'part','detal','element','component','komponent','model','solid','shape'}
+        short_named_revision=(len(key)>=5 and key not in generic and
+                              len(''.join(c for c in suffix if c.isdigit()))<=2)
         meaningful=(len(key)>=3 and
-                    (not numeric or any(c.isdigit() for c in key)))
+                    (not numeric or any(c.isdigit() for c in key) or short_named_revision))
         if meaningful and _SHORT.fullmatch(suffix.strip()):return key
     return canonical(text)
