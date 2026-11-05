@@ -1,0 +1,83 @@
+name: Send DSCompare OneEXE 41979890358 ZIP to SwissTransfer
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/swisstransfer-dscompare-41979890358.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  transfer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      XDG_CONFIG_HOME: /tmp/swissfer-config
+    steps:
+      - name: Build Swissfer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout -q --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+      - name: Restore previously confirmed sender session
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p pending "$XDG_CONFIG_HOME/swissfer"
+          gh run download 41838393837 --repo "$GITHUB_REPOSITORY" --name swissfer-validation-state --dir pending
+          cp pending/email-validations.json "$XDG_CONFIG_HOME/swissfer/email-validations.json"
+          python3 - "$XDG_CONFIG_HOME/swissfer/email-validations.json" <<'PY'
+          import json, sys
+          state=json.load(open(sys.argv[1]))
+          assert state.get('validations',{}).get('damianink@gmail.com',{}).get('validated') is True, 'No confirmed sender session'
+          print('Previously confirmed sender session found')
+          PY
+      - name: Download OneEXE and create ZIP on GitHub runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload outgoing
+          gh run download 41979890358 --repo "$GITHUB_REPOSITORY" --name DSCompare-0.6.0-Portable-OneEXE --dir payload
+          test -s payload/DSCompare.exe
+          python3 - <<'PY'
+          from zipfile import ZipFile,ZIP_STORED
+          from pathlib import Path
+          source=Path('payload/DSCompare.exe')
+          assert source.stat().st_size > 100_000_000
+          target=Path('outgoing/DSCompare-0.6.0-Portable-OneEXE-41979890358.zip')
+          with ZipFile(target,'w',compression=ZIP_STORED,allowZip64=True) as z:
+              z.write(source,arcname='DSCompare.exe')
+          with ZipFile(target) as z:
+              assert z.namelist()==['DSCompare.exe']
+          print('Created ZIP bytes:',target.stat().st_size)
+          PY
+      - name: Upload ZIP to SwissTransfer
+        shell: bash
+        timeout-minutes: 18
+        run: |
+          set -uo pipefail
+          timeout 900s swissfer/target/release/swissfer outgoing/DSCompare-0.6.0-Portable-OneEXE-41979890358.zip \
+            --email damianink@gmail.com --duration 30 \
+            --message 'DSCompare OneEXE ZIP - build 41979890358' < /dev/null > swissfer-upload.log 2>&1
+          status=$?
+          cat swissfer-upload.log
+          link=$(grep -Eo 'https://(www\.)?swisstransfer\.com/dl/[a-zA-Z0-9-]+' swissfer-upload.log | tail -n 1 || true)
+          if [ "$status" -eq 0 ] && [ -n "$link" ]; then
+            echo "## Transfer succeeded" >> "$GITHUB_STEP_SUMMARY"
+            echo "SwissTransfer link: $link" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "## Transfer unsuccessful, exit $status" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+      - name: Save diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swisstransfer-41979890358-diagnostics
+          path: swissfer-upload.log
+          retention-days: 3
+          if-no-files-found: warn
