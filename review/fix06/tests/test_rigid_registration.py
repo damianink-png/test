@@ -97,3 +97,64 @@ def test_native_brep_confirms_rotated_noncollinear_boxes():
     assert np.allclose(np.asarray(result['rotation_B_to_A']),rot.T,atol=1e-6)
     assert result['verified_sample_count']>=8
     assert len(result['certified_pairs'])>=8
+
+
+
+def test_unchanged_repeated_parts_do_not_trigger_expensive_global_pose(monkeypatch):
+    """Swerve regression: 92/251 existing B-Rep matches vs 101 centroid votes.
+
+    This is not proof of a displaced assembly and must not launch Common/Cut.
+    """
+    from dsac29 import alignment,registration_gate
+    old=_sample(251)
+    new=_sample(251)
+    identity=tuple(tuple(float(v) for v in row) for row in np.eye(3))
+    pose=rigid.Pose(identity,(0.0,0.0,5.0),101,20,15000.)
+    monkeypatch.setattr(rigid,'propose_rigid_hypotheses',
+                        lambda *args,**kwargs:[pose])
+    monkeypatch.setattr(alignment,'_relocate',
+                        lambda *args,**kwargs: (_ for _ in ()).throw(
+                            AssertionError('do not relocate for marginal votes')))
+    monkeypatch.setattr(registration_gate,'frame_support',
+                        lambda *args,**kwargs: (_ for _ in ()).throw(
+                            AssertionError('do not B-Rep verify marginal pose')))
+    assert rigid.propose_verified_rigid(old,new,92,.01) is None
+
+
+def test_fully_checked_nonimproving_brep_pose_is_not_retried(monkeypatch):
+    """A predicted win with no new actual CAD proof is rejected immediately."""
+    from dsac29 import alignment,registration_gate
+    old=_sample(251)
+    new=_sample(251)
+    identity=tuple(tuple(float(v) for v in row) for row in np.eye(3))
+    pose=rigid.Pose(identity,(0.0,0.0,500.0),150,22,15000.)
+    monkeypatch.setattr(rigid,'propose_rigid_hypotheses',
+                        lambda *args,**kwargs:[pose])
+    monkeypatch.setattr(alignment,'_relocate',lambda part,*args:part)
+    calls=[]
+    def support(*args,**kwargs):
+        calls.append(kwargs)
+        assert len(calls)==1, 'never retry a disproven frame'
+        return {'count':120,'checked':120,'proofs':60}
+    monkeypatch.setattr(registration_gate,'frame_support',support)
+    assert rigid.propose_verified_rigid(old,new,60,.01)['status']=='unresolved'
+    assert len(calls)==1
+
+
+def test_large_clear_shift_still_enters_native_proof(monkeypatch):
+    """Do not lose strong global translations when filtering weak hypotheses."""
+    from dsac29 import alignment,registration_gate
+    old=_sample(100)
+    new=_sample(100)
+    identity=tuple(tuple(float(v) for v in row) for row in np.eye(3))
+    pose=rigid.Pose(identity,(250.,120.,-45.),91,41,50000.)
+    monkeypatch.setattr(rigid,'propose_rigid_hypotheses',
+                        lambda *args,**kwargs:[pose])
+    monkeypatch.setattr(alignment,'_relocate',lambda part,*args:part)
+    calls=[]
+    def support(*args,**kwargs):
+        calls.append(kwargs)
+        return {'count':91,'checked':10,'proofs':0}
+    monkeypatch.setattr(registration_gate,'frame_support',support)
+    assert rigid.propose_verified_rigid(old,new,5,.01)['status']=='unresolved'
+    assert len(calls)==1
