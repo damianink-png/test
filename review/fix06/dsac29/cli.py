@@ -139,11 +139,18 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                 raise
 
     trace.mark('signatures','END')
+    from .registration_search import RegistrationSearch
+    registration_search=RegistrationSearch()
     def inspect_stage1(matched,free_a,free_b):
         if not should_align:return None
         from .deferred_alignment import propose_from_stage1
         with trace.phase('translation_candidates',matched=len(matched),remaining_a=len(free_a),remaining_b=len(free_b)):
-            return propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress,cancelled)
+            from .native_guard import NativeGeometryFailure
+            try:
+                return propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress,cancelled,search_state=registration_search)
+            except NativeGeometryFailure as exc:
+                return {'status':'unresolved','reason':'Automatyczne wyszukiwanie: '+str(exc),
+                        'search_diagnostics':registration_search.summary()}
 
     step_reexport_tol=False
     certified_pairs=[]
@@ -153,7 +160,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         # OCCT process, NOT its verdicts, across those checks. Each request
         # retains its own input B-Rep and 90s bounded deadline.
         from .native_session import world_session
-        with world_session(max(len(a),len(b))>=600 and bool(certified_pairs)):
+        with world_session(max(len(a),len(b))>=80 and bool(certified_pairs)):
             return compare(a,b,tolerance,progress=progress,cancelled=cancelled,
                            revision_only=revision_style and not manual_review,
                            exact_serialization=True,geometry_context=geometry_context,
@@ -168,7 +175,8 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             trace.mark('alignment_proposal','FOUND',votes=proposal.get('votes'),translation=proposal.get('translation_B_to_A_mm'))
     if should_align:
         trace.mark('alignment','BEGIN',proposal=bool(proposal))
-        from .alignment import align_assembly,AlignmentUnavailable,_relocate
+        if proposal is not None:proposal.setdefault('search_diagnostics',registration_search.summary())
+        from .alignment import AlignmentUnavailable,_relocate
         import numpy as np
         shift_start=perf_counter()
         alignment.update(status='original_coordinates',method='stage1_first',
@@ -205,7 +213,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                 sample_checked=int(proposal.get('checked_sample_count',0))
                 sample_proven=int(proposal.get('verified_sample_count',0))
                 sample_safe=(not sample_only or
-                    (pop>=600 and sample_checked>=40 and
+                    (pop>=80 and sample_checked>=40 and
                      sample_proven>=ceil(.90*sample_checked) and
                      votes>=ceil(.70*pop) and original<=ceil(.15*pop)))
                 if (not proposal.get('requires_confirmation',False) and sample_safe
@@ -226,29 +234,9 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                 decision=alignment_approval(proposal)
             if decision=='search':
                 try:
-                    _,proposal=align_assembly(a,b,tolerance,progress)
-                    # A legacy alignment based on only two anchor bases is not
-                    # sufficient evidence to relocate a large revised assembly.
-                    # Keep the original coordinates unless full-assembly B-Rep
-                    # evidence independently supports the proposed transform.
-                    if proposal.get('status')=='registered' and min(len(a),len(b))>=40:
-                        from .registration_gate import frame_support
-                        candidate_offset=np.asarray(proposal.get('translation_B_to_A_mm',[0,0,0]),dtype=float)
-                        candidate_rotation=np.asarray(proposal.get('rotation_B_to_A',np.eye(3)),dtype=float)
-                        relocated=[_relocate(part,candidate_rotation,candidate_offset) for part in b]
-                        # align_assembly may have already completed FULL
-                        # B-Rep verification on this very same placed model.
-                        # Never repeat those expensive native calls merely to
-                        # re-confirm the identical frame in the CLI.
-                        checked=proposal.get('whole_assembly_support')
-                        if checked is None:
-                            checked=frame_support(a,relocated,tolerance,proofs=12,progress=progress,cancelled=cancelled)
-                        elif progress:
-                            progress('Wyrównanie: wykorzystano gotowe dowody B-Rep całego złożenia.')
-                        required=max(8,ceil(.30*min(len(a),len(b))))
-                        if checked['count']<required or checked['proofs']<min(8,checked['checked']):
-                            proposal={'status':'unresolved','reason':f'Wyrównanie z samych baz odrzucone: {checked["proofs"]}/{checked["checked"]} dowodów B-Rep, {checked["count"]} kandydatów; wymagane co najmniej {required} par.'}
-                            if progress:progress('UWAGA: '+proposal['reason'])
+                    from .registration_search import continue_registration
+                    proposal=continue_registration(a,b,tolerance,registration_search,
+                                                   progress,cancelled)
                     # The user has already explicitly requested a search.
                     # Apply a verified registration directly rather than
                     # asking whether to search a second time.

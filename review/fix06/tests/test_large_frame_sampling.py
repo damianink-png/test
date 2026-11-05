@@ -115,4 +115,4 @@ def test_large_registered_final_comparison_uses_native_session():
     from dsac29 import cli
     import inspect
     source = inspect.getsource(cli.process)
-    assert 'with world_session(max(len(a),len(b))>=600 and bool(certified_pairs))' in source
+    assert 'with world_session(max(len(a),len(b))>=80 and bool(certified_pairs))' in source

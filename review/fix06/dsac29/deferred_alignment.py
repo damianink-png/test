@@ -14,7 +14,8 @@ from .registration_gate import frame_support,FrameProofCache
 from .step_reexport_tolerance import coarse_candidate,world_candidate,search_radius
 
 
-def propose(a,b,records,tolerance,progress=None,cancelled=None):
+def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=None,extended=False):
+    if search_state is not None:search_state.bind(a,b,tolerance)
     population=min(len(a),len(b))
     baseline=sum(r.status in ('SAME','RENAMED') for r in records)
     # The former 15% requirement made legitimate large revision shifts
@@ -42,7 +43,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
         keys_a.update(signature(a[r.a_index]) for r in moved)
         keys_b.update(signature(b[r.b_index]) for r in moved)
         repeated=keys_a & keys_b
-    if len(moved)<minimum and not repeated:
+    if not extended and len(moved)<minimum and not repeated:
         return None
     def check_cancel():
         if cancelled and cancelled():raise Cancelled('Przerwano analizę')
@@ -97,23 +98,52 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
         for i in sample(sa[key],a):
             for j in sample(sb[key],b):
                 if candidate(a[i],b[j],tolerance):add(a[i].center-b[j].center)
+    if extended:
+        # Names propose new offsets; independent world B-Rep remains mandatory.
+        from .material_names import material_name_key
+        named_a=defaultdict(list);named_b=defaultdict(list)
+        for i,p in enumerate(a):
+            key=material_name_key(p.name)
+            if key:named_a[key].append(i)
+        for j,p in enumerate(b):
+            key=material_name_key(p.name)
+            if key:named_b[key].append(j)
+        for key in sorted(named_a.keys() & named_b.keys()):
+            aa,bb=named_a[key],named_b[key]
+            if len(aa)==len(bb):
+                add(np.mean([a[i].center for i in aa],axis=0)-
+                    np.mean([b[j].center for j in bb],axis=0),weight=min(24,len(aa)))
+            for i in sample(aa,a):
+                for j in sample(bb,b):
+                    if coarse_candidate(a[i],b[j],tolerance):add(a[i].center-b[j].center)
     if not histogram:return None
     # No Boolean work until a hypothesis improves on the ordinary comparison.
     radius=search_radius(tolerance)
     cells=_spatial_index(a,range(len(a)),radius)
-    ranked=[]
-    for _,offset in sorted(histogram.values(),key=lambda v:(-v[0],tuple(float(q) for q in v[1])))[:192]:
-        check_cancel();used=set()
-        for p in b:
-            center=p.center+offset
-            for i in _nearby(cells,SimpleNamespace(center=center),radius):
-                if i in used or np.linalg.norm(a[i].center-center)>radius:continue
-                if world_candidate(a[i],p,tolerance):used.add(i);break
-        if len(used)>=minimum and len(used)>baseline:
-            # For equal occurrence support, prioritize the shift explaining
-            # more physical material (large structural anchors over bolts).
-            covered_volume=sum(max(0.0,float(a[i].volume)) for i in used)
-            ranked.append((len(used),offset,covered_volume))
+    def rank(offsets):
+        result=[]
+        for offset in offsets:
+            check_cancel();used=set()
+            for p in b:
+                center=p.center+offset
+                for i in _nearby(cells,SimpleNamespace(center=center),radius):
+                    if i in used or np.linalg.norm(a[i].center-center)>radius:continue
+                    if world_candidate(a[i],p,tolerance):used.add(i);break
+            if len(used)>=minimum and len(used)>baseline:
+                # For equal occurrence support, prioritize the shift explaining
+                # more physical material (large structural anchors over bolts).
+                covered_volume=sum(max(0.0,float(a[i].volume)) for i in used)
+                result.append((len(used),offset,covered_volume))
+        return result
+    seeds=[offset for _,offset in sorted(histogram.values(),key=lambda v:(-v[0],tuple(float(q) for q in v[1])))[:(1024 if extended else 192)]]
+    ranked=rank(seeds)
+    if ranked:
+        from .translation_refinement import refine_translations
+        top=sorted(ranked,key=lambda v:(-v[2],-v[0]))
+        refined=refine_translations(a,b,[v[1] for v in top],tolerance,cancelled)
+        if refined:
+            if progress:progress(f'Przesunięcie: {len(refined)} doprecyzowanych hipotez z granic CAD; wymagają dowodów B-Rep.')
+            ranked=rank(refined)+ranked
     if not ranked:return None
     if progress:progress('Wynik porównania wskazuje wspólne przesunięcie. Weryfikacja położenia B-Rep…')
     # First test hypotheses using virtual center offsets (above) and a bounded
@@ -123,7 +153,23 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     # exists, apply the SAME existing coarse-score pruning heuristic before
     # sampling further candidates. This avoids spending 24 expensive native
     # checks on each of 16 weak hypotheses before starting any full proof.
-    winners=[];evaluated=[];sample_findings=[]
+    winners=[] if search_state is None else search_state.winners
+    evaluated=[] if search_state is None else search_state.completed
+    new_checks=0
+    sample_findings=[]
+    def native_support(*args,**kwargs):
+        from .native_guard import NativeGeometryFailure
+        try:return frame_support(*args,**kwargs)
+        except NativeGeometryFailure as exc:
+            # Record an incomplete attempt, never a negative geometry result.
+            # An explicit expanded search must not replay this same pose.
+            if not any(np.linalg.norm(offset-old)<=tolerance for old in evaluated):
+                evaluated.append(offset)
+            if search_state is not None:
+                search_state.failures.append({'offset':offset.tolist(),'reason':str(exc),
+                                              'count_upper_bound':coarse,
+                                              'volume_upper_bound':_covered_volume})
+            raise
     identity=np.eye(3)
     for coarse,offset,_covered_volume in sorted(ranked,key=lambda v:(-v[2],-v[0],tuple(float(q) for q in v[1]))):
         if any(np.linalg.norm(offset-old)<=tolerance for old in evaluated):continue
@@ -131,12 +177,12 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
             best=max(w[0] for w in winners)
             margin=max(1,ceil(.10*best)) if low_overlap else 0
             if coarse<best-margin and _covered_volume<max(w[3] for w in winners):continue
-        if len(evaluated)>=24:
+        if new_checks>=(96 if extended else 24):
             # Competitive upper bounds remain. A bounded search cannot
             # establish that its current winner is unique.
             return {'status':'unresolved','reason':
                     'Limit weryfikacji konkurencyjnych przesunięć; brak jednoznacznego wyrównania.'}
-        evaluated.append(offset)
+        new_checks+=1
         check_cancel()
         # Each unique offset is evaluated once; retaining all shifted OCCT
         # shapes provides no cache hits and unnecessarily increases peak RAM.
@@ -144,7 +190,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
         # Both passes inspect the SAME immutable placed B-Rep inputs. Reuse
         # completed proofs, never descriptor votes or native failures.
         proof_cache=FrameProofCache()
-        preliminary=frame_support(a,shifted,tolerance,proofs=24,
+        preliminary=native_support(a,shifted,tolerance,proofs=24,
                                   progress=progress,cancelled=cancelled,proof_cache=proof_cache)
         checked=preliminary['checked'];confirmed=preliminary['proofs']
         sample_findings.append((int(confirmed),int(checked),int(preliminary['count'])))
@@ -153,13 +199,13 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
                 and preliminary['count']>baseline
                 and checked>=min(8,preliminary['count'])
                 and confirmed>=min(preliminary['count'],max(4,ceil(.65*checked)))):
-            # On assemblies of 600+ solids, the original verify_all pass
+            # On assemblies of 80+ solids, the original verify_all pass
             # repeatedly launched hundreds of native OCCT operations before
             # the final compare; the V2 revision_shift crashed after 412.
             # A strong sample proves only its own pairs. All other pairs
             # must still undergo the normal final comparison.
-            if population>=600 and preliminary['count']>=max(300,ceil(.55*population)):
-                sample=frame_support(a,shifted,tolerance,proofs=48,
+            if population>=80 and preliminary['count']>=max(48,ceil(.55*population)):
+                sample=native_support(a,shifted,tolerance,proofs=48,
                                      progress=progress,cancelled=cancelled,
                                      proof_cache=proof_cache)
                 n=sample['checked'];verified=sample['proofs']
@@ -176,13 +222,14 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
                                  f'{sample["count"]-len(certified)} pozostałych '
                                  'kandydatów wymaga weryfikacji końcowej.')
             else:
-                support=frame_support(a,shifted,tolerance,verify_all=True,
+                support=native_support(a,shifted,tolerance,verify_all=True,
                                       progress=progress,cancelled=cancelled,
                                       proof_cache=proof_cache)
                 if support['count']>=minimum and support['count']>baseline:
                     verified_volume=sum(max(0.0,float(a[i].volume)) for i,_ in support['pairs'])
                     winners.append((support['count'],offset,support['pairs'],
                                     verified_volume,False,support['checked'],support['proofs']))
+        evaluated.append(offset)
         from . import trace_r22 as trace
         trace.mark('registration_proof_cache','END',hits=proof_cache.hits,
                    proof_calls=proof_cache.proof_calls,stored=len(proof_cache.results),
@@ -202,6 +249,17 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
                 'best_position_candidates':best[2]}
     winners.sort(key=lambda v:(-v[3],-v[0]))
     votes,offset,certified,verified_volume,sampled,n_sample,p_sample=winners[0]
+    if search_state is not None:
+        # Skipping an identical timed-out native attempt is not a negative
+        # proof. A still-competitive unknown rival prevents arbitrary alignment.
+        margin=max(1,ceil(.10*votes)) if low_overlap else 0
+        if any(f['count_upper_bound']>=votes-margin and
+               f['volume_upper_bound']>=verified_volume*.90 and
+               np.linalg.norm(np.asarray(f['offset'])-offset)>tolerance
+               for f in search_state.failures):
+            return {'status':'unresolved','reason':
+                    'Niezweryfikowana konkurencyjna hipoteza po błędzie B-Rep; '
+                    'nie powtórzono tego samego timeoutu i nie zgadnięto położenia.'}
     total_volume=sum(max(0.0,float(p.volume)) for p in a)
     volume_ratio=verified_volume/max(total_volume,1e-12)
     # Sparse revisions can have 8/80 verified unchanged occurrences. Never
@@ -315,7 +373,7 @@ def _periodic_global_offset_possible(a,b,tolerance,population,free_a=(),free_b=(
     return False
 
 
-def propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress=None,cancelled=None):
+def propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress=None,cancelled=None,*,search_state=None):
     """Check a whole-frame shift BEFORE costly rigid per-part comparisons.
 
     Uses the exact same B-Rep-verified candidate ranking as propose(), so
@@ -337,16 +395,21 @@ def propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress=None,cancel
     records.extend(Record(i,None,'REMOVED','Wstępnie niezwiązany') for i in free_a)
     records.extend(Record(None,j,'ADDED','Wstępnie niezwiązany') for j in free_b)
     if progress:progress(f'Etap 1: {baseline}/{population} zgodnych w miejscu; sprawdzam globalne przesunięcie.')
-    strict=propose(a,b,records,tolerance,progress,cancelled)
+    if search_state is not None:
+        search_state.bind(a,b,tolerance)
+        search_state.stage1_records=list(matched)
+        search_state.free_a=frozenset(free_a);search_state.free_b=frozenset(free_b)
+        strict=propose(a,b,records,tolerance,progress,cancelled,search_state=search_state)
+    else:
+        strict=propose(a,b,records,tolerance,progress,cancelled)
     if strict is not None and strict.get('status')=='registered':return strict
     # The normal descriptor vote estimates translation only. If that fails,
     # try a bounded full SE(3) rigid pose: distance-invariant RANSAC followed
     # by proper-rotation Kabsch and independent native B-Rep proofs.
     # Never use the point/volume consensus as final geometry evidence.
     from .rigid_registration import propose_verified_rigid
-    rejected=(strict or {}).get('rejected_translation_offsets',[]) if isinstance(strict,dict) else []
     rigid=propose_verified_rigid(a,b,baseline,tolerance,progress,cancelled,
-                                 excluded_translations=rejected)
+        excluded_translations=(strict or {}).get('rejected_translation_offsets',[]))
     if rigid is not None and rigid.get('status')=='registered':return rigid
     soft=_step_reexport_fallback(a,b,baseline,tolerance,progress,cancelled)
     return soft if soft is not None else (rigid if rigid is not None else strict)
@@ -404,7 +467,7 @@ def _step_reexport_fallback(a,b,baseline,tolerance,progress=None,cancelled=None)
                 if not coarse_candidate(a[i],p,tolerance):continue
                 used.add(i);pairs.append((i,j));break
         if len(pairs)<minimum:continue
-        if max(len(a),len(b))>=600:
+        if max(len(a),len(b))>=80:
             # Keep validity, exact bounds and face/edge operations in the same
             # crash-contained path as the main hypothesis verifier.
             shifted_all=[_relocate(p,np.eye(3),off) for p in b]
