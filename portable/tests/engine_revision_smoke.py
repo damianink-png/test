@@ -31,7 +31,10 @@ for case, width, shift, count, name, expected in (
     ('repeated_other_name', 11, 0, 8, 'OTHER_123_REV_B', {'REMOVED':8, 'ADDED':8}),
     ('repeated_unequal_count', 11, 0, 7, 'PLATE_123_REV_B', {'REMOVED':8, 'ADDED':7}),
     ('global_shift', 10, 1000, 8, 'PLATE_123_REV_B', {'SAME':8}),
+    ('repeated_afm_revision', 11, 0, 8, 'czesc1_afm2', {'CHANGED':8}),
 ):
+    if case=='repeated_afm_revision':
+        model(root/'old.step',name='czesc1_afm0')
     model(root/f'{case}.step', width, shift, count, name)
     output = root/case
     args = [exe, '--worker', 'compare', '--a', str(root/'old.step'),
@@ -60,7 +63,7 @@ for case, width, shift, count, name, expected in (
         assert summary['statuses'] == expected, (case, summary['statuses'])
         assert summary['main_step_ready'], summary
         assert not summary.get('material_errors'), summary.get('material_errors')
-        if case=='repeated_named_revision':
+        if case in ('repeated_named_revision','repeated_afm_revision'):
             assert summary['revision_overlap']['accepted']==8
         elif case in ('repeated_other_name','repeated_unequal_count'):
             assert summary['revision_overlap']['boolean_checks']==0
