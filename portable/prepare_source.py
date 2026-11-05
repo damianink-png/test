@@ -29,3 +29,14 @@ for name,digest in manifest['sha256'].items():
  if name.startswith('dsac29/') or name in ('DSCompareV3.py','requirements.txt','BUDUJ_WINDOWS.ps1'):
   assert hashlib.sha256((out/name).read_bytes()).hexdigest()==digest,'Changed tested CAD engine: '+name;checked+=1
 print('TESTED_ENGINE_SOURCE_MATCH_PASS',checked,'files, pinned run 41291652234')
+# The portable build must ship the same bounded, fail-closed Windows native
+# completion-mailbox fix as the integrated RC9 Windows build.  Apply it only
+# AFTER validating the immutable baseline manifest above: a patched source
+# cannot and should not masquerade as a byte-identical original snapshot.
+import subprocess
+native_session = out/'dsac29/native_session.py'
+patch_script = here.parent/'review/fix06/ci/patch_native_completion_read.py'
+assert native_session.is_file() and patch_script.is_file(), 'Native completion patch inputs missing'
+subprocess.run([sys.executable, str(patch_script), str(native_session)], check=True)
+compile(native_session.read_text(encoding='utf8'), str(native_session), 'exec')
+print('PORTABLE_NATIVE_COMPLETION_READ_PATCH_PASS', flush=True)
