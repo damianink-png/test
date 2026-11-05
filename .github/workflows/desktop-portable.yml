@@ -6,7 +6,7 @@ on:
     paths: ['portable/**', 'review/fix06/tests/test_repeated_revision_policy.py', 'review/fix06/ci/patch_compare_revision_policy.py', 'review/fix06/ci/patch_material_worker_failclosed.py', 'review/fix06/ci/patch_material_timeout.py', 'review/fix06/ci/patch_stale_failed_pairs.py', 'review/fix06/ci/patch_assignment_uniqueness.py', 'review/fix06/ci/patch_legacy_audit_tests.py', 'review/fix06/tests/test_audit_legacy_guards.py', 'review/fix06/tests/test_material_timeout_policy.py', 'review/fix06/tests/test_stale_failed_pair_guard.py', 'review/fix06/ci/patch_gui_minimal.py', 'review/fix06/ci/patch_legacy_ui_tests.py', 'review/fix06/ci/patch_step_polish_names.py', 'review/fix06/tests/test_gui_minimal.py', 'review/fix06/tests/test_material_worker_failclosed.py', 'review/fix06/tests/test_revision_overlap_policy.py','review/fix06/tests/test_translated_proof_index.py', 'review/fix06/tests/test_mass_html_materials.py', 'review/fix06/tests/test_large_frame_sampling.py', 'review/fix06/ci/patch_native_completion_read.py', 'review/fix06/tests/test_native_completion_read.py', 'review/fix06/tests/test_rigid_registration.py', 'review/fix06/dsac29/**', 'review/fix06/ci/patch_geometry_registry_streaming.py', 'review/fix06/ci/patch_alignment_stage2.py', 'review/fix06/tests/test_alignment_stage2_guard.py', 'review/fix06/tests/test_20261104_audit_fixes.py', '.github/workflows/desktop-portable.yml']
 concurrency:
   group: dscompare-portable-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 permissions:
   contents: read
   actions: read

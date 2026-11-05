@@ -78,10 +78,12 @@ def test_similar_descriptors_are_not_repeat_proof(monkeypatch):
 
 def test_registry_retains_occurrence_objects_and_rejects_stale_id():
     registry=GeometryRegistry()
-    p=parts()[1]
+    occurrences=parts()
+    definition=registry.definition(occurrences[0])
+    p=occurrences[1]
+    assert registry.definition(p)==definition
     ref=weakref.ref(p)
-    definition=registry.definition(p)
-    del p
+    del occurrences,p
     gc.collect()
     assert ref() is not None
     different=parts(width=12,count=1)[0]
