@@ -6,6 +6,7 @@ on:
       - '.github/workflows/rc10-from-zip.yml'
       - 'DSCompare_RC10_GitHub_CI.zip'
       - 'DSCompare-RC10-sources.zip'
+      - 'patches/rc10/**'
 permissions:
   contents: read
 jobs:
@@ -35,6 +36,13 @@ jobs:
           New-Item -ItemType Directory -Force rc10 | Out-Null
           Expand-Archive -LiteralPath DSCompare_RC10_GitHub_CI.zip -DestinationPath rc10 -Force
           Get-ChildItem rc10 -Recurse -File | Select-Object -ExpandProperty FullName
+      - name: Apply reviewed RC10 geometry fixes
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem rc10 -Recurse -Directory -Filter dsac29 | Where-Object { Test-Path (Join-Path $_.FullName '__init__.py') } | Select-Object -First 1
+          if (-not $package) { throw 'RC10 package missing' }
+          python patches/rc10/apply_patch.py $package.Parent.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'RC10 patch failed' }
       - name: Attempt RC10 Windows compilation
         shell: pwsh
         run: |

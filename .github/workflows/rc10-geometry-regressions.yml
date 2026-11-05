@@ -1,0 +1,38 @@
+name: RC10 repeated components and translation regressions
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'patches/rc10/**'
+      - '.github/workflows/rc10-geometry-regressions.yml'
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unpack and patch RC10
+        run: |
+          python -m zipfile -e DSCompare_RC10_GitHub_CI.zip rc10
+          python patches/rc10/apply_patch.py rc10
+          python patches/rc10/apply_patch.py rc10
+      - name: Install geometry and test dependencies
+        run: python -m pip install -r rc10/requirements.txt pytest
+      - name: Verify geometry classification, shifts and exports
+        working-directory: rc10
+        run: >-
+          python -m pytest -q
+          tests/test_rc10_repeated_common_shift.py
+          tests/test_r14_sparse_shift.py
+          tests/test_r14_stage1_shift.py
+          tests/test_r13_deferred_alignment.py
+          tests/test_r111_geometry_registry.py
+          tests/test_r15_material_renamed.py
+          tests/test_r16_231_world.py
+          tests/test_r1129_no_surplus_absr.py
+          tests/test_r223_rc4_registration_fail_closed.py
+          tests/test_r20_regressions.py

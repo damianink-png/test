@@ -1,0 +1,30 @@
+{
+  "dsac29/compare.py": {
+    "before": "4be6d4bbd8ad27a398d0f0d3602cac5504eb53cc4bb71861ebb8688e1293d343",
+    "after": "cca2a6d1fc2988197ae29d61bb57d02c82f7a676808a67f37bb2f55385972c99"
+  },
+  "dsac29/deferred_alignment.py": {
+    "before": "46966aec8363a67fe5ce95f612719acc83a29d22865a45372b98c1c3923f88e0",
+    "after": "d86001a31666f32c91e3653940b6262ec4590f456dcb1f2ba5db40c1eb166881"
+  },
+  "dsac29/revision_rules.py": {
+    "before": "796cdc258d189b6c51668993310f2847eab75d0e4c64e9c18cd459803dda8e9c",
+    "after": "6e688ab2f729b7039d8a30129b7a32a6812af017e3bd4452b441a7e4bc144bc5"
+  },
+  "dsac29/revision_overlap.py": {
+    "before": "59c0261117d80b4a521d174642fcf35f3d3f1c0228c4ff5ef67aa9c1e3989f19",
+    "after": "0a674d7ad9b5ed934bdc1e179bfafb0f0f893f0a8d4c20ee7a7ae179fcc24747"
+  },
+  "dsac29/repetition.py": {
+    "before": null,
+    "after": "6530e106c9f603493b4befab5320afcec25f3fad7a430a82c1c688559b7ccbcc"
+  },
+  "tests/test_rc10_repeated_common_shift.py": {
+    "before": null,
+    "after": "b67c80b4a03010f5094fcf5c3ae84648e10833d959a26f6a1c78abe15c502daa"
+  },
+  "tests/test_r15_material_renamed.py": {
+    "before": "c473c64f94ec2ff3fc7fe9365272c5096046954b457fbc7c0b2ec3d567536403",
+    "after": "2ca760abff295b1e3a4412d4315235c0fa2f9f1896210f52d1267833ceffb453"
+  }
+}

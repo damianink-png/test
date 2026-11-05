@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/rc10-six-cases.yml'
+      - 'patches/rc10/**'
 permissions:
   contents: read
 jobs:
@@ -28,6 +29,13 @@ jobs:
           Expand-Archive -LiteralPath DSCompare_RC10_GitHub_CI.zip -DestinationPath rc10 -Force
           Write-Host 'Available test scripts:'
           Get-ChildItem -Recurse -File -Include '*large*exe*.py','*real*revision*.py','*test*.py' | Select-Object -ExpandProperty FullName
+      - name: Apply reviewed RC10 geometry fixes
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem rc10 -Recurse -Directory -Filter dsac29 | Where-Object { Test-Path (Join-Path $_.FullName '__init__.py') } | Select-Object -First 1
+          if (-not $package) { throw 'RC10 package missing' }
+          python patches/rc10/apply_patch.py $package.Parent.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'RC10 patch failed' }
       - name: Build RC10
         shell: pwsh
         run: |
