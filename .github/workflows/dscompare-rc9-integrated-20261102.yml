@@ -17,6 +17,8 @@ on:
       - 'review/fix06/ci/patch_alignment_stage2.py'
       - 'review/fix06/ci/patch_material_timeout.py'
       - 'review/fix06/ci/patch_native_completion_read.py'
+      - 'review/fix06/ci/large_exe.py'
+      - 'review/fix06/tests/test_ci_source_download.py'
       - 'review/fix06/tests/test_native_completion_read.py'
       - 'review/fix06/ci/patch_common_exclusion_dispatch.py'
       - 'review/fix06/ci/patch_material_worker_failclosed.py'
@@ -219,6 +221,8 @@ jobs:
           $required = if ('${{ matrix.model }}' -eq 'openarm') { 'ci/real_openarm_review.py' } elseif ('${{ matrix.model }}' -eq 'swerve') { 'ci/real_swerve.py' } else { 'ci/large_exe.py' }
           if (!(Test-Path $required)) { throw "Missing required CAD test script: $required" }
           python -m py_compile $required ci/fixture_oracles.py
+          python -m unittest discover -s review/fix06/tests -p test_ci_source_download.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Source download retry regression failed' }
           if ($LASTEXITCODE -ne 0) { throw 'CAD test script syntax failed' }
           python -m pip install cadquery-ocp==7.9.3.1.1 numpy
           if ($LASTEXITCODE -ne 0) { throw 'CAD test dependencies failed' }
