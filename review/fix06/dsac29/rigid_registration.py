@@ -229,11 +229,24 @@ def propose_verified_rigid(a,b,baseline,tolerance,progress=None,cancelled=None):
     minimum = max(3,ceil(.50*population)) if population<8 else (
         max(5,ceil(.40*population)) if population<40 else 8)
     winners = []
-    for pose in poses:
+    # Stage 1 contains WORLD B-Rep-proven matches, while RANSAC counts only
+    # descriptor/centroid candidates. A tiny increase over stage 1 is NOT
+    # evidence that the *whole assembly* moved. On revisions with unchanged
+    # occurrences (e.g. Swerve 92/251), probing such marginal poses repeated
+    # the same expensive native Common/Cut work without improving matches.
+    # This is a proposal filter, not a raised CAD tolerance or a verdict.
+    substantial_gain = max(3, ceil(.10 * population)) if baseline else 0
+    viable = [p for p in poses if p.support >= minimum
+              and p.support > baseline + substantial_gain]
+    if not viable:
+        if progress:
+            progress(f'Wyrównanie sztywne: brak kandydata poprawiającego '
+                     f'{baseline} zgodnych w miejscu o więcej niż '
+                     f'{substantial_gain} wystąpień; pomijam zbędne B-Rep.')
+        return None
+    for pose in viable:
         if cancelled and cancelled():
             raise Cancelled('Przerwano analizę')
-        if pose.support <= baseline or pose.support < minimum:
-            continue
         rotation = np.asarray(pose.rotation,dtype=float)
         offset = np.asarray(pose.translation,dtype=float)
         moved = [_relocate(p,rotation,offset) for p in b]
@@ -241,8 +254,19 @@ def propose_verified_rigid(a,b,baseline,tolerance,progress=None,cancelled=None):
         pre = frame_support(a,moved,tolerance,proofs=24,
                             progress=progress,cancelled=cancelled,proof_cache=cache)
         checked,positive = int(pre['checked']),int(pre['proofs'])
-        if (int(pre['count']) < minimum or int(pre['count']) <= baseline or
-                checked < min(8,int(pre['count'])) or
+        predicted = int(pre['count'])
+        # When the preliminary native gate actually examined every proposed
+        # match, we can compare its *verified* count to the stage-1 verified
+        # baseline. Never accept a transform because its descriptors vote
+        # 101 when 92 already match and only 92 survive the native proof.
+        if checked >= predicted and positive <= baseline:
+            if progress:
+                progress(f'Wyrównanie sztywne: odrzucono hipotezę '
+                         f'{positive} dowodów B-Rep vs {baseline} bez '
+                         'przesunięcia; bez powtórnej kontroli tej hipotezy.')
+            continue
+        if (predicted < minimum or predicted <= baseline or
+                checked < min(8,predicted) or
                 positive < max(3,ceil(.80*checked))):
             continue
         sampled = population >= 80
