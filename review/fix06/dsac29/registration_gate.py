@@ -17,6 +17,7 @@ class FrameProofCache:
   from .geometry_registry import GeometryRegistry
   self.registry=GeometryRegistry();self.anchors={};self.results={}
   self.exact_anchors={};self.failed_pairs=set();self.exact_anchor_hits=0
+  self.timed_out_pairs=set();self.skipped_timeouts=0
   self._binding=None
   self.hits=0;self.proof_calls=0
 
@@ -70,7 +71,7 @@ def _select_diverse_proof_pairs(pairs, parts, limit):
 
 def frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancelled=None,proof_cache=None):
  from .native_session import world_session
- with world_session(max(len(a),len(b))>=600):
+ with world_session(max(len(a),len(b))>=80):
   return _frame_support(a,b,tolerance,proofs,verify_all,progress,cancelled,proof_cache)
 
 def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancelled=None,proof_cache=None):
@@ -111,7 +112,7 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
    same=True
    if proof_cache is not None:proof_cache.exact_anchor_hits+=1
   if not same:
-   if max(len(a),len(b))>=600:
+   if max(len(a),len(b))>=80:
     # Inconclusive proofs are never SAME. A bounded number of isolated
     # failures can be skipped while independently verified pairs are retained.
     if key in failed_groups:
@@ -125,7 +126,9 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
      same=trace.brep_call('verify_reexport_guarded',i,j,
          native_guard.guarded_world_reexport,left,right,tolerance,allow_boolean=False)
     except native_guard.NativeGeometryFailure as exc:
-     if proof_cache is not None:proof_cache.failed_pairs.add((i,j))
+     if proof_cache is not None:
+      proof_cache.failed_pairs.add((i,j))
+      if 'timeout' in str(exc).casefold():proof_cache.timed_out_pairs.add((i,j))
      unverified.add((i,j));failed_groups.add(key)
      trace.mark('registration_proof','UNVERIFIED',a_id=i,b_id=j,
                 error=str(exc),unverified_count=len(unverified))
@@ -144,6 +147,11 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
   return same
  def proven(i,j):
   pair=(i,j)
+  if proof_cache is not None and pair in proof_cache.timed_out_pairs:
+   # Incomplete remains incomplete. Do not restart the same 90s native
+   # operation in the larger sample or full pass of this immutable pose.
+   unverified.add(pair);proof_cache.skipped_timeouts+=1
+   return False
   if proof_cache is not None and pair in proof_cache.results:
    proof_cache.hits+=1
    return proof_cache.results[pair]
@@ -204,10 +212,11 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
  if verify_all:return dict(count=len(pairs),ratio=len(pairs)/max(1,min(len(a),len(b))),proofs=len(pairs),checked=len(pairs),pairs=pairs,unverified=len(unverified))
  n=min(proofs,len(pairs))
  selection=_select_diverse_proof_pairs(pairs,a,n)
- confirmed=sum(bool(proven(i,j)) for i,j in selection)
- if progress:
-  progress(f'Próbka B-Rep: {confirmed}/{n} faktycznie potwierdzonych par; '
-           f'{len(pairs)} skojarzeń pozycji pozostaje niezweryfikowanych.')
+ confirmed=0
+ for number,(i,j) in enumerate(selection,1):
+  if progress:progress(f'Dowód geometrii B-Rep {number}/{n}: A[{i}] ↔ B[{j}]…')
+  confirmed+=bool(proven(i,j))
+ if progress:progress(f'Próbka B-Rep: {confirmed}/{n} rzeczywistych dowodów; {len(pairs)} kandydatów położenia.')
  return dict(count=len(pairs),ratio=len(pairs)/max(1,min(len(a),len(b))),
              proofs=confirmed,checked=n)
 

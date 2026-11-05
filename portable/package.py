@@ -17,7 +17,7 @@ if args.command=='payload':
  assert any(f['path']=='DSCompareDesktop.exe' for f in files)
  assert any(f['path']=='WebView2/msedgewebview2.exe' for f in files)
  assert any(f['path']=='engine/DSCompare/DSCompare.exe' for f in files)
- (args.output/'manifest.json').write_text(json.dumps({'version':'0.6.3','files':files},ensure_ascii=False,separators=(',',':')),encoding='utf8')
+ (args.output/'manifest.json').write_text(json.dumps({'version':'0.6.4','files':files},ensure_ascii=False,separators=(',',':')),encoding='utf8')
  with zipfile.ZipFile(args.output/'payload.zip','w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
   for entry in files:z.write(args.app/entry['path'],entry['path'])
  print('PORTABLE_PAYLOAD_PASS',len(files),'files',sum(f['size'] for f in files),'uncompressed bytes',flush=True)

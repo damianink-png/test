@@ -42,6 +42,15 @@ def main(argv=None):
     folder=Path(ns.output);folder.mkdir(parents=True,exist_ok=True)
     event_file=folder/'_POSTEP_V37.jsonl'
     result_file=folder/'_WYNIK_V37.json'
+    # Record the executable/build actually serving this job; a timeout cannot
+    # silently masquerade as another installed or cached engine version.
+    build_root=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parent.parent))
+    try:build=json.loads((build_root/'build_info.json').read_text(encoding='utf-8-sig'))
+    except (OSError,ValueError):build={}
+    (folder/'ENGINE_BUILD.json').write_text(json.dumps({
+        'executable':sys.executable,'frozen':bool(getattr(sys,'frozen',False)),
+        'build':build},ensure_ascii=False,indent=2),encoding='utf-8')
+
     for path in (event_file,result_file):
         try:path.unlink()
         except FileNotFoundError:pass
@@ -89,6 +98,7 @@ def main(argv=None):
                     'unrelated':proposal.get('status')=='unrelated',
                     'reason':proposal.get('reason',''),
                     'search_failed':proposal.get('search_failed',False),
+                    'search_diagnostics':proposal.get('search_diagnostics',{}),
                     'material_unverified':proposal.get('status')=='material_unverified',
                     'unverified_A':int(proposal.get('unverified_A',0)),
                     'unverified_B':int(proposal.get('unverified_B',0)),

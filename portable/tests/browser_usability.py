@@ -65,8 +65,15 @@ with sync_playwright() as p:
  page.screenshot(path=str(out/'compare-480.png'));page.set_viewport_size({'width':1280,'height':720})
  drop(['A.step','B.step'],'a');page.get_by_role('button',name='Porównaj rewizje',exact=True).click();assert page.get_by_role('button',name='Nowe porównanie',exact=True).is_disabled()
  page.evaluate("window.__job.question={token:'t',unresolved:true,material_unverified:false,translation_mm:[0,0,0],reason:'No anchor',unverified_A:0,unverified_B:0}")
- page.get_by_role('alertdialog').wait_for();assert 'Czy modele mają wspólne położenie?' in page.get_by_role('alertdialog').inner_text();assert page.locator('.translation').count()==0
- page.screenshot(path=str(out/'alignment-unresolved.png'));page.get_by_role('button',name='Oryginalne położenie',exact=True).click()
+ page.get_by_role('alertdialog').wait_for();assert 'Automatyczne wyrównanie niepotwierdzone' in page.get_by_role('alertdialog').inner_text();assert page.locator('.translation').count()==0
+ page.screenshot(path=str(out/'alignment-unresolved.png'))
+ page.get_by_role('button',name='Szukaj dokładniej',exact=True).click()
+ page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='t'&&c.args.decision==='search')")
+ page.get_by_role('alertdialog').wait_for(state='hidden')
+ page.evaluate("window.__job.question={token:'t-final',unresolved:true,search_failed:true,material_unverified:false,translation_mm:[0,0,0],reason:'Expanded search unverified',unverified_A:0,unverified_B:0}")
+ page.get_by_role('alertdialog').wait_for()
+ assert page.get_by_role('button',name='Szukaj dokładniej',exact=True).count()==0
+ page.get_by_role('button',name='Oryginalne położenie',exact=True).click()
  # Material uncertainty must never require a user decision or show the old modal.
  page.evaluate("window.__job.question={token:'material-case',unresolved:false,material_unverified:true,translation_mm:[0,0,0],reason:'INVALID_BREP_AFTER_REPAIR',unverified_A:2,unverified_B:2}")
  page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='material-case'&&c.args.decision==='review')",timeout=5000)

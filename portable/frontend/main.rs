@@ -10,7 +10,7 @@ fn engine(app:&AppHandle)->Result<Vec<String>,String>{
  if !path.is_file(){return Err("Nie znaleziono pakietu silnika CAD. Zainstaluj pełny pakiet DS Compare; sam plik EXE interfejsu nie wystarcza.".into())}Ok(vec![path.to_string_lossy().into_owned()])
 }
 #[tauri::command]
-fn environment(app:AppHandle)->Value{serde_json::json!({"engine_ready":engine(&app).is_ok(),"build":format!("Desktop {} · RC9",env!("CARGO_PKG_VERSION")),"platform":std::env::consts::OS})}
+fn environment(app:AppHandle)->Value{serde_json::json!({"engine_ready":engine(&app).is_ok(),"build":format!("Desktop {}",env!("CARGO_PKG_VERSION")),"platform":std::env::consts::OS})}
 #[tauri::command]
 fn startup_ready(app:AppHandle,drag_drop_ready:bool)->Result<(),String>{
  engine(&app)?;let smoke=std::env::var("DSCOMPARE_PORTABLE_SMOKE").as_deref()==Ok("1");
