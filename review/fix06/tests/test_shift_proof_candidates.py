@@ -37,22 +37,13 @@ def test_rejected_translation_is_not_brep_proved_twice(monkeypatch):
     assert result is None
 
 
-def test_stage1_passes_failed_frame_to_rotation_fallback(monkeypatch):
+def test_stage1_does_not_replay_registration_in_an_independent_fallback(monkeypatch):
     parts=[SimpleNamespace(center=np.array([1.,2.,3.]),volume=10.)]
-    rejected=[[500.,-123.,27.]]
-    monkeypatch.setattr(deferred_alignment,'propose',
-      lambda *args,**kwargs:{
-        'status':'unresolved','reason':'1/24 natywnych dowodów B-Rep',
-        'rejected_translation_offsets':rejected})
-    forwarded=[]
+    monkeypatch.setattr(deferred_alignment,'propose',lambda *a,**k:{'status':'unresolved','reason':'native proof failed'})
     monkeypatch.setattr(rigid_registration,'propose_verified_rigid',
-      lambda *args,**kwargs:(forwarded.append(kwargs['excluded_translations']) or None))
-    monkeypatch.setattr(deferred_alignment,'_step_reexport_fallback',
-      lambda *args,**kwargs:None)
-    result=deferred_alignment.propose_from_stage1(
-      parts,parts,[],{0},{0},.01)
+      lambda *a,**k:(_ for _ in ()).throw(AssertionError('Independent fallback replayed')))
+    result=deferred_alignment.propose_from_stage1(parts,parts,[],{0},{0},.01)
     assert result['status']=='unresolved'
-    assert forwarded==[rejected]
 
 
 def test_progress_does_not_claim_coarse_pairs_as_native_proofs():

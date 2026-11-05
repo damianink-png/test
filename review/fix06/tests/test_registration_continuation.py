@@ -20,7 +20,9 @@ def test_extended_search_recovers_named_shift_missed_by_signature_buckets(monkey
     monkeypatch.setattr(reg,'signature',lambda p:'old-export' if id(p) in ids else 'new-export')
     records=[Record(i,None,'REMOVED','') for i in range(8)]+[Record(None,j,'ADDED','') for j in range(8)]
     state=setup_state(a,b)
-    assert reg.propose(a,b,records,.01,search_state=state) is None
+    initial=reg.propose(a,b,records,.01,search_state=state)
+    assert initial['status']=='registered'  # Native CAD landmarks survive signature drift
+    state=setup_state(a,b)
     monkeypatch.setattr(alignment,'align_assembly',lambda *a,**kw:pytest.fail('legacy registration invoked'))
     proposal=continue_registration(a,b,.01,state)
     assert proposal['status']=='registered'

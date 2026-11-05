@@ -2,8 +2,8 @@ name: DS Compare portable Windows ZIP and single EXE
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/rc9-boundary-ui-ci-20261030', 'codex/rc9-palette-20261102', 'fix/latest-common-shift-20261105', 'build/dscompare-0.6.4-20261105']
-    paths: ['portable/**', 'review/fix06/tests/test_repeated_revision_policy.py', 'review/fix06/tests/test_repeated_material_exception.py', 'review/fix06/ci/patch_compare_revision_policy.py', 'review/fix06/ci/patch_material_worker_failclosed.py', 'review/fix06/ci/patch_material_timeout.py', 'review/fix06/ci/patch_stale_failed_pairs.py', 'review/fix06/ci/patch_assignment_uniqueness.py', 'review/fix06/ci/patch_legacy_audit_tests.py', 'review/fix06/tests/test_audit_legacy_guards.py', 'review/fix06/tests/test_material_timeout_policy.py', 'review/fix06/tests/test_stale_failed_pair_guard.py', 'review/fix06/ci/patch_gui_minimal.py', 'review/fix06/ci/patch_legacy_ui_tests.py', 'review/fix06/ci/patch_step_polish_names.py', 'review/fix06/tests/test_gui_minimal.py', 'review/fix06/tests/test_material_worker_failclosed.py', 'review/fix06/tests/test_revision_overlap_policy.py','review/fix06/tests/test_translated_proof_index.py', 'review/fix06/tests/test_mass_html_materials.py', 'review/fix06/tests/test_large_frame_sampling.py', 'review/fix06/ci/patch_native_completion_read.py', 'review/fix06/tests/test_native_completion_read.py', 'review/fix06/tests/test_rigid_registration.py', 'review/fix06/tests/test_shift_proof_candidates.py', 'review/fix06/dsac29/**', 'review/fix06/ci/patch_geometry_registry_streaming.py', 'review/fix06/ci/patch_alignment_stage2.py', 'review/fix06/tests/test_alignment_stage2_guard.py', 'review/fix06/tests/test_20261104_audit_fixes.py', '.github/workflows/desktop-portable.yml']
+    branches: ['codex/rc9-boundary-ui-ci-20261030', 'codex/rc9-palette-20261102', 'fix/latest-common-shift-20261105', 'build/dscompare-0.6.5-20261105']
+    paths: ['portable/**', 'review/fix06/**', '.github/workflows/desktop-portable.yml']
 concurrency:
   group: dscompare-portable-${{ github.ref }}
   cancel-in-progress: true
@@ -46,7 +46,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'CAD dependencies failed'}
           python -m pip install pytest
           if($LASTEXITCODE -ne 0){throw 'pytest install failed'}
-          python -m pytest -q tests/test_repeated_material_exception.py tests/test_repeated_revision_policy.py tests/test_material_worker_failclosed.py tests/test_material_timeout_policy.py tests/test_stale_failed_pair_guard.py tests/test_audit_legacy_guards.py tests/test_v43_assignment.py tests/test_r223_rc2.py::test_large_fallback_uses_isolated_verifier tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_gui_minimal.py tests/test_partial_material_continue.py tests/test_progress_durable_phases.py tests/test_streamed_preview.py tests/test_translated_proof_index.py tests/test_semantic_palette_export.py tests/test_spatial_index_oracle.py tests/test_spatial_index_2500.py tests/test_spatial_index_dense.py tests/test_20261104_audit_fixes.py tests/test_alignment_stage2_guard.py tests/test_mass_html_materials.py tests/test_large_frame_sampling.py tests/test_native_completion_read.py tests/test_rigid_registration.py tests/test_shift_proof_candidates.py tests/test_registration_continuation.py tests/test_translation_refinement.py tests/test_frame_proof_cache.py
+          python -m pytest -q tests/test_repeated_material_exception.py tests/test_repeated_revision_policy.py tests/test_material_worker_failclosed.py tests/test_material_timeout_policy.py tests/test_stale_failed_pair_guard.py tests/test_audit_legacy_guards.py tests/test_v43_assignment.py tests/test_r223_rc2.py::test_large_fallback_uses_isolated_verifier tests/test_overlap_evidence.py tests/test_candidate_policy.py tests/test_revision_overlap_policy.py tests/test_gui_minimal.py tests/test_partial_material_continue.py tests/test_progress_durable_phases.py tests/test_streamed_preview.py tests/test_translated_proof_index.py tests/test_semantic_palette_export.py tests/test_spatial_index_oracle.py tests/test_spatial_index_2500.py tests/test_spatial_index_dense.py tests/test_20261104_audit_fixes.py tests/test_alignment_stage2_guard.py tests/test_mass_html_materials.py tests/test_large_frame_sampling.py tests/test_native_completion_read.py tests/test_rigid_registration.py tests/test_shift_proof_candidates.py tests/test_registration_continuation.py tests/test_translation_refinement.py tests/test_frame_proof_cache.py tests/test_cad_pose_search.py tests/test_r13_deferred_alignment.py tests/test_r14_sparse_shift.py tests/test_r14_stage1_shift.py
           if($LASTEXITCODE -ne 0){throw 'CAD regression tests failed'}
           ./BUDUJ_WINDOWS.ps1 -NoInstall
           if($LASTEXITCODE -ne 0){throw 'CAD build failed'}
@@ -137,10 +137,10 @@ jobs:
           if($p.ExitCode -ne 0){throw 'Packaged CAD engine failed'}
           $result=Get-Content (Join-Path $diagnostic '_WYNIK_V37.json') -Raw | ConvertFrom-Json
           if(-not $result.ok){throw 'Packaged CAD synthetic checks failed'}
-          if($result.total -ne 10){throw 'Packaged CAD is missing the current alignment diagnostic tests'}
+          if($result.total -ne 11){throw 'Packaged CAD is missing the current alignment diagnostic tests'}
           $build=Get-Content (Join-Path $diagnostic 'ENGINE_BUILD.json') -Raw | ConvertFrom-Json
           if(-not $build.frozen -or $build.build.source_commit -ne $env:GITHUB_SHA){throw 'Packaged engine provenance differs from the tested commit'}
-          if($build.build.revision -notmatch 'Portable 0\.6\.4'){throw 'Packaged engine version mismatch'}
+          if($build.build.revision -notmatch 'Portable 0\.6\.5'){throw 'Packaged engine version mismatch'}
           Write-Host "PACKAGED_CAD_PASS $($result.passed)/$($result.total)"
           $env:PYTHONPATH=(Resolve-Path portable-src).Path
           python portable/tests/engine_revision_smoke.py $engine evidence/revision-policy
@@ -175,13 +175,13 @@ jobs:
           Get-FileHash delivery/portable/DSCompare.exe,delivery/onefile/DSCompare.exe | Format-List | Out-File evidence/launcher-hashes.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-0.6.4-Portable-ZIP
+          name: DSCompare-0.6.5-Portable-ZIP
           path: delivery/portable/
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-0.6.4-Portable-OneEXE
+          name: DSCompare-0.6.5-Portable-OneEXE
           path: delivery/onefile/DSCompare.exe
           compression-level: 0
           if-no-files-found: error

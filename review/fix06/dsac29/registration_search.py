@@ -11,7 +11,9 @@ class RegistrationSearch:
         from .registration_gate import FrameProofCache
         self.binding=FrameProofCache()
         self.completed=[]
-        self.winners=[]
+        self.features=None
+        self.poses_completed=[]
+        self.pose_winners=[]
         self.expanded=False
         self.failures=[]
         self.stage1_records=[]
@@ -25,8 +27,8 @@ class RegistrationSearch:
         return any(np.linalg.norm(offset-old)<=tolerance for old in self.completed)
 
     def summary(self):
-        return {'algorithm':'current_translation_consensus',
-                'expanded':self.expanded,'completed_hypotheses':len(self.completed),
+        return {'algorithm':'cad_global_consensus_trimmed_refinement',
+                'expanded':self.expanded,'completed_hypotheses':len(self.poses_completed) or len(self.completed),
                 'failed_native_attempts':len(self.failures)}
 
 
@@ -41,7 +43,7 @@ def continue_registration(a,b,tolerance,state,progress=None,cancelled=None):
     if progress:
         progress(f'Wyrównanie: rozszerzone wyszukiwanie bieżącego silnika; '
                  f'pomijam {len(state.completed)} ukończonych hipotez. '
-                 'Sprawdzam dodatkowe przesunięcia i nazwy detali.')
+                 'Sprawdzam dodatkowe hipotezy położenia i obrotu CAD.')
     records=list(state.stage1_records)
     records.extend(Record(i,None,'REMOVED','Etap 1') for i in state.free_a)
     records.extend(Record(None,j,'ADDED','Etap 1') for j in state.free_b)

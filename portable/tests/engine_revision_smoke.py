@@ -74,6 +74,42 @@ for case, width, shift, count, name, expected in (
             proc.kill()
             proc.wait()
 
+# Actual independent STEP write/read + arbitrary rigid pose in the frozen
+# worker, rather than only direct in-memory registration functions.
+axis=np.array([1.,2.,3.]);axis/=np.linalg.norm(axis)
+x,y,z=axis;k=np.array([[0,-z,y],[z,0,-x],[-y,x,0]])
+rotation=np.eye(3)+np.sin(.63)*k+(1-np.cos(.63))*(k@k)
+offset=np.array([1200.,-730.,441.]);rng=np.random.default_rng(779)
+old=ColoredDocument();new=ColoredDocument()
+for i in range(18):
+    shape=BRepPrimAPI_MakeBox(10+i,12+i*.3,8+i*.7).Shape()
+    placed=transform(shape,np.eye(3),rng.uniform(-400,400,3))
+    old.add(placed,f'COMPONENT_{i}_REV_A',(.2,.5,.8))
+    new.add(transform(placed,rotation,offset),f'COMPONENT_{i}_REV_B',(.2,.5,.8))
+old.write(root/'rotated_old.step');new.write(root/'rotated_new.step')
+output=root/'arbitrary_rigid_step'
+proc=subprocess.Popen([exe,'--worker','compare','--a',str(root/'rotated_old.step'),
+    '--b',str(root/'rotated_new.step'),'--output',str(output),'--revision-style',
+    '--no-bom','--generate-step','--align-auto'])
+deadline=time.monotonic()+300
+try:
+    while proc.poll() is None:
+        if time.monotonic()>deadline:raise TimeoutError('Frozen arbitrary rigid STEP test timed out')
+        if (output/'_WYROWNANIE_PYTANIE.json').exists():
+            raise AssertionError('Unambiguous 18/18 real STEP alignment should be automatic')
+        time.sleep(.25)
+    assert proc.returncode==0,proc.returncode
+    summary=json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
+    assert summary['statuses']=={'SAME':18},summary['statuses']
+    alignment=summary['alignment']
+    assert alignment['applied'] and alignment['method']=='cad_global_consensus_trimmed_refinement',alignment
+    assert np.allclose(np.asarray(alignment['rotation_B_to_A'])@rotation,np.eye(3),atol=1e-6)
+    assert np.allclose(np.asarray(alignment['rotation_B_to_A'])@offset+alignment['translation_B_to_A_mm'],0,atol=1e-5)
+    assert summary['main_step_ready']
+    print('Frozen comparison PASS: arbitrary_rigid_step_18_of_18',flush=True)
+finally:
+    if proc.poll() is None:proc.kill();proc.wait()
+
 # The onefile executable must also work as its own isolated native worker.
 a = describe(BRepPrimAPI_MakeBox(20,10,7).Shape(), 'A', 'A')
 b = describe(BRepPrimAPI_MakeBox(20,11,7).Shape(), 'B', 'B')

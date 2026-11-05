@@ -100,7 +100,7 @@ def run(folder, progress=None, source_step=None):
         proposal=continue_registration(a,b,.01,state)
         assert proposal['status']=='registered' and proposal['votes']==8
         assert np.allclose(proposal['translation_B_to_A_mm'],[-1000,0,0])
-        assert proposal['search_diagnostics']['algorithm']=='current_translation_consensus'
+        assert proposal['search_diagnostics']['algorithm']=='cad_global_consensus_trimmed_refinement'
         assert state.expanded and len(proposal['certified_pairs'])==8
         return 'Rozszerzone wyszukiwanie biezacego silnika; 8/8 B-Rep; bez starego align_assembly'
     check("Kontynuacja biezacego wyrownania",current_registration_continuation)
@@ -130,6 +130,32 @@ def run(folder, progress=None, source_step=None):
         assert len(final)==80 and all(r.status=='SAME' for r in final)
         return 'Dryf srodka .18 mm; przesuniecie z CAD i koncowe porownanie 80/80 B-Rep'
     check("Przesuniecie z niedokladnym srodkiem STEP",centroid_drift_registration)
+
+    def rotated_reexport_registration():
+        from dataclasses import replace
+        from .geometry import describe
+        from .alignment import _relocate
+        from .deferred_alignment import propose
+        from .compare import Record
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+        import numpy as np
+        rng=np.random.default_rng(779)
+        r=np.array([[0.,-1.,0.],[1.,0.,0.],[0.,0.,1.]])
+        t=np.array([1000.,-300.,200.])
+        a=[_relocate(describe(BRepPrimAPI_MakeBox(10+i,12+i*.3,8+i*.7).Shape(),'DIAG','DIAG'),
+                     np.eye(3),rng.uniform(-400,400,3)) for i in range(12)]
+        b=[_relocate(p,r,t) for p in a]
+        b=[replace(p,volume=p.volume*1.01,area=p.area*1.005,center=p.center+.18,
+                   eigenvalues=p.eigenvalues*1.02) for p in b][::-1]
+        records=[Record(i,None,'REMOVED','') for i in range(12)]
+        records += [Record(None,j,'ADDED','') for j in range(12)]
+        result=propose(a,b,records,.01)
+        assert result['status']=='registered' and result['votes']==12
+        rr=np.asarray(result['rotation_B_to_A']);tt=np.asarray(result['translation_B_to_A_mm'])
+        assert np.allclose(rr@r,np.eye(3)) and np.allclose(rr@t+tt,0)
+        assert len(result['certified_pairs'])==12
+        return 'Obrot, przesuniecie, inne sygnatury reeksportu i kolejnosc; 12/12 B-Rep'
+    check("Globalne wyrownanie CAD po reeksporcie",rotated_reexport_registration)
 
     def export_variant(label,name,flat,rootless):
         from dsac29.step_io import _export_revision_step,inspect_step_colors

@@ -18,6 +18,7 @@ class FrameProofCache:
   self.registry=GeometryRegistry();self.anchors={};self.results={}
   self.exact_anchors={};self.failed_pairs=set();self.exact_anchor_hits=0
   self.timed_out_pairs=set();self.skipped_timeouts=0
+  self.deadline=None;self.pair_timeout=None;self.lookup_points=None
   self._binding=None
   self.hits=0;self.proof_calls=0
 
@@ -71,7 +72,7 @@ def _select_diverse_proof_pairs(pairs, parts, limit):
 
 def frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancelled=None,proof_cache=None):
  from .native_session import world_session
- with world_session(max(len(a),len(b))>=80):
+ with world_session(max(len(a),len(b))>=80 or (proof_cache is not None and proof_cache.deadline is not None)):
   return _frame_support(a,b,tolerance,proofs,verify_all,progress,cancelled,proof_cache)
 
 def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancelled=None,proof_cache=None):
@@ -112,7 +113,7 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
    same=True
    if proof_cache is not None:proof_cache.exact_anchor_hits+=1
   if not same:
-   if max(len(a),len(b))>=80:
+   if max(len(a),len(b))>=80 or (proof_cache is not None and proof_cache.deadline is not None):
     # Inconclusive proofs are never SAME. A bounded number of isolated
     # failures can be skipped while independently verified pairs are retained.
     if key in failed_groups:
@@ -123,8 +124,14 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
        f'({len(unverified)}). Nie mozna bezpiecznie ustalic przesuniecia.')
      return False
     try:
+     timeout={}
+     if proof_cache is not None and proof_cache.deadline is not None:
+      from time import monotonic
+      remaining=proof_cache.deadline-monotonic()
+      if remaining<=0:raise native_guard.NativeGeometryFailure('Limit czasu wyszukiwania CAD')
+      timeout['timeout_s']=max(.1,min(proof_cache.pair_timeout or 90.,remaining))
      same=trace.brep_call('verify_reexport_guarded',i,j,
-         native_guard.guarded_world_reexport,left,right,tolerance,allow_boolean=False)
+         native_guard.guarded_world_reexport,left,right,tolerance,allow_boolean=False,**timeout)
     except native_guard.NativeGeometryFailure as exc:
      if proof_cache is not None:
       proof_cache.failed_pairs.add((i,j))
@@ -164,20 +171,22 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
   return same
  if not a or not b:return dict(count=0,ratio=0.,proofs=0,checked=0,pairs=[])
  tol=max(tolerance,1.e-6);radius=search_radius(tol);cell_size=max(radius*2,.002)
+ points_a,points_b=(proof_cache.lookup_points if proof_cache is not None and proof_cache.lookup_points is not None
+                    else ([p.center for p in a],[p.center for p in b]))
  buckets=defaultdict(list)
  for i,part in enumerate(a):
-  pos=tuple(floor(float(v)/cell_size) for v in part.center)
+  pos=tuple(floor(float(v)/cell_size) for v in points_a[i])
   buckets[pos].append(i)
  options={}
  for j,part in enumerate(b):
   if cancelled and cancelled():raise Cancelled('Przerwano analizę')
-  pos=np.asarray(part.center)
+  pos=np.asarray(points_b[j])
   base=tuple(floor(float(v)/cell_size) for v in pos)
   choices=[]
   for steps in product((-1,0,1),repeat=3):
    loc=tuple(x+y for x,y in zip(base,steps))
    for i in buckets.get(loc,()):
-    distance=float(np.linalg.norm(a[i].center-pos))
+    distance=float(np.linalg.norm(points_a[i]-pos))
     if distance<=radius and world_candidate(a[i],part,tol):
      choices.append((distance,i))
   if choices:options[j]=[i for _,i in sorted(set(choices))]

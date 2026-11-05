@@ -123,6 +123,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     tc=perf_counter()
     deferred_s=0.0
     trace.mark('signatures','BEGIN',solids_a=len(a),solids_b=len(b))
+    related_warning=None
     if not identical_sources and not manual_review:
         from .similarity_gate import check_related,ModelsUnrelated
         try:
@@ -130,6 +131,12 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         except ModelsUnrelated as exc:
             if force_unrelated:
                 if progress:progress('UWAGA: '+str(exc)+' Kontynuuję na życzenie użytkownika.')
+            elif should_align:
+                # Strict integrated signatures are only a heuristic. Let the
+                # bounded CAD registration seek native evidence before asking
+                # whether a heavily revised pair is unrelated.
+                related_warning=str(exc)
+                if progress:progress('Wstępne sygnatury różnią się; sprawdzam wspólny układ CAD przed oceną zgodności modeli.')
             elif alignment_approval is not None:
                 choice=alignment_approval({'status':'unrelated','unrelated':True,'reason':str(exc)})
                 if choice!='original':
@@ -147,7 +154,10 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         with trace.phase('translation_candidates',matched=len(matched),remaining_a=len(free_a),remaining_b=len(free_b)):
             from .native_guard import NativeGeometryFailure
             try:
-                return propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress,cancelled,search_state=registration_search)
+                proposal=propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress,cancelled,search_state=registration_search)
+                if related_warning and proposal is None and not matched:
+                    return {'status':'unrelated','unrelated':True,'reason':related_warning+' Nie znaleziono również potwierdzonego wspólnego układu CAD.'}
+                return proposal
             except NativeGeometryFailure as exc:
                 return {'status':'unresolved','reason':'Automatyczne wyszukiwanie: '+str(exc),
                         'search_diagnostics':registration_search.summary()}
