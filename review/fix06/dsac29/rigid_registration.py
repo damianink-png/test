@@ -215,7 +215,7 @@ def _independent_anchors(pairs, parts, tolerance):
     return False
 
 
-def propose_verified_rigid(a,b,baseline,tolerance,progress=None,cancelled=None):
+def propose_verified_rigid(a,b,baseline,tolerance,progress=None,cancelled=None,*,excluded_translations=()):
     """B-Rep-validated rigid registration. No unproven parts become SAME/MOVED."""
     from .alignment import _relocate
     from .registration_gate import frame_support, FrameProofCache
@@ -236,8 +236,17 @@ def propose_verified_rigid(a,b,baseline,tolerance,progress=None,cancelled=None):
     # the same expensive native Common/Cut work without improving matches.
     # This is a proposal filter, not a raised CAD tolerance or a verdict.
     substantial_gain = max(3, ceil(.10 * population)) if baseline else 0
+    rejected=[np.asarray(v,dtype=float) for v in excluded_translations]
+    rejected=[v for v in rejected if v.shape==(3,) and np.isfinite(v).all()]
+    def already_disproved(pose):
+        # A pure translation rejected by native proofs must not be rechecked
+        # immediately by RANSAC. A genuinely rotated pose is still eligible.
+        return (np.linalg.norm(np.asarray(pose.rotation)-np.eye(3))<1e-7
+                and any(np.linalg.norm(np.asarray(pose.translation)-v)
+                        <= max(.05,float(tolerance)) for v in rejected))
     viable = [p for p in poses if p.support >= minimum
-              and p.support > baseline + substantial_gain]
+              and p.support > baseline + substantial_gain
+              and not already_disproved(p)]
     if not viable:
         if progress:
             progress(f'Wyrównanie sztywne: brak kandydata poprawiającego '

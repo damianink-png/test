@@ -32,6 +32,42 @@ class FrameProofCache:
       or any(p is not old or not p.shape.IsEqual(shape) for p,old,shape in zip(b,bb,sb))):
    raise ValueError('Frame proof cache belongs to a different placement or tolerance')
 
+def _select_diverse_proof_pairs(pairs, parts, limit):
+ """Choose independent geometry witnesses, not evenly spaced repeated screws.
+
+ A centroid/descriptor match is a proposal only. This function neither
+ verifies a solid nor changes the one-to-one assignment; every selected
+ witness still requires the unchanged native B-Rep proof.
+ """
+ from collections import Counter
+ total=len(pairs)
+ n=min(max(0,int(limit)),total)
+ if n==0:return []
+ if n==total:return list(pairs)
+ descriptors=[signature(parts[i]) for i,j in pairs]
+ frequency=Counter(descriptors)
+ def volume(k):
+  value=float(getattr(parts[pairs[k][0]],'volume',0.))
+  return value if np.isfinite(value) else 0.
+ ranked=sorted(range(total),key=lambda k:(
+  frequency[descriptors[k]],-volume(k),pairs[k]))
+ selected=[];used=set();seen_keys=set()
+ # Reserve half the proof budget for geometrically DISTINCT definitions.
+ # The old uniform index sample could check 24 copies of one repeated part.
+ for k in ranked:
+  if descriptors[k] in seen_keys:continue
+  selected.append(k);used.add(k);seen_keys.add(descriptors[k])
+  if len(selected)>=max(1,n//2):break
+ centers=np.asarray([parts[i].center for i,j in pairs],dtype=float)
+ while len(selected)<n:
+  best=max((k for k in range(total) if k not in used),
+           key=lambda k:(min(float(np.sum((centers[k]-centers[j])**2))
+                             for j in selected),
+                         -frequency[descriptors[k]],volume(k),-k))
+  selected.append(best);used.add(best)
+ return [pairs[k] for k in selected]
+
+
 def frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancelled=None,proof_cache=None):
  from .native_session import world_session
  with world_session(max(len(a),len(b))>=600):
@@ -141,7 +177,9 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
  owner={};reverse={};checked_pairs={}
  for n,start in enumerate(sorted(options,key=lambda j:(len(options[j]),j))):
   if cancelled and cancelled():raise Cancelled('Przerwano analizę')
-  if progress and n%25==0:progress(f'Weryfikacja przesunięcia B-Rep: {n}/{len(options)}; potwierdzono {len(owner)}')
+  if progress and n%25==0:
+   if verify_all:progress(f'Weryfikacja B-Rep: {n}/{len(options)}; zgodnych geometrii {len(owner)}')
+   else:progress(f'Kandydaci położenia: {n}/{len(options)}; wstępnie sparowano {len(owner)} (B-Rep niepotwierdzony)')
   queue=[start];seen_left={start};seen_right=set();parent={};free=None
   for j in queue:
    for i in options[j]:
@@ -165,8 +203,11 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
  if not pairs:return dict(count=0,ratio=0.,proofs=0,checked=0,pairs=[],unverified=len(unverified))
  if verify_all:return dict(count=len(pairs),ratio=len(pairs)/max(1,min(len(a),len(b))),proofs=len(pairs),checked=len(pairs),pairs=pairs,unverified=len(unverified))
  n=min(proofs,len(pairs))
- selection=[pairs[k*(len(pairs)-1)//max(1,n-1)] for k in range(n)]
+ selection=_select_diverse_proof_pairs(pairs,a,n)
  confirmed=sum(bool(proven(i,j)) for i,j in selection)
+ if progress:
+  progress(f'Próbka B-Rep: {confirmed}/{n} faktycznie potwierdzonych par; '
+           f'{len(pairs)} skojarzeń pozycji pozostaje niezweryfikowanych.')
  return dict(count=len(pairs),ratio=len(pairs)/max(1,min(len(a),len(b))),
              proofs=confirmed,checked=n)
 

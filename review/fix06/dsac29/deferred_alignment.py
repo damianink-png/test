@@ -123,7 +123,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     # exists, apply the SAME existing coarse-score pruning heuristic before
     # sampling further candidates. This avoids spending 24 expensive native
     # checks on each of 16 weak hypotheses before starting any full proof.
-    winners=[];evaluated=[]
+    winners=[];evaluated=[];sample_findings=[]
     identity=np.eye(3)
     for coarse,offset,_covered_volume in sorted(ranked,key=lambda v:(-v[2],-v[0],tuple(float(q) for q in v[1]))):
         if any(np.linalg.norm(offset-old)<=tolerance for old in evaluated):continue
@@ -147,6 +147,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
         preliminary=frame_support(a,shifted,tolerance,proofs=24,
                                   progress=progress,cancelled=cancelled,proof_cache=proof_cache)
         checked=preliminary['checked'];confirmed=preliminary['proofs']
+        sample_findings.append((int(confirmed),int(checked),int(preliminary['count'])))
         # A sample is ONLY a negative filter. Never classify from it.
         if (preliminary['count']>=minimum
                 and preliminary['count']>baseline
@@ -189,7 +190,16 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
         if progress:
             progress(f'Przesunięcie: próbka B-Rep {confirmed}/{checked}, '
                      f'pełne dowody {len(winners)}, kandydaci {len(evaluated)}')
-    if not winners:return {'status':'unresolved','reason':'Hipotezy nie przeszły kontroli geometrii.'}
+    if not winners:
+        best=max(sample_findings,default=(0,0,0),key=lambda item:(item[0],item[2]))
+        return {'status':'unresolved',
+                'reason':('Przesunięcie ma do '+str(best[2])+
+                          ' wstępnych skojarzeń, ale tylko '+str(best[0])+
+                          '/'+str(best[1])+
+                          ' rzeczywistych dowodów B-Rep; nie można bezpiecznie wyrównać modeli.'),
+                'rejected_translation_offsets':[np.asarray(o,dtype=float).tolist() for o in evaluated],
+                'best_brep_proofs':best[0], 'best_brep_checked':best[1],
+                'best_position_candidates':best[2]}
     winners.sort(key=lambda v:(-v[3],-v[0]))
     votes,offset,certified,verified_volume,sampled,n_sample,p_sample=winners[0]
     total_volume=sum(max(0.0,float(p.volume)) for p in a)
@@ -334,7 +344,9 @@ def propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress=None,cancel
     # by proper-rotation Kabsch and independent native B-Rep proofs.
     # Never use the point/volume consensus as final geometry evidence.
     from .rigid_registration import propose_verified_rigid
-    rigid=propose_verified_rigid(a,b,baseline,tolerance,progress,cancelled)
+    rejected=(strict or {}).get('rejected_translation_offsets',[]) if isinstance(strict,dict) else []
+    rigid=propose_verified_rigid(a,b,baseline,tolerance,progress,cancelled,
+                                 excluded_translations=rejected)
     if rigid is not None and rigid.get('status')=='registered':return rigid
     soft=_step_reexport_fallback(a,b,baseline,tolerance,progress,cancelled)
     return soft if soft is not None else (rigid if rigid is not None else strict)
