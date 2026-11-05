@@ -24,7 +24,29 @@ def download(key):
  repo,ref,name=MODELS[key]
  url=f'https://raw.githubusercontent.com/VoronDesign/{repo}/{ref}/{name}'
  folder=Path('models')/key;folder.mkdir(parents=True,exist_ok=True)
- z=folder/'source.zip';urllib.request.urlretrieve(url,z)
+ z=folder/'source.zip'
+ # GitHub raw/CDN occasionally returns 503 during a long ZIP transfer.
+ # Never expose a partial download to the STEP importer.
+ errors=[]
+ for attempt in range(4):
+  temp=folder/'source.zip.partial'
+  try:
+   temp.unlink(missing_ok=True)
+   request=urllib.request.Request(url,headers={'User-Agent':'DSCompare-CAD-regression/1.0'})
+   with urllib.request.urlopen(request,timeout=120) as response, temp.open('wb') as dest:
+    while True:
+     chunk=response.read(1024*1024)
+     if not chunk:break
+     dest.write(chunk)
+   with zipfile.ZipFile(temp) as check:
+    if check.testzip() is not None:raise zipfile.BadZipFile('Corrupt ZIP member')
+   temp.replace(z)
+   break
+  except (OSError,zipfile.BadZipFile,EOFError) as exc:
+   errors.append(f'{type(exc).__name__}: {exc}')
+   temp.unlink(missing_ok=True)
+   if attempt==3:raise RuntimeError(f'Source download failed after 4 attempts: {url}; '+repr(errors)) from exc
+   time.sleep(min(2**attempt,8))
  with zipfile.ZipFile(z) as archive:archive.extractall(folder)
  candidates=[x for x in folder.rglob('*') if x.suffix.lower() in ('.step','.stp')]
  if not candidates:raise RuntimeError('STEP missing from '+key)
