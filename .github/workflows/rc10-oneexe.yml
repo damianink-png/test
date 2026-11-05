@@ -1,0 +1,77 @@
+name: RC10 patched OneEXE Windows
+on:
+  workflow_dispatch:
+  push:
+    branches: ['fix/rc10-repeated-common-shift-20261105']
+    paths:
+      - '.github/workflows/rc10-oneexe.yml'
+      - 'patches/rc10/build_oneexe.py'
+      - 'patches/rc10/smoke_oneexe.py'
+permissions:
+  contents: read
+jobs:
+  oneexe:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unpack patched source
+        shell: pwsh
+        run: |
+          python -m zipfile -e DSCompare_RC10_GitHub_CI.zip rc10
+          python patches/rc10/apply_patch.py rc10
+          if ($LASTEXITCODE -ne 0) { throw 'Source patch failed' }
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          ./rc10/BUDUJ_WINDOWS.ps1 -InstallOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency install failed' }
+          python -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { throw 'Pytest install failed' }
+      - name: Geometry regressions on Windows
+        working-directory: rc10
+        run: python -m pytest -q tests/test_rc10_repeated_common_shift.py
+      - name: Compile OneEXE
+        run: python patches/rc10/build_oneexe.py rc10
+      - name: Test frozen interface
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath ./rc10/dist/DSCompare.exe -ArgumentList '--smoke-test-ui', 'UI_CHECK' -PassThru
+          if (-not $process.WaitForExit(180000)) { $process.Kill(); throw 'UI test timed out' }
+          if ($process.ExitCode -ne 0 -or -not (Test-Path UI_CHECK/UI_OK.json)) { throw 'UI test failed' }
+      - name: Test frozen comparison and native geometry
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Resolve-Path rc10).Path
+          python patches/rc10/smoke_oneexe.py rc10/dist/DSCompare.exe FROZEN_CHECK
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen geometry test failed' }
+      - name: Package verified single executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item rc10/dist/DSCompare.exe release/DSCompare.exe
+          $hash = (Get-FileHash release/DSCompare.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  DSCompare.exe" | Set-Content release/SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DSCompare-RC10-Common-Shift-OneEXE
+          path: release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RC10-OneEXE-build-evidence
+          path: |
+            UI_CHECK/**
+            FROZEN_CHECK/**
+            rc10/build/DSCompare/warn-DSCompare.txt
+          if-no-files-found: warn
