@@ -115,16 +115,20 @@ def run(folder, progress=None, source_step=None):
         from .deferred_alignment import propose
         from .compare import Record
         a=[_relocate(describe(BRepPrimAPI_MakeBox(17+i,11,9).Shape(),'DIAG','DIAG'),
-                     np.eye(3),np.array([i*57.,i*i*3.,0.])) for i in range(8)]
+                     np.eye(3),np.array([i*57.,i*i*3.,0.])) for i in range(80)]
         b=[replace(_relocate(p,np.eye(3),np.array([1000.,0.,0.])),
                    center=p.center+np.array([1000.18,-.08,.04])) for p in a]
-        records=[Record(i,None,'REMOVED','') for i in range(8)]
-        records += [Record(None,j,'ADDED','') for j in range(8)]
+        records=[Record(i,None,'REMOVED','') for i in range(80)]
+        records += [Record(None,j,'ADDED','') for j in range(80)]
         result=propose(a,b,records,.01)
         assert result['status']=='registered'
         assert np.allclose(result['translation_B_to_A_mm'],[-1000,0,0])
-        assert len(result['certified_pairs'])==8
-        return 'Dryf srodka .18 mm; przesuniecie doprecyzowane z CAD; 8/8 B-Rep'
+        assert len(result['certified_pairs'])>=48
+        from .compare import compare
+        aligned=[_relocate(p,np.eye(3),np.asarray(result['translation_B_to_A_mm'])) for p in b]
+        final=compare(a,aligned,.01,revision_only=True,exact_serialization=True,certified_pairs=result['certified_pairs'])
+        assert len(final)==80 and all(r.status=='SAME' for r in final)
+        return 'Dryf srodka .18 mm; przesuniecie z CAD i koncowe porownanie 80/80 B-Rep'
     check("Przesuniecie z niedokladnym srodkiem STEP",centroid_drift_registration)
 
     def export_variant(label,name,flat,rootless):

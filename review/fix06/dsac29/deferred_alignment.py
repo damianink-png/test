@@ -199,7 +199,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                 and preliminary['count']>baseline
                 and checked>=min(8,preliminary['count'])
                 and confirmed>=min(preliminary['count'],max(4,ceil(.65*checked)))):
-            # On assemblies of 600+ solids, the original verify_all pass
+            # On assemblies of 80+ solids, the original verify_all pass
             # repeatedly launched hundreds of native OCCT operations before
             # the final compare; the V2 revision_shift crashed after 412.
             # A strong sample proves only its own pairs. All other pairs

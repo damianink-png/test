@@ -88,3 +88,15 @@ def test_380_part_revision_refines_241_candidates_without_full_preflight(monkeyp
     assert proposal['verification_scope']=='sample_then_final_compare'
     assert 48<=len(proposal['certified_pairs'])<241
     assert proposal['full_pair_map']==[]
+
+
+def test_final_compare_verifies_every_unsampled_part_after_refinement():
+    from dsac29.compare import compare
+    a,b,records=assembly(count=80)
+    proposal=reg.propose(a,b,records,.01)
+    assert proposal['status']=='registered'
+    aligned=[_relocate(p,np.eye(3),np.asarray(proposal['translation_B_to_A_mm'])) for p in b]
+    final=compare(a,aligned,.01,exact_serialization=True,revision_only=True,
+                  certified_pairs=proposal['certified_pairs'])
+    assert len(final)==80
+    assert all(r.status=='SAME' for r in final)

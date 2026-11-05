@@ -160,7 +160,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         # OCCT process, NOT its verdicts, across those checks. Each request
         # retains its own input B-Rep and 90s bounded deadline.
         from .native_session import world_session
-        with world_session(max(len(a),len(b))>=600 and bool(certified_pairs)):
+        with world_session(max(len(a),len(b))>=80 and bool(certified_pairs)):
             return compare(a,b,tolerance,progress=progress,cancelled=cancelled,
                            revision_only=revision_style and not manual_review,
                            exact_serialization=True,geometry_context=geometry_context,
