@@ -65,7 +65,10 @@ class _XIntervalIndex:
 
 def _name_eq(a,b):
     x,y=canonical(a.name),canonical(b.name)
-    return bool(x and y and x==y)
+    if x and y and x==y:return True
+    from .material_names import material_name_key
+    left,right=material_name_key(a.name),material_name_key(b.name)
+    return bool(left and left==right)
 
 def _name_changed(a,b):
     return (str(a.name).strip()!=str(b.name).strip() and
@@ -209,6 +212,8 @@ def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=
 def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,cancelled=None,geometry_context=None,recover_failures=False):
     old_ids={r.a_index for r in records if r.status=='REMOVED' and r.a_index is not None and r.b_index is None}
     new_ids={r.b_index for r in records if r.status=='ADDED' and r.b_index is not None and r.a_index is None}
+    original_old_ids=set(old_ids)
+    original_new_ids=set(new_ids)
     stat=dict(candidate_pairs=0,boolean_checks=0,accepted=0,ambiguous=0,invalid_boolean=0,
               budget_exceeded=False,rigid_pairs_excluded=0,low_overlap_rejected_pairs=0,
               intermediate_overlap_reviewed_pairs=0,mutual_overlap_candidate_pairs=0,
@@ -305,6 +310,27 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
         excluded_added=exclude_occurrences(new_ids,b,a,'b_index','a_index')
         old_ids-=excluded_occurrences
         new_ids-=excluded_added
+    # Repeated details may enter Common ONLY with equal full-model counts
+    # and the same engineering name after a separated revision suffix.
+    from .repeated_geometry import RepeatedMaterialPolicy
+    repeat_policy=RepeatedMaterialPolicy(a,b,tolerance,geometry_context,cancelled)
+    stat['repeated_old_population']=len(repeat_policy.repeated_a)
+    stat['repeated_new_population']=len(repeat_policy.repeated_b)
+    # A renamed survivor must not defeat the user's equal-population/name
+    # exception. Restore ONLY unmatched repeated operands that meet it; never
+    # consume an existing SAME/MOVED record or override a native failure.
+    admitted_old,admitted_new=repeat_policy.eligible(original_old_ids,original_new_ids)
+    old_ids.update(admitted_old & repeat_policy.repeated_a)
+    new_ids.update(admitted_new & repeat_policy.repeated_b)
+    eligible_old,eligible_new=repeat_policy.eligible(old_ids,new_ids)
+    excluded_occurrences.update(old_ids-eligible_old)
+    excluded_added.update(new_ids-eligible_new)
+    excluded_occurrences-=eligible_old
+    excluded_added-=eligible_new
+    old_ids,new_ids=eligible_old,eligible_new
+    stat['repeated_old_admitted']=len(old_ids & repeat_policy.repeated_a)
+    stat['repeated_new_admitted']=len(new_ids & repeat_policy.repeated_b)
+    stat['repeated_candidate_pairs_skipped']=0
     stat['removed_repeated_occurrences_excluded']=len(excluded_occurrences)
     stat['added_repeated_occurrences_excluded']=len(excluded_added)
     if not old_ids or not new_ids:return list(records),{},stat
@@ -358,6 +384,9 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
         candidates=[]
         for j in x_index.candidates(bounds,tolerance):
             stat['spatial_candidates_scanned']+=1
+            if not repeat_policy.allows(i,j):
+                stat['repeated_candidate_pairs_skipped']+=1
+                continue
             # Cheap conservative Y/Z gate before volume and distance. This
             # cannot reject touching / tolerance-adjacent valid pairs.
             target=bb[j]

@@ -21,10 +21,10 @@ def records(a, b):
             [Record(None, j, 'ADDED', '') for j in range(len(b))])
 
 def test_two_real_revisions_survive_unrelated_overlapping_parts():
-    a = [part(0, 10, 'rev1_old'), part(100, 10, 'rev2_old'),
-         part(200, 10, 'removed_part')]
-    b = [part(0, 11, 'rev1_new'), part(100, 11, 'rev2_new'),
-         part(207, 10, 'new_unrelated')]
+    a = [part(0, 10, 'rev1_old'), part(100, 12, 'rev2_old'),
+         part(200, 14, 'removed_part')]
+    b = [part(0, 11, 'rev1_new'), part(100, 13, 'rev2_new'),
+         part(207, 14, 'new_unrelated')]
     out, regions, stats = revision_overlap.merge_material_revisions(
         a, b, records(a, b), review_approval=lambda _: 'review')
     changed = {(r.a_index, r.b_index) for r in out if r.status == 'CHANGED'}
@@ -39,8 +39,8 @@ def test_two_real_revisions_survive_unrelated_overlapping_parts():
     assert all(v >= 0 for v in stats['brep_seconds_by_phase'].values())
 
 def test_separate_budget_recovers_unchecked_real_revision(monkeypatch):
-    a = [part(0, 10, 'old1'), part(100, 10, 'old2')]
-    b = [part(0, 11, 'new1'), part(100, 11, 'new2')]
+    a = [part(0, 10, 'old1'), part(100, 12, 'old2')]
+    b = [part(0, 11, 'new1'), part(100, 13, 'new2')]
     monkeypatch.setattr(revision_overlap, 'MAX_CHECKS', 1)
     out, regions, stats = revision_overlap.merge_material_revisions(
         a, b, records(a, b), review_approval=lambda _: 'review')
@@ -131,8 +131,8 @@ def test_removed_duplicate_is_not_misclassified_as_changed_revision():
 def test_retry_budget_handles_more_than_original_sixteen_pair_limit(monkeypatch):
     """Correctly matched independent revisions past the 16th candidate get a retry."""
     count=18
-    a=[part(50*i,10,'old_'+str(i)) for i in range(count)]
-    b=[part(50*i,11,'new_'+str(i)) for i in range(count)]
+    a=[part(50*i,10+2*i,'old_'+str(i)) for i in range(count)]
+    b=[part(50*i,11+2*i,'new_'+str(i)) for i in range(count)]
     monkeypatch.setattr(revision_overlap,'MAX_CHECKS',1)
     out,regions,stat=revision_overlap.merge_material_revisions(
         a,b,records(a,b),review_approval=lambda _: 'review')
@@ -322,8 +322,11 @@ def test_unverified_surviving_record_cannot_be_used_to_suppress_material_compari
               Record(None,1,'ADDED','')]
     result,regions,stat=revision_overlap.merge_material_revisions(
         a,b,existing,geometry_context=LocalCopy(),review_approval=lambda _: 'review')
-    assert stat['removed_repeated_occurrences_excluded']==0
-    assert stat['boolean_checks']>0
+    # The UNCERTAIN survivor remains unproven. Independent WITHIN-A
+    # definition proofs now suffice to exclude the repeated removed detail.
+    assert stat['removed_repeated_occurrences_excluded']==1
+    assert stat['boolean_checks']==0
+    assert any(r.status=='UNCERTAIN' for r in result)
 
 
 def test_dominated_failed_candidate_cannot_erase_a_proven_renamed_revision(monkeypatch):
@@ -331,7 +334,7 @@ def test_dominated_failed_candidate_cannot_erase_a_proven_renamed_revision(monke
     from dsac29 import native_guard
     from dsac29.geometry import _precise_world_bounds
     a=[part(0,10,'old_repeated')]
-    b=[part(0,11,'renamed_revised'),part(2,11,'unrelated_second')]
+    b=[part(0,11,'renamed_revised'),part(2,10.9,'unrelated_second')]
     real_common=native_guard.guarded_common
     real_regions=revision_overlap.calculate
     def broken_wrong_candidate(sa,sb,*args,**kwargs):
@@ -368,8 +371,8 @@ def test_unresolved_candidate_is_not_discarded_by_weak_alternative(monkeypatch):
     assert {r.status for r in out}=={'UNCERTAIN'}
 
 
-def test_repeated_renamed_changed_definition_reuses_proven_common_and_cut():
-    """Real geometry changes must not be hidden, but need no per-occurrence recheck."""
+def test_repeated_renamed_changed_definition_bypasses_automatic_common():
+    """Changed copies remain visible as removed old and added new geometry."""
     from OCP.gp import gp_Trsf, gp_Vec
     from OCP.TopLoc import TopLoc_Location
     from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
@@ -388,10 +391,9 @@ def test_repeated_renamed_changed_definition_reuses_proven_common_and_cut():
              [Record(None,j,'ADDED','') for j in range(4)])
     out,regions,stat=revision_overlap.merge_material_revisions(
         a,b,records,review_approval=lambda _:'review')
-    assert {r.status for r in out}=={'CHANGED'}
-    assert stat['accepted']==4 and not stat['incomplete']
-    assert stat['boolean_checks']<=2
-    assert stat['region_proof_reuse']>=2
+    assert {r.status for r in out}=={'REMOVED','ADDED'}
+    assert stat['accepted']==0 and not stat.get('incomplete')
+    assert stat['boolean_checks']==0 and not regions
 
 
 def test_repeated_material_timeout_is_not_retried_on_unchanged_operands(monkeypatch):
@@ -426,7 +428,7 @@ def _distinct_occurrence(length, position, name):
     return describe(shape.Moved(TopLoc_Location(tr)),name,f'{name}/{position}')
 
 
-def test_separately_exported_repeated_revisions_reuse_full_brep_evidence():
+def test_separately_exported_repeated_revisions_bypass_automatic_common():
     from dsac29.geometry_registry import GeometryRegistry
     a=[_distinct_occurrence(10,x,'old_ring') for x in (0,40,80,120)]
     b=[_distinct_occurrence(11,x,'renamed_ring') for x in (0,40,80,120)]
@@ -434,11 +436,10 @@ def test_separately_exported_repeated_revisions_reuse_full_brep_evidence():
     assert GeometryRegistry().same_definition(a[0],a[1])
     out,regions,stat=revision_overlap.merge_material_revisions(
         a,b,records(a,b),review_approval=lambda _:'review')
-    assert {r.status for r in out}=={'CHANGED'}
-    assert stat['boolean_checks']==1
-    assert stat['common_proof_reuse']==3
-    assert stat['region_proof_reuse']==3
-    assert len(regions)==4 and not stat['incomplete']
+    assert {r.status for r in out}=={'REMOVED','ADDED'}
+    assert stat['boolean_checks']==0
+    assert not regions and not stat.get('incomplete')
+    assert stat['repeated_old_population']==stat['repeated_new_population']==4
 
 
 def test_full_brep_proof_reuse_rejects_wrong_relative_placement_and_geometry():
@@ -473,8 +474,8 @@ def test_exact_definitions_cannot_reuse_at_same_location_or_different_rotation()
     assert index.find(shifted_a,rotated_b) is None
 
 
-def test_failed_early_occurrences_recover_from_later_exact_positive_proof(monkeypatch):
-    """Two failed occurrences cannot taint the whole repeated revision cohort."""
+def test_repeated_cohort_bypasses_native_errors_in_every_occurrence(monkeypatch):
+    """The complete repeated revision cohort never enters material Common."""
     from dsac29 import native_guard,common_exclusion
     from dsac29.native_guard import NativeGeometryFailure
     a=[_distinct_occurrence(10,x,'Entwurf_11067438_Oese.1') for x in (0,40,80,120)]
@@ -498,16 +499,16 @@ def test_failed_early_occurrences_recover_from_later_exact_positive_proof(monkey
     monkeypatch.setattr(common_exclusion,'guarded_exclusion',exclusion_failure)
     out,regions,stat=revision_overlap.merge_material_revisions(
         a,b,records(a,b),review_approval=lambda _:'review')
-    assert stat['earlier_failures_recovered_by_exact_repeat']==2
+    assert called==[]  # Exclude the whole repeated cohort before any failure.
     assert stat.get('retry_failure_attempted',0)==0
-    assert {r.status for r in out}=={'CHANGED'}
-    assert len(regions)==4 and not stat['incomplete']
+    assert {r.status for r in out}=={'REMOVED','ADDED'}
+    assert not regions and not stat.get('incomplete')
 
 
 def test_assembly_wallclock_does_not_skip_later_native_pairs(monkeypatch):
     """Elapsed time is telemetry, never proof that later candidates were checked."""
-    old=[part(0,10,'old_first'),part(100,10,'old_second')]
-    new=[part(0,11,'new_first'),part(100,11,'new_second')]
+    old=[part(0,10,'old_first'),part(100,12,'old_second')]
+    new=[part(0,11,'new_first'),part(100,13,'new_second')]
     ticks=[0.0]
     def fake_clock():
         ticks[0]+=1000.0  # exceed the former 240-900 s shared budget
@@ -524,8 +525,8 @@ def test_assembly_wallclock_does_not_skip_later_native_pairs(monkeypatch):
 
 def test_recovery_wallclock_does_not_starve_later_pairs(monkeypatch):
     """Each distinct unverified pair is retried despite earlier long operations."""
-    old=[part(50*i,10,'old_'+str(i)) for i in range(4)]
-    new=[part(50*i,11,'new_'+str(i)) for i in range(4)]
+    old=[part(50*i,10+2*i,'old_'+str(i)) for i in range(4)]
+    new=[part(50*i,11+2*i,'new_'+str(i)) for i in range(4)]
     monkeypatch.setattr(revision_overlap,'MAX_CHECKS',1)
     ticks=[0.0]
     def fake_clock():

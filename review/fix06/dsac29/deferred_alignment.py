@@ -21,7 +21,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     # undetectable as soon as most geometry changed. Eight independent,
     # world-B-Rep-proven anchors are sufficient to *propose* a placement;
     # the operator still has to confirm it explicitly.
-    minimum=max(2,ceil(.60*population)) if population<40 else 8
+    minimum=1 if len(a)==len(b)==1 else (max(2,ceil(.60*population)) if population<40 else 8)
     low_overlap=population>=40 and minimum<ceil(.15*population)
     moved=[r for r in records if r.status in ('MOVED','UNCERTAIN') and r.a_index is not None and r.b_index is not None and candidate(a[r.a_index],b[r.b_index],tolerance)]
     # A few local moves do not justify global registration. Unmatched repeated
@@ -79,7 +79,8 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     except (TypeError,ValueError,KeyError) as exc:
         if progress:progress(f'Wyrównanie: pominięto wstępny konsensus ({exc}).')
 
-    def sample(ids):
+    def sample(ids,parts):
+        ids=sorted(ids,key=lambda i:tuple(float(v) for v in parts[i].center))
         return ids if len(ids)<=13 else [ids[round(k*(len(ids)-1)/12)] for k in range(13)]
     # Cohort-centroid offsets are highly informative when identical shapes
     # repeat many times or sample(13) skips the correct assembly pitch.
@@ -93,15 +94,15 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
             add(offset,weight=min(12,len(ai)))
         check_cancel()
         if key not in repeated and len(moved)<minimum:continue
-        for i in sample(sa[key]):
-            for j in sample(sb[key]):
+        for i in sample(sa[key],a):
+            for j in sample(sb[key],b):
                 if candidate(a[i],b[j],tolerance):add(a[i].center-b[j].center)
     if not histogram:return None
     # No Boolean work until a hypothesis improves on the ordinary comparison.
     radius=search_radius(tolerance)
     cells=_spatial_index(a,range(len(a)),radius)
     ranked=[]
-    for _,offset in sorted(histogram.values(),key=lambda v:-v[0])[:192]:
+    for _,offset in sorted(histogram.values(),key=lambda v:(-v[0],tuple(float(q) for q in v[1])))[:192]:
         check_cancel();used=set()
         for p in b:
             center=p.center+offset
@@ -124,13 +125,17 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None):
     # checks on each of 16 weak hypotheses before starting any full proof.
     winners=[];evaluated=[]
     identity=np.eye(3)
-    for coarse,offset,_covered_volume in sorted(ranked,key=lambda v:(-v[2],-v[0])):
+    for coarse,offset,_covered_volume in sorted(ranked,key=lambda v:(-v[2],-v[0],tuple(float(q) for q in v[1]))):
         if any(np.linalg.norm(offset-old)<=tolerance for old in evaluated):continue
-        if len(evaluated)>=24:break
         if winners:
             best=max(w[0] for w in winners)
             margin=max(1,ceil(.10*best)) if low_overlap else 0
             if coarse<best-margin and _covered_volume<max(w[3] for w in winners):continue
+        if len(evaluated)>=24:
+            # Competitive upper bounds remain. A bounded search cannot
+            # establish that its current winner is unique.
+            return {'status':'unresolved','reason':
+                    'Limit weryfikacji konkurencyjnych przesunięć; brak jednoznacznego wyrównania.'}
         evaluated.append(offset)
         check_cancel()
         # Each unique offset is evaluated once; retaining all shifted OCCT
