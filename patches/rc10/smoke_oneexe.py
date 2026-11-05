@@ -58,7 +58,8 @@ for case, width, shift, expected in (
         assert summary['statuses'] == expected, (case, summary['statuses'])
         assert summary['main_step_ready'], summary
         if shift:
-            assert approved and summary['alignment']['applied'], summary['alignment']
+            assert summary['alignment']['applied'], summary['alignment']
+            assert np.allclose(summary['alignment']['translation_B_to_A_mm'], [-1000, 0, 0])
         (output/'FROZEN_OK.json').write_text(json.dumps(dict(case=case, statuses=expected)), encoding='utf-8')
         print(f'Frozen comparison PASS: {case}', flush=True)
     finally:
