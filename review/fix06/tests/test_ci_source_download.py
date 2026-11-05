@@ -63,7 +63,7 @@ class DownloadTests(unittest.TestCase):
             cwd = Path.cwd()
             os.chdir(tmp)
             try:
-                with patch("time.sleep", return_value=None), patch("urllib.request.urlopen", return_value=io.BytesIO(b"broken")) as call:
+                with patch("time.sleep", return_value=None), patch("urllib.request.urlopen", side_effect=lambda *a, **kw: io.BytesIO(b"broken")) as call:
                     with self.assertRaises(RuntimeError):
                         download("fixture")
                 self.assertEqual(call.call_count, 4)
