@@ -44,7 +44,7 @@ class DownloadTests(unittest.TestCase):
                 raise urllib.error.HTTPError(req.full_url, 503, "transient", None, None)
             return io.BytesIO(payload)
         download, result = make_downloader(opener)
-        with tempfile.TemporaryDirectory() as tmp, patch("os.getcwd", return_value=tmp):
+        with tempfile.TemporaryDirectory() as tmp:
             cwd = Path.cwd()
             os.chdir(tmp)
             try:
