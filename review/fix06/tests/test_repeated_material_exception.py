@@ -103,3 +103,16 @@ def test_technical_names_do_not_admit_repeated_parts():
     new=named(11,3,'NAUO_123')
     policy=RepeatedMaterialPolicy(old,new)
     assert policy.eligible({0,1,2},{0,1,2})==(set(),set())
+
+
+def test_renamed_survivor_does_not_block_equal_named_revision_population():
+    from dsac29.geometry_registry import GeometryRegistry
+    old=named(10,2,'DRAWING_123_REV_A')
+    new=[replace(old[0],name='OTHER_SURVIVING_DETAIL')]+named(11,2,'DRAWING_123_REV_B')
+    saved=[Record(0,0,'SAME','verified'),Record(1,None,'REMOVED',''),
+           Record(None,1,'ADDED',''),Record(None,2,'ADDED','')]
+    result,regions,stat=merge_material_revisions(
+        old,new,saved,geometry_context=GeometryRegistry())
+    assert Counter(r.status for r in result)=={'SAME':1,'CHANGED':1,'ADDED':1}
+    assert len(regions)==1 and stat['repeated_old_admitted']==1
+    assert stat['removed_repeated_occurrences_excluded']==0
