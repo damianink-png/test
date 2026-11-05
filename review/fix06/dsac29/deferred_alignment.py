@@ -324,8 +324,15 @@ def propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress=None,cancel
     if progress:progress(f'Etap 1: {baseline}/{population} zgodnych w miejscu; sprawdzam globalne przesunięcie.')
     strict=propose(a,b,records,tolerance,progress,cancelled)
     if strict is not None and strict.get('status')=='registered':return strict
+    # The normal descriptor vote estimates translation only. If that fails,
+    # try a bounded full SE(3) rigid pose: distance-invariant RANSAC followed
+    # by proper-rotation Kabsch and independent native B-Rep proofs.
+    # Never use the point/volume consensus as final geometry evidence.
+    from .rigid_registration import propose_verified_rigid
+    rigid=propose_verified_rigid(a,b,baseline,tolerance,progress,cancelled)
+    if rigid is not None and rigid.get('status')=='registered':return rigid
     soft=_step_reexport_fallback(a,b,baseline,tolerance,progress,cancelled)
-    return soft if soft is not None else strict
+    return soft if soft is not None else (rigid if rigid is not None else strict)
 
 
 def _step_reexport_fallback(a,b,baseline,tolerance,progress=None,cancelled=None):
