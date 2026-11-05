@@ -16,17 +16,17 @@ from dsac29.revision_overlap import merge_material_revisions
 from dsac29.deferred_alignment import propose_from_stage1
 
 
-def parts(width=10,shift=0,count=8,separate=False,baked=False):
+def parts(width=10,shift=0,count=8,separate=False,baked=False,name_prefix="P"):
     prototype=BRepPrimAPI_MakeBox(20,width,7).Shape()
     result=[]
     for i in range(count):
         x,y=i*57+shift,i*i*3
         if baked:
             shape=BRepPrimAPI_MakeBox(gp_Pnt(float(x),float(y),0.),20,width,7).Shape()
-            p=describe(shape,f'P{i}',f'assembly/P{i}')
+            p=describe(shape,f'{name_prefix}{i}',f'assembly/{name_prefix}{i}')
         else:
             shape=BRepPrimAPI_MakeBox(20,width,7).Shape() if separate else prototype
-            p=_relocate(describe(shape,f'P{i}',f'assembly/P{i}'),np.eye(3),np.array([x,y,0.]))
+            p=_relocate(describe(shape,f'{name_prefix}{i}',f'assembly/{name_prefix}{i}'),np.eye(3),np.array([x,y,0.]))
         result.append(p)
     return result
 
@@ -34,7 +34,7 @@ def parts(width=10,shift=0,count=8,separate=False,baked=False):
 @pytest.mark.parametrize('mode',['native','separate','baked'])
 def test_entire_revised_population_skips_common_without_survivor(monkeypatch,mode):
     old=parts(separate=mode=='separate',baked=mode=='baked')
-    new=parts(11,separate=mode=='separate',baked=mode=='baked')
+    new=parts(11,separate=mode=='separate',baked=mode=='baked',name_prefix='Q')
     records=compare(old,new,revision_only=True,exact_serialization=True)
     records=classify_revisions(old,new,records,geometry_first=True)
     def forbidden(*args,**kwargs):raise AssertionError('Common must not run for repeated details')
@@ -47,7 +47,7 @@ def test_entire_revised_population_skips_common_without_survivor(monkeypatch,mod
 
 
 def test_four_heuristic_pairs_and_four_leftovers_are_consistent():
-    old,new=parts(),parts(11)
+    old,new=parts(),parts(11,name_prefix="Q")
     records=[Record(i,None,'REMOVED','') for i in range(4)]
     records += [Record(None,j,'ADDED','') for j in range(4)]
     records += [Record(i,i,'UNCERTAIN','Ambiguous',confidence='Heurystyka — sprawdź parę') for i in range(4,8)]
@@ -59,7 +59,7 @@ def test_four_heuristic_pairs_and_four_leftovers_are_consistent():
 
 
 def test_already_matched_copies_still_count_and_failure_stays_uncertain():
-    old,new=parts(),parts(11)
+    old,new=parts(),parts(11,name_prefix="Q")
     records=[Record(i,i,'SAME','proof') for i in range(6)]
     records += [Record(6,6,'UNCERTAIN','Native failure',confidence='Błąd testu B-Rep — sprawdź parę'),
                 Record(7,None,'REMOVED',''),Record(None,7,'ADDED','')]

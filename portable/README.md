@@ -1,4 +1,4 @@
-# DS Compare Portable 0.6.1
+# DS Compare Portable 0.6.2
 
 Dwa pakiety Windows x64 nie wymagają instalatora ani uprawnień administratora:
 
@@ -16,4 +16,4 @@ Wyniki i ustawienia są zapisywane w normalnych folderach użytkownika, tak jak 
 Pakiet WebView2 i jego skrót są przypięte w `webview-source.json`, pobrane z oficjalnej strony Microsoft. Prawa odczytu wymagane przez AppContainer w Windows 10 są ustawiane tylko dla dołączonego folderu WebView2 zgodnie z dokumentacją Microsoft. Nie są zmieniane ustawienia przeglądarki systemowej ani rejestr instalacji.
 
 
-Wersja 0.6.1 pomija automatyczny Common dla powtarzających się detali w całych rewizjach, także gdy cała seria zmieniła geometrię. Nazwy ani podobne wymiary nie dowodzą powtórzenia: grupowanie wymaga natywnej, dokładnej lub zweryfikowanej geometrii B-Rep. Niejednoznaczne pary heurystyczne takich detali pozostają jako osobne stare usunięte i nowe dodane; rzeczywiste błędy geometrii pozostają do sprawdzenia. Poprawiono pamięć tożsamości obiektów oraz deterministyczne szukanie przesunięć. Obecny interfejs Tauri, podgląd WebGL, raporty masy, paleta i dołączony WebView2 są zachowane.
+Wersja 0.6.2 dopuszcza automatyczny Common dla powtarzających się detali, jeżeli ich pełne liczby wystąpień w A i B są takie same i nazwy wskazują tę samą rodzinę po pominięciu oddzielonej rewizji. Uwzględniane są m.in. `12345_REV_A` / `12345_REV_B`, `12345_A` / `12345_B` oraz `12345_01` / `12345_02`. Nie są dopasowywane dowolne krótkie fragmenty ani różne numery rysunków (`PART_100` / `PART_200`). Liczone są całe modele, również części już dopasowane. Same nazwy i liczby nie dowodzą zmiany materiału: każda dopuszczona para przechodzi natywne Common/Cut. Nazwy ani podobne wymiary nie dowodzą powtórzenia: grupowanie wymaga natywnej, dokładnej lub zweryfikowanej geometrii B-Rep. Niedopuszczone lub niepotwierdzone pary pozostają jako osobne stare usunięte i nowe dodane; rzeczywiste błędy geometrii pozostają do sprawdzenia. Poprawiono pamięć tożsamości obiektów oraz deterministyczne szukanie przesunięć. Obecny interfejs Tauri, podgląd WebGL, raporty masy, paleta i dołączony WebView2 są zachowane.

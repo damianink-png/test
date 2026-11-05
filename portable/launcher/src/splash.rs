@@ -232,7 +232,7 @@ mod win {
         );
         text(
             dc,
-            "PORTABLE 0.6.0",
+            concat!("PORTABLE ", env!("CARGO_PKG_VERSION")),
             526,
             331,
             120,

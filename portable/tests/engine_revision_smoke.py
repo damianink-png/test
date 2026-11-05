@@ -16,21 +16,23 @@ root = Path(sys.argv[2]).resolve()
 root.mkdir(parents=True, exist_ok=True)
 
 
-def model(path, width=10, shift=0):
+def model(path, width=10, shift=0, count=8, name="PLATE_123_REV_A"):
     doc = ColoredDocument()
     shape = BRepPrimAPI_MakeBox(20, width, 7).Shape()
-    for i in range(8):
+    for i in range(count):
         placed = transform(shape, np.eye(3), np.array([i*57+shift, i*i*3, 0.]))
-        doc.add(placed, f'P{i}', (.2, .5, .8))
+        doc.add(placed, name, (.2, .5, .8))
     doc.write(path)
 
 
 model(root/'old.step')
-for case, width, shift, expected in (
-    ('repeated_revision', 11, 0, {'REMOVED':8, 'ADDED':8}),
-    ('global_shift', 10, 1000, {'SAME':8}),
+for case, width, shift, count, name, expected in (
+    ('repeated_named_revision', 11, 0, 8, 'PLATE_123_REV_B', {'CHANGED':8}),
+    ('repeated_other_name', 11, 0, 8, 'OTHER_123_REV_B', {'REMOVED':8, 'ADDED':8}),
+    ('repeated_unequal_count', 11, 0, 7, 'PLATE_123_REV_B', {'REMOVED':8, 'ADDED':7}),
+    ('global_shift', 10, 1000, 8, 'PLATE_123_REV_B', {'SAME':8}),
 ):
-    model(root/f'{case}.step', width, shift)
+    model(root/f'{case}.step', width, shift, count, name)
     output = root/case
     args = [exe, '--worker', 'compare', '--a', str(root/'old.step'),
             '--b', str(root/f'{case}.step'), '--output', str(output),
@@ -57,6 +59,11 @@ for case, width, shift, expected in (
         summary = json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
         assert summary['statuses'] == expected, (case, summary['statuses'])
         assert summary['main_step_ready'], summary
+        assert not summary.get('material_errors'), summary.get('material_errors')
+        if case=='repeated_named_revision':
+            assert summary['revision_overlap']['accepted']==8
+        elif case in ('repeated_other_name','repeated_unequal_count'):
+            assert summary['revision_overlap']['boolean_checks']==0
         if shift:
             assert summary['alignment']['applied'], summary['alignment']
             assert np.allclose(summary['alignment']['translation_B_to_A_mm'], [-1000, 0, 0])
