@@ -10,8 +10,8 @@ def part(x,length,name):
     return describe(BRepPrimAPI_MakeBox(gp_Pnt(x,0,0),length,10,10).Shape(),name,name)
 
 def dataset():
-    a=[part(0,10,'bad_old'),part(100,10,'good_old')]
-    b=[part(0,11,'bad_new'),part(100,11,'good_new')]
+    a=[part(0,10,'bad_old'),part(100,12,'good_old')]
+    b=[part(0,11,'bad_new'),part(100,13,'good_new')]
     return a,b,[Record(0,None,'REMOVED',''),Record(1,None,'REMOVED',''),
                 Record(None,0,'ADDED',''),Record(None,1,'ADDED','')]
 

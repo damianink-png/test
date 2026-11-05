@@ -305,6 +305,18 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
         excluded_added=exclude_occurrences(new_ids,b,a,'b_index','a_index')
         old_ids-=excluded_occurrences
         new_ids-=excluded_added
+    # Automatic Common is only for unique details. Inspect BOTH COMPLETE
+    # revision populations, even when none of a revised family survived SAME.
+    # This also covers independent/baked STEP definitions and renamed copies.
+    from .repeated_geometry import repeated_ids
+    repeated_a=repeated_ids(a,tolerance,geometry_context,cancelled)
+    repeated_b=repeated_ids(b,tolerance,geometry_context,cancelled)
+    stat['repeated_old_population']=len(repeated_a)
+    stat['repeated_new_population']=len(repeated_b)
+    excluded_occurrences.update(old_ids & repeated_a)
+    excluded_added.update(new_ids & repeated_b)
+    old_ids-=repeated_a
+    new_ids-=repeated_b
     stat['removed_repeated_occurrences_excluded']=len(excluded_occurrences)
     stat['added_repeated_occurrences_excluded']=len(excluded_added)
     if not old_ids or not new_ids:return list(records),{},stat
