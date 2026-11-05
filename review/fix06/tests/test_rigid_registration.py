@@ -94,6 +94,6 @@ def test_native_brep_confirms_rotated_noncollinear_boxes():
     result=rigid.propose_verified_rigid(a,b,0,.01)
     assert result and result['status']=='registered'
     assert result['verification_scope']=='full_brep'
-    assert result['rotation_B_to_A']==pytest.approx(rot.T.tolist(),abs=1e-6)
+    assert np.allclose(np.asarray(result['rotation_B_to_A']),rot.T,atol=1e-6)
     assert result['verified_sample_count']>=8
     assert len(result['certified_pairs'])>=8
