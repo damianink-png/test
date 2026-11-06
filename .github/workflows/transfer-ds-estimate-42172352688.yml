@@ -1,0 +1,82 @@
+name: Share DS Estimate 0.4 installer via SwissTransfer
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/transfer-ds-estimate-42172352688.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  transfer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      XDG_CONFIG_HOME: /tmp/swissfer-config
+    steps:
+      - name: Build pinned Swissfer client
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout -q --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+      - name: Restore confirmed sender state
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p saved "$XDG_CONFIG_HOME/swissfer"
+          gh run download 42166468679 --repo "$GITHUB_REPOSITORY" --name swissfer-validation-state --dir saved
+          cp saved/email-validations.json "$XDG_CONFIG_HOME/swissfer/email-validations.json"
+      - name: Download exact DS Estimate 0.4 artifact and package installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload outgoing
+          gh run download 42172352688 --repo damianink-png/DS-Estimate --name DS-Estimate-0.4-Parts-Automation-Windows-Installer --dir payload
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_STORED
+          files=list(Path('payload').rglob('*.exe'))
+          assert len(files)==1, f'Expected one installer, found: {files}'
+          exe=files[0]
+          assert exe.name=='DS Estimate_0.4.0_x64-setup.exe', exe.name
+          assert exe.stat().st_size>200_000_000
+          dest=Path('outgoing/DS-Estimate-0.4.0-Windows-Installer-42172352688.zip')
+          with ZipFile(dest,'w',compression=ZIP_STORED) as z:
+              z.write(exe,arcname=exe.name)
+          with ZipFile(dest) as z:
+              assert z.namelist()==[exe.name]
+              assert z.getinfo(exe.name).file_size==exe.stat().st_size
+          print('Installer:',exe.name)
+          print('ZIP bytes:',dest.stat().st_size)
+          PY
+      - name: Send ZIP via SwissTransfer
+        shell: bash
+        timeout-minutes: 18
+        run: |
+          set -euo pipefail
+          timeout 900s swissfer/target/release/swissfer outgoing/DS-Estimate-0.4.0-Windows-Installer-42172352688.zip \
+            --email damianink@gmail.com --duration 30 \
+            --message 'DS Estimate 0.4.0 Windows installer artifact 13482482215' </dev/null > transfer.log 2>&1
+          cat transfer.log
+          url=$(grep -Eo 'https://(www\.)?swisstransfer\.com/dl/[a-zA-Z0-9-]+' transfer.log | tail -n 1 || true)
+          test -n "$url"
+          echo "SwissTransfer download: $url" >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain sender state for subsequent requests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-validation-state
+          path: /tmp/swissfer-config/swissfer/email-validations.json
+          retention-days: 1
+          if-no-files-found: warn
+      - name: Retain transfer log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ds-estimate-42172352688-transfer-log
+          path: transfer.log
+          retention-days: 3
+          if-no-files-found: warn
