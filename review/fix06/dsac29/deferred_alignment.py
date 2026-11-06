@@ -30,6 +30,17 @@ def _periodic_global_offset_possible(a,b,tolerance,population,free_a=(),free_b=(
     if population<4:return False
     from .cad_pose_search import landmarks,hypotheses,match_pose
     aa,bb=landmarks(a),landmarks(b)
+    # The 90% in-place shortcut must not hide the new unique-anchor route
+    # when repeated-pitch occurrences already match at the wrong indices.
+    from .unique_anchors import unique_pairs
+    from itertools import islice
+    from time import monotonic
+    mass=(np.asarray([p.center for p in a]),np.asarray([p.center for p in b]))
+    for i,j in islice(unique_pairs(a,b,deadline=monotonic()+2.),3):
+        for shift in (a[i].center-b[j].center,aa[i]-bb[j]):
+            if np.linalg.norm(shift)<=tolerance:continue
+            pairs=match_pose(a,b,aa,bb,np.eye(3),shift,max(tolerance,1e-6),mass)
+            if len(pairs)>baseline:return True
     for pose in hypotheses(a,b,tolerance,features=(aa,bb)):
         if len(pose.pairs)<=baseline:continue
         exact_candidates=match_pose(a,b,aa,bb,pose.rotation,pose.translation,max(tolerance,1e-6))

@@ -46,9 +46,6 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
     baseline=sum(r.status in ('SAME','RENAMED') for r in records)
     minimum=1 if len(a)==len(b)==1 else max(2,ceil(.6*population)) if population<40 else 8
     if baseline==population:return None
-    if state.features is None:
-        if progress:progress('Wyrównanie: wyznaczam punkty odniesienia z oryginalnej geometrii CAD…')
-        state.features=(search.landmarks(a,cancelled),search.landmarks(b,cancelled))
     native=support or frame_support
     deadline=monotonic()+(120 if extended else 60)
     body_deadline=min(deadline,monotonic()+(60 if extended else 30))
@@ -92,6 +89,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
             # five synthetic native failures when no proof has even started.
             if monotonic()>=body_deadline:return False
             cache=FrameProofCache();cache.deadline=body_deadline;cache.pair_timeout=12.
+            for pair in getattr(pose,'anchor_pairs',()):cache.results[pair]=True
             cache.lookup_points=(state.features[0],state.features[1]@pose.rotation.T+pose.translation)
             try:
                 pre=native(a,placed,tolerance,proofs=24,progress=progress,cancelled=cancelled,proof_cache=cache)
@@ -139,13 +137,26 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
     # Pure translations get priority. If they cannot be proven, the SAME
     # coordinator, budget and state explore rotations rather than a second
     # legacy algorithm replaying all the failed translations.
-    translations=search.hypotheses(a,b,tolerance,features=state.features,extended=extended,
-                                  cancelled=cancelled,progress=progress)
     from .native_session import world_session
+    from .unique_anchors import proven_translations
     with world_session(True):
+        anchors=proven_translations(a,b,tolerance,state,body_deadline,extended=extended,
+                                   progress=progress,cancelled=cancelled,clock=monotonic)
+        if state.features is None:
+            if progress:progress('Wyrównanie: wyznaczam punkty odniesienia z oryginalnej geometrii CAD…')
+            state.features=(search.landmarks(a,cancelled),search.landmarks(b,cancelled))
+        anchor_poses=[]
+        mass=(np.asarray([p.center for p in a]),np.asarray([p.center for p in b]))
+        for shift,pair in anchors:
+            pairs=search.match_pose(a,b,*state.features,np.eye(3),shift,max(.05,5*tolerance),mass)
+            pose=search.Pose(np.eye(3),shift,pairs,sum(a[i].volume for i,j in pairs),'unique_largest_inertia_anchor')
+            pose.anchor_pairs=[pair];anchor_poses.append(pose)
+        anchor_complete=verify(anchor_poses)
+        translations=search.hypotheses(a,b,tolerance,features=state.features,extended=extended,
+                                      cancelled=cancelled,progress=progress)
         # Reserve native work for rotation even when many periodic-grid
         # translations have high descriptor support but fail real geometry.
-        complete=verify(translations[:3])
+        complete=anchor_complete and verify(translations[:3])
         if complete and not winners:
             rotations=search.hypotheses(a,b,tolerance,features=state.features,extended=extended,
                                        rotations=True,cancelled=cancelled,progress=progress)

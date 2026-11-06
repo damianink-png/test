@@ -162,6 +162,39 @@ for case,new_shape,expected in [('changed_surface_frame',changed,{'CHANGED':8}),
     finally:
         if proc.poll() is None:proc.kill();proc.wait()
 
+# Largest unique inertial anchor must drive the active frozen workflow,
+# despite many repeated screws, reversed B order and revision suffix changes.
+old=ColoredDocument();new=ColoredDocument();parts=[]
+for i in range(20):
+    parts.append((BRepPrimAPI_MakeBox(5,6,7).Shape(),np.array([i*41.,i*i*3.,i%3*40.]),'SCREW'))
+for i,dims in enumerate([(23,17,11),(37,26,16),(123,85,13)]):
+    parts.append((BRepPrimAPI_MakeBox(*dims).Shape(),np.array([i*150.,-170.-i*40.,i*80.]),f'COMP_{i}'))
+offset=np.array([1950.,-375.,82.])
+for shape,pos,name in parts:old.add(transform(shape,np.eye(3),pos),name+'_afm0',(.2,.5,.8))
+for shape,pos,name in reversed(parts):new.add(transform(shape,np.eye(3),pos+offset),name+'_afm2',(.2,.5,.8))
+pa=root/'unique_old.step';pb=root/'unique_new.step';old.write(pa);new.write(pb)
+output=root/'unique_largest_anchor'
+proc=subprocess.Popen([exe,'--worker','compare','--a',str(pa),'--b',str(pb),'--output',str(output),
+    '--revision-style','--no-bom','--generate-step','--align-auto'])
+deadline=time.monotonic()+300
+try:
+    while proc.poll() is None:
+        if time.monotonic()>deadline:raise TimeoutError('Largest unique frozen anchor test')
+        if (output/'_WYROWNANIE_PYTANIE.json').exists():raise AssertionError('Unique full assembly placement must be automatic')
+        time.sleep(.25)
+    assert proc.returncode==0,proc.returncode
+    summary=json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
+    assert summary['statuses']=={'SAME':23},summary['statuses']
+    alignment=summary['alignment']
+    assert alignment['applied'] and alignment['search_algorithm']=='unique_largest_inertia_anchor',alignment
+    assert np.allclose(alignment['translation_B_to_A_mm'],-offset,atol=1e-5)
+    evidence=alignment['search_diagnostics']['unique_anchor_evidence']
+    assert abs(evidence['anchors'][0]['volume']-123*85*13)<.01,evidence
+    assert summary['main_step_ready']
+    print('Frozen comparison PASS: unique_largest_anchor_23_of_23',flush=True)
+finally:
+    if proc.poll() is None:proc.kill();proc.wait()
+
 # The onefile executable must also work as its own isolated native worker.
 a = describe(BRepPrimAPI_MakeBox(20,10,7).Shape(), 'A', 'A')
 b = describe(BRepPrimAPI_MakeBox(20,11,7).Shape(), 'B', 'B')

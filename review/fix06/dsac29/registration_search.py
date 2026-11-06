@@ -30,7 +30,8 @@ class RegistrationSearch:
         return {'algorithm':'cad_global_consensus_trimmed_refinement',
                 'expanded':self.expanded,'completed_hypotheses':len(self.poses_completed) or len(self.completed),
                 'failed_native_attempts':len(self.failures),
-                'surface_evidence':getattr(self,'surface_diagnostics',{})}
+                'surface_evidence':getattr(self,'surface_diagnostics',{}),
+                'unique_anchor_evidence':getattr(self,'unique_anchor_diagnostics',{})}
 
 
 def continue_registration(a,b,tolerance,state,progress=None,cancelled=None):

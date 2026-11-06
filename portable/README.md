@@ -1,4 +1,4 @@
-# DS Compare Portable 0.6.7
+# DS Compare Portable 0.6.8
 
 Dwa pakiety Windows x64 nie wymagają instalatora ani uprawnień administratora:
 
@@ -37,3 +37,10 @@ Bazą jest 0.6.6. Przygotowanie hipotezy obrotu nie przelicza ponownie własnoś
 Gdy całe detale zostały zmienione, program może zaproponować położenie na podstawie zachowanych oryginalnych powierzchni z dokładną kontrolą ich obrysów. Taka propozycja wymaga zatwierdzenia, również po „Szukaj dokładniej”. Okno pokazuje przesunięcie, obrót i liczbę potwierdzonych powierzchni. Dowód położenia nie oznacza zgodności całych detali: po zatwierdzeniu następuje niezależne porównanie materiału. Zachowano reguły Common z 0.6.6.
 
 Dodano testy rzeczywistych zapisów STEP: zmieniona i przesunięta rewizja (8 zmienionych detali), identyczne przesunięte bryły z podziałem ścian (8 bez zmian) oraz dotychczasowy obrót i przesunięcie (18 bez zmian). Szczegóły i ograniczenia opisano w `docs/registration-audit-0.6.7.md`. Bez oryginalnych plików użytkownika nie potwierdzono przyczyny zgłoszonego błędu.
+
+
+## Wydanie 0.6.8
+
+Wykrywanie translacji rozpoczyna się od największych detali o unikatowym zestawie objętości, pola powierzchni i głównych centralnych momentów bezwładności po obu stronach. Nazwa nie jest warunkiem dopasowania. Te własności jedynie wybierają kandydatów: wektor jest dopuszczany dopiero po rzeczywistym dowodzie geometrii całego detalu B-Rep. Następnie program sprawdza pozostałe złożenie w tym położeniu. Pojedynczy lokalnie przesunięty detal nie potwierdza globalnego ruchu.
+
+Detale z niejednoznacznymi deskryptorami pozostają dla ogólnego wyszukiwania. Nieukończony dowód geometrii nie staje się zgodnością. W postępie i diagnostyce widać kolejność unikatowych detali, wyniki dowodów oraz wyznaczony wektor. Common pozostaje według zasad 0.6.6. Szczegóły: `docs/registration-audit-0.6.8.md`.
