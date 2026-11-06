@@ -1,4 +1,4 @@
-# DS Compare Portable 0.6.9
+# DS Compare Portable 0.6.10
 
 Dwa pakiety Windows x64 nie wymagają instalatora ani uprawnień administratora:
 
@@ -49,3 +49,8 @@ Detale z niejednoznacznymi deskryptorami pozostają dla ogólnego wyszukiwania. 
 ## Wydanie 0.6.9
 
 Po klasyfikacji rewizji przygotowanie Common nie przelicza już niezwiązanych rodzin części bez zmian. Dla części uczestniczących w Common nadal liczone są wszystkie zgodne geometrycznie wystąpienia w całych rewizjach, także już dopasowane. Powtórne sprawdzenie tej samej pary korzysta również z ukończonych ujemnych wyników zgodności przy tej samej tolerancji; awaria lub timeout nie stają się wynikiem negatywnym ani dowodem zgodności. Postęp od razu przechodzi do „Weryfikacji materiału” i pokazuje przygotowanie/liczenie wystąpień. Osobne czasy klasyfikacji i dopasowania materiału zapisuje `CZASY_ANALIZY.json`. Reguły Common oraz wykrywanie przesunięcia z 0.6.8 pozostają.
+
+
+## Wydanie 0.6.10 — kompilacja OneEXE
+
+Gałąź `build/dscompare-0.6.10-20261106` została utworzona ze źródeł `0.6.9` (commit `a29010a1fb76332a72f7b1e2bbd1dd68632f50d7`). Wersja 0.6.10 zachowuje ich moduły i algorytmy CAD; zmieniono identyfikatory wersji aplikacji Tauri, launchera, manifestu oraz artefaktów GitHub Actions. Jest to nowe wydanie techniczne tego kodu, bez twierdzenia o dodatkowych naprawach wyrównywania.
