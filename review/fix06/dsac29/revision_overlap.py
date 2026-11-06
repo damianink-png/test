@@ -238,6 +238,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             elapsed=stat['brep_seconds_by_phase']
             elapsed[phase]=round(elapsed.get(phase,0.)+perf_counter()-started,4)
     if not old_ids or not new_ids:return list(records),{},stat
+    if progress:progress(f'Zmiany materiału: przygotowanie Common — {len(old_ids)} starych i {len(new_ids)} nowych pozycji; sprawdzam wystąpienia w całych rewizjach.')
     # A removed occurrence of a repeated, still-present definition is not
     # automatically a material revision. Only exclude it when the existing
     # assembly match independently proves the SAME rigid geometry and name.
@@ -252,6 +253,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     # requires two positive geometry proofs, one to each side of the
     # surviving SAME/RENAMED/MOVED match. Never infer from a shared name,
     # volume, bounding box, signature, or count alone.
+    preparation_started=perf_counter()
     excluded_occurrences=set()
     excluded_added=set()
     stat['repeated_signature_fallback_checks']=0
@@ -275,7 +277,9 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 by_name[canonical(p.name)].append(record)
             signature_index=None
             excluded=set()
-            for i in sorted(indices):
+            for ordinal,i in enumerate(sorted(indices)):
+                if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
+                if progress and ordinal and ordinal%50==0:progress(f'Zmiany materiału: kontrola istniejących odpowiedników {ordinal}/{len(indices)}.')
                 part=own[i]
                 tested=set()
                 def prove_matching(records_to_check,fallback=False):
@@ -313,7 +317,12 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     # Repeated details may enter Common ONLY with equal full-model counts
     # and the same engineering name after a separated revision suffix.
     from .repeated_geometry import RepeatedMaterialPolicy
-    repeat_policy=RepeatedMaterialPolicy(a,b,tolerance,geometry_context,cancelled)
+    repeat_policy=RepeatedMaterialPolicy(a,b,tolerance,geometry_context,cancelled,
+        old_ids=original_old_ids,new_ids=original_new_ids,progress=progress)
+    stat['population_scope_old']=len(original_old_ids)
+    stat['population_scope_new']=len(original_new_ids)
+    stat['population_statistics_scope']='families_touching_common_operands'
+    stat['preparation_seconds']=round(perf_counter()-preparation_started,6)
     stat['repeated_old_population']=len(repeat_policy.repeated_a)
     stat['repeated_new_population']=len(repeat_policy.repeated_b)
     # A renamed survivor must not defeat the user's equal-population/name

@@ -1,0 +1,47 @@
+{
+  "label": "0.6.5",
+  "synthetic_cases": [
+    {
+      "case": "translation",
+      "registered": true,
+      "correct_frame": true,
+      "frame_error": 0.0,
+      "seconds": 0.0319,
+      "native_certified_pairs": 18
+    },
+    {
+      "case": "translation_reexport_drift",
+      "registered": true,
+      "correct_frame": true,
+      "frame_error": 0.0,
+      "seconds": 0.022,
+      "native_certified_pairs": 18
+    },
+    {
+      "case": "rotation_reexport_drift",
+      "registered": true,
+      "correct_frame": true,
+      "frame_error": 1.781023699076407e-13,
+      "seconds": 0.11,
+      "native_certified_pairs": 18
+    },
+    {
+      "case": "repeated_rotation",
+      "registered": true,
+      "correct_frame": true,
+      "frame_error": 8.681015823824786e-13,
+      "seconds": 0.1405,
+      "native_certified_pairs": 24
+    },
+    {
+      "case": "sparse_8_of_80_reexport",
+      "registered": true,
+      "correct_frame": true,
+      "frame_error": 0.0,
+      "seconds": 0.0589,
+      "native_certified_pairs": 8
+    }
+  ],
+  "correct_frames": 5,
+  "total": 5
+}

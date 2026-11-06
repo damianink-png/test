@@ -46,9 +46,11 @@ def test_refinement_recovers_true_translation_despite_integrated_centroid_drift(
 
 
 def test_center_drift_reproduction_fails_without_refinement(monkeypatch):
-    from dsac29 import translation_refinement
+    from dsac29 import cad_pose_search
+    from dsac29 import surface_registration
+    monkeypatch.setattr(surface_registration,'propose',lambda *a,**k:None)
     a,b,records=assembly()
-    monkeypatch.setattr(translation_refinement,'refine_translations',lambda *a,**k:[])
+    monkeypatch.setattr(cad_pose_search,'landmarks',lambda parts,*args:np.asarray([p.center for p in parts]))
     proposal=reg.propose(a,b,records,.01)
     assert proposal is None or proposal['status']!='registered'
 

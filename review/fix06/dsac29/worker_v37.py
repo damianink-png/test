@@ -83,17 +83,24 @@ def main(argv=None):
             from .cli import process
             import time,uuid
             def approve_alignment(proposal):
+                import math
                 request=folder/'_WYROWNANIE_PYTANIE.json'
                 answer=folder/'_WYROWNANIE_ODPOWIEDZ.json'
                 try:request.unlink(missing_ok=True);answer.unlink(missing_ok=True)
                 except OSError:pass
                 token=uuid.uuid4().hex
+                rotation=proposal.get('rotation_B_to_A',[[1,0,0],[0,1,0],[0,0,1]])
+                angle=math.degrees(math.acos(max(-1.,min(1.,(sum(float(rotation[i][i]) for i in range(3))-1.)/2.))))
                 info={
                     'token':token,'status':'needs_confirmation',
                     'translation_mm':[round(float(v),3) for v in proposal.get('translation_B_to_A_mm',(0,0,0))],
                     'method':str(proposal.get('method','')),
                     'votes':int(proposal.get('votes',0)),
                     'anchors':int(proposal.get('anchors',0)),
+                    'rotation_deg':round(angle,4),
+                    'surface_anchor_count':int(proposal.get('surface_anchor_count',0)),
+                    'surface_parts_a':int(proposal.get('surface_parts_a',0)),
+                    'surface_parts_b':int(proposal.get('surface_parts_b',0)),
                     'unresolved':proposal.get('status')=='unresolved',
                     'unrelated':proposal.get('status')=='unrelated',
                     'reason':proposal.get('reason',''),

@@ -12,14 +12,15 @@ _REVISION=re.compile(
     r'(?:[a-z]{1,2}\d{0,4}|\d{1,4}[a-z]?)|r[_\s.\-]*\d{1,4}[a-z]?)'
     r'(?:[_\s.\-]+\d{1,4})?$')
 _SHORT=re.compile(r'(?i)^(?:[a-z]{1,2}\d{0,4}|\d{1,4}[a-z]?)$')
+_CODED_REVISION=re.compile(r'(?i)^([a-z]{3,8})\d{1,2}$')
 
 
 def material_name_key(value):
     text=unicodedata.normalize('NFKC',str(value or '')).strip()
-    text=re.sub(r'\.(?:step|stp)$','',text,flags=re.I)
-    if technical(text):return ''
     # STEP occurrence indices are not part of the engineering name.
     text=re.sub(r':\d+(?:#\d+)?$','',text).strip()
+    text=re.sub(r'\.(?:step|stp)$','',text,flags=re.I)
+    if technical(text):return ''
     marked=_REVISION.search(text)
     if marked:
         stem=text[:marked.start()].rstrip('_ .-')
@@ -35,5 +36,12 @@ def material_name_key(value):
                               len(''.join(c for c in suffix if c.isdigit()))<=2)
         meaningful=(len(key)>=3 and
                     (not numeric or any(c.isdigit() for c in key) or short_named_revision))
+        coded=_CODED_REVISION.fullmatch(suffix.strip())
+        if meaningful and coded:
+            # The engineering base is BEFORE the separated revision suffix:
+            # czesc1_afm0 / czesc1_xyz2 -> czesc1. Keep preceding middle
+            # name fields, so 12345_LEFT_afm0 differs from 12345_RIGHT_afm2.
+            # Long numeric drawing codes (AFM100/AFM200) remain untouched.
+            return key
         if meaningful and _SHORT.fullmatch(suffix.strip()):return key
     return canonical(text)

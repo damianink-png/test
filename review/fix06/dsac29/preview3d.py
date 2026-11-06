@@ -87,7 +87,8 @@ def create_preview(path, records, a_parts, b_parts, colors=None, max_triangles=3
                                     record.a_index if role=='A' else record.b_index))
                     if dual_revisions and kind=='CHANGED_COMMON':
                         old=a_parts[record.a_index]
-                        old_common=describe(piece,f'{old.name} / {kind} ({n})',old.path,source=old.source)
+                        from dataclasses import replace
+                        old_common=replace(part,name=f'{old.name} / {kind} ({n})',path=old.path,source=old.source)
                         entries.append((old_common,kind,'A',old_alpha,record_index,record.a_index))
             continue
         if status in ('SAME','RENAMED'):

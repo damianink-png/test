@@ -143,5 +143,7 @@ def test_unchecked_competitive_translation_cannot_certify_unique_pose(monkeypatc
     monkeypatch.setattr(deferred_alignment,'frame_support',proof)
     result=deferred_alignment.propose(old,new,records,.01)
     assert result['status']=='unresolved'
-    assert 'Limit' in result['reason']
-    assert sum(kw.get('verify_all',False) for kw in calls)==24
+    assert 'limit' in result['reason'].casefold()
+    # The unified registration engine has a 12-hypothesis native budget.
+    # A bounded, unfinished search must not announce a unique placement.
+    assert sum(kw.get('verify_all',False) for kw in calls)==12

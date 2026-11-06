@@ -9,7 +9,7 @@ from .report import produce
 from . import trace_r22 as trace
 
 
-def confirm_original_after_failed_search(alignment_approval,reason,progress=None):
+def confirm_original_after_failed_search(alignment_approval,reason,progress=None,search_diagnostics=None):
     """Never silently undo a suspected shift after an explicit failed search.
 
     The caller may continue in original coordinates ONLY on a new, explicit
@@ -20,8 +20,9 @@ def confirm_original_after_failed_search(alignment_approval,reason,progress=None
         progress('UWAGA: nie potwierdzono przesuniecia. Nie uruchamiam automatycznie porownania bez wyrownania.')
     if alignment_approval is None:
         raise InterruptedError('Nie potwierdzono przesuniecia: '+reason)
-    decision=alignment_approval({'status':'unresolved','search_failed':True,
-                                 'reason':reason})
+    question={'status':'unresolved','search_failed':True,'reason':reason}
+    if search_diagnostics is not None:question['search_diagnostics']=search_diagnostics
+    decision=alignment_approval(question)
     if decision!='original':
         raise InterruptedError('Przerwano: przesuniecie niepotwierdzone, nie wybrano oryginalnego polozenia.')
     if progress:progress('Uzytkownik swiadomie wybral porownanie w oryginalnym polozeniu.')
@@ -123,6 +124,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     tc=perf_counter()
     deferred_s=0.0
     trace.mark('signatures','BEGIN',solids_a=len(a),solids_b=len(b))
+    related_warning=None
     if not identical_sources and not manual_review:
         from .similarity_gate import check_related,ModelsUnrelated
         try:
@@ -130,6 +132,12 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         except ModelsUnrelated as exc:
             if force_unrelated:
                 if progress:progress('UWAGA: '+str(exc)+' Kontynuuję na życzenie użytkownika.')
+            elif should_align:
+                # Strict integrated signatures are only a heuristic. Let the
+                # bounded CAD registration seek native evidence before asking
+                # whether a heavily revised pair is unrelated.
+                related_warning=str(exc)
+                if progress:progress('Wstępne sygnatury różnią się; sprawdzam wspólny układ CAD przed oceną zgodności modeli.')
             elif alignment_approval is not None:
                 choice=alignment_approval({'status':'unrelated','unrelated':True,'reason':str(exc)})
                 if choice!='original':
@@ -141,13 +149,23 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     trace.mark('signatures','END')
     from .registration_search import RegistrationSearch
     registration_search=RegistrationSearch()
+    registration_search.diagnostic_path=Path(output)/'WYROWNANIE_DIAGNOSTYKA.json'
     def inspect_stage1(matched,free_a,free_b):
         if not should_align:return None
         from .deferred_alignment import propose_from_stage1
         with trace.phase('translation_candidates',matched=len(matched),remaining_a=len(free_a),remaining_b=len(free_b)):
             from .native_guard import NativeGeometryFailure
             try:
-                return propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress,cancelled,search_state=registration_search)
+                proposal=propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress,cancelled,search_state=registration_search)
+                registration_search.checkpoint(proposal)
+                if proposal is None and getattr(registration_search,'surface_diagnostics',{}).get('status')=='already_aligned':
+                    # The GUI can finish its comparison in a verified frame,
+                    # including independent native checks of unproven bodies.
+                    # Standalone stage-1 hooks still decline identity moves.
+                    return dict(registration_search.surface_diagnostics)
+                if related_warning and proposal is None and not matched:
+                    return {'status':'unrelated','unrelated':True,'reason':related_warning+' Nie znaleziono również potwierdzonego wspólnego układu CAD.'}
+                return proposal
             except NativeGeometryFailure as exc:
                 return {'status':'unresolved','reason':'Automatyczne wyszukiwanie: '+str(exc),
                         'search_diagnostics':registration_search.summary()}
@@ -160,11 +178,12 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         # OCCT process, NOT its verdicts, across those checks. Each request
         # retains its own input B-Rep and 90s bounded deadline.
         from .native_session import world_session
-        with world_session(max(len(a),len(b))>=80 and bool(certified_pairs)):
+        registered_frame=bool(alignment.get('applied') or (alignment.get('status')=='already_aligned' and alignment.get('verification_scope')=='surface_anchors_then_full_revision'))
+        with world_session(registered_frame or (max(len(a),len(b))>=80 and bool(certified_pairs))):
             return compare(a,b,tolerance,progress=progress,cancelled=cancelled,
                            revision_only=revision_style and not manual_review,
                            exact_serialization=True,geometry_context=geometry_context,
-                           stage1_check=stage_hook,step_reexport_tolerance=step_reexport_tol,certified_pairs=certified_pairs)
+                           stage1_check=stage_hook,step_reexport_tolerance=step_reexport_tol,certified_pairs=certified_pairs,registered_frame=registered_frame)
 
     proposal=None
     with trace.phase('initial_comparison'):
@@ -184,7 +203,10 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         if proposal is None:
             # Stage 1 ruled out expensive registration, not all possible
             # geometric differences; continue the ordinary compare unchanged.
-            if rec:
+            if registration_search.summary().get('surface_evidence',{}).get('status')=='already_aligned':
+                alignment.update(status='already_aligned',applied=False,frame_verified=True,
+                                 reason='Zachowane powierzchnie potwierdziły oryginalny układ CAD.')
+            elif rec:
                 baseline=sum(r.status in ('SAME','RENAMED') for r in rec)
                 population=min(len(a),len(b))
                 if baseline<max(2,ceil(.20*population)):
@@ -195,6 +217,9 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         else:
             decision=None
             automatic=False
+            if proposal.get('status')=='already_aligned':
+                decision='align';automatic=True
+                if progress:progress('Zachowane powierzchnie potwierdziły oryginalny układ CAD. Porównuję zmiany detali bez przesuwania modeli.')
             # Automatic relocation is reserved for a LARGE, fully B-Rep
             # confirmed and unambiguous gain over the original CAD frame.
             if proposal.get('status')=='registered':
@@ -238,24 +263,25 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                     proposal=continue_registration(a,b,tolerance,registration_search,
                                                    progress,cancelled)
                     # The user has already explicitly requested a search.
-                    # Apply a verified registration directly rather than
-                    # asking whether to search a second time.
+                    # Strong whole-body evidence can apply directly.
+                    # Surface-only evidence still needs concrete approval.
                     if proposal.get('status') in ('registered','already_aligned'):
-                        decision='align'
-                        if progress:
-                            progress('Znaleziono potwierdzone wyrównanie B do A; stosuję przesunięcie i kontynuuję analizę.')
+                        decision=(alignment_approval(proposal) if proposal.get('requires_confirmation') else 'align')
+                        if progress and decision=='align':
+                            progress('Potwierdzono oryginalny układ CAD; kontynuuję bez przesuwania modeli.' if proposal.get('status')=='already_aligned' else
+                                     'Znaleziono potwierdzone wyrównanie B do A; stosuję przesunięcie i kontynuuję analizę.')
                     else:
                         alignment.update(status='search_unresolved_original',applied=False,
                                          reason=str(proposal.get('reason','Nie potwierdzono przesunięcia.')))
                         decision=confirm_original_after_failed_search(
-                            alignment_approval,alignment['reason'],progress)
+                            alignment_approval,alignment['reason'],progress,search_diagnostics=registration_search.summary())
                 except AlignmentUnavailable as exc:
                     # An unsuccessful explicit search must not reopen the
                     # same "search for shift" dialog indefinitely.
                     alignment.update(status='search_failed_original',applied=False,
                                      reason='Nie znaleziono potwierdzonego przesunięcia: '+str(exc))
                     decision=confirm_original_after_failed_search(
-                        alignment_approval,alignment['reason'],progress)
+                        alignment_approval,alignment['reason'],progress,search_diagnostics=registration_search.summary())
             if decision=='original':
                 if alignment.get('status') in ('search_failed_original','search_unresolved_original'):
                     alignment.update(applied=False)
@@ -266,7 +292,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                 rotation=np.asarray(proposal.get('rotation_B_to_A',np.eye(3)))
                 offset=np.asarray(proposal.get('translation_B_to_A_mm',[0,0,0]))
                 b=[_relocate(p,rotation,offset) for p in b]
-                alignment={**proposal,'approved_by_user':not automatic,'applied':True}
+                alignment={**proposal,'approved_by_user':not automatic,'applied':proposal.get('status')!='already_aligned'}
                 step_reexport_tol=bool(proposal.get('step_reexport_tolerance'))
                 certified_pairs=proposal.get('certified_pairs',[])
             else:
@@ -310,16 +336,29 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     if manual_review:
         from .manual_pairs import apply_pairs
         rec=apply_pairs(a,b,rec,manual_review['pairs'],tolerance)
+    if should_align and progress:
+        progress('Układ porównania: zastosowano zatwierdzone wyrównanie B → A.' if alignment.get('applied') else
+                 'Układ porównania: oryginalne współrzędne; nie zastosowano przesunięcia modeli.')
     precomputed_regions={}
     overlap_diagnostics=None
+    revision_classification_s=material_revision_matching_s=0.
     if revision_style:
         trace.mark('revision_classification','BEGIN',pairs=len(rec))
         from .revision_rules import classify_revisions
+        revision_started=perf_counter()
         rec=classify_revisions(a,b,rec,tolerance,progress=progress,geometry_context=geometry_context,geometry_first=True)
+        revision_classification_s=perf_counter()-revision_started
+        material_started=perf_counter()
         from .revision_overlap import merge_material_revisions
         rec,precomputed_regions,overlap_diagnostics=merge_material_revisions(a,b,rec,tolerance,progress,cancelled,review_approval=material_approval,geometry_context=geometry_context)
+        material_revision_matching_s=perf_counter()-material_started
         trace.mark('revision_classification','END',pairs=len(rec),boolean_checks=(overlap_diagnostics or {}).get('boolean_checks'))
+        if alignment.get('applied'):
+            alignment['final_same_count']=sum(r.status in ('SAME','RENAMED') for r in rec)
+            alignment['final_moved_count']=sum(r.status=='MOVED' for r in rec)
         if progress:
+            if alignment.get('applied') and alignment.get('final_moved_count'):
+                progress(f'Ruch detali po wyrównaniu: {alignment["final_moved_count"]} części zachowało geometrię i przemieściło się lokalnie względem złożenia.')
             same=sum(r.status in ("SAME","RENAMED") for r in rec)
             renamed=sum(r.name_changed for r in rec if r.status in ("SAME","RENAMED"))
             progress(f"Po wyrównaniu: {same} brył BEZ ZMIAN geometrycznych (różnice zapisu nazw: {renamed}).")
@@ -362,7 +401,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         except Exception as exc:
             (folder/'UWAGI_SCENA.txt').write_text(str(exc),encoding='utf-8')
             if progress:progress('Podgląd niedostępny: '+str(exc))
-    timing={'import_A_including_fingerprint_s':import_a_s,'import_B_s':import_b_s,'import_mode':import_mode,'parallel_import_wall_s':import_parallel_wall_s,'parallel_worker_import_s':import_parallel_worker_s,'alignment_preflight_and_optional_registration_s':alignment_s,'alignment_status':alignment.get('status','not_requested'),'matching_and_classification_s':matching_s,'bom_grouping_s':summary.get('bom_seconds',0),
+    timing={'import_A_including_fingerprint_s':import_a_s,'import_B_s':import_b_s,'import_mode':import_mode,'parallel_import_wall_s':import_parallel_wall_s,'parallel_worker_import_s':import_parallel_worker_s,'alignment_preflight_and_optional_registration_s':alignment_s,'alignment_status':alignment.get('status','not_requested'),'matching_and_classification_s':matching_s,'revision_occurrence_classification_s':revision_classification_s,'material_revision_matching_s':material_revision_matching_s,'bom_grouping_s':summary.get('bom_seconds',0),
          'step_and_reports_stage_s':output_stage_s,
          'total_s':perf_counter()-ts,'registry':dict(geometry_context.stats),'slowest_bom_or_population_checks':geometry_context.slow_checks}
     (folder/'CZASY_ANALIZY.json').write_text(json.dumps(timing,ensure_ascii=False,indent=2),encoding='utf-8')

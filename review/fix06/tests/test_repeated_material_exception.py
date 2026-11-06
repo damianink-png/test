@@ -20,6 +20,11 @@ from test_repeated_revision_policy import parts
     ('12345_REV_A:1','12345_REV_B:8'),
     ('12345_R01','12345_R02'),
     ('12345_REV_A_001','12345_REV_B_002'),
+    ('czesc1_afm0','czesc1_afm2'),
+    ('czesc1_afm00','CZESC1_AFM02'),
+    ('czesc1_afm0','czesc1_xyz2'),
+    ('czesc1_afm0.step:1','czesc1_afm2.stp:8'),
+    ('12345_REV_A.step:1','12345_REV_B.stp:8'),
 ])
 def test_separated_revisions_share_whole_name_family(old,new):
     assert material_name_key(old)==material_name_key(new)
@@ -35,6 +40,11 @@ def test_separated_revisions_share_whole_name_family(old,new):
     ('12345_LEFT','12345_RIGHT'),
     ('PART_RAIL','PART_REWORK'),
     ('12345_A','98765_A'),
+    ('czesc1_afm0','czesc2_xyz2'),
+    ('czesc1_afm100','czesc1_afm200'),
+    ('czesc1afm0','czesc1afm2'),
+    ('czesc1_afm0_REV_A','czesc1_afm2_REV_B'),
+    ('12345_LEWY_afm0','12345_PRAWY_afm2'),
 ])
 def test_similar_fragments_or_drawing_numbers_do_not_share_family(old,new):
     assert material_name_key(old)!=material_name_key(new)
@@ -49,15 +59,30 @@ def leftovers(a,b):
             [Record(None,j,'ADDED','') for j in range(len(b))])
 
 
-def test_equal_eight_copies_with_revision_names_receive_verified_common():
-    old=named(10,8,'DRAWING_123_REV_A')
-    new=named(11,8,'DRAWING_123_REV_B')
+@pytest.mark.parametrize('old_name,new_name',[
+    ('DRAWING_123_REV_A','DRAWING_123_REV_B'),
+    ('czesc1_afm0','czesc1_afm2'),
+    ('czesc1_afm0','czesc1_xyz2'),
+])
+def test_equal_eight_copies_with_revision_names_receive_verified_common(old_name,new_name):
+    old=named(10,8,old_name)
+    new=named(11,8,new_name)
     result,regions,stat=merge_material_revisions(old,new,leftovers(old,new))
     assert Counter(r.status for r in result)=={'CHANGED':8}
     assert len(regions)==8 and not stat.get('incomplete')
     assert stat['repeated_old_admitted']==stat['repeated_new_admitted']==8
     assert stat['boolean_checks']>=1
     assert all('Common' in r.confidence for r in result)
+
+
+@pytest.mark.parametrize('count,name',[(7,'czesc1_afm2'),(8,'czesc2_xyz2')])
+def test_afm_revisions_still_require_equal_populations_and_same_base(monkeypatch,count,name):
+    old=named(10,8,'czesc1_afm0');new=named(11,count,name)
+    def forbidden(*args,**kwargs):raise AssertionError('Blocked AFM family reached Common')
+    monkeypatch.setattr('dsac29.native_guard.guarded_common',forbidden)
+    result,regions,stat=merge_material_revisions(old,new,leftovers(old,new))
+    assert Counter(r.status for r in result)=={'REMOVED':8,'ADDED':count}
+    assert not regions and stat['boolean_checks']==0
 
 
 @pytest.mark.parametrize('count,name',[(7,'DRAWING_123_REV_B'),(8,'OTHER_123_REV_B')])

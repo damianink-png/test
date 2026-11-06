@@ -1,12 +1,15 @@
 """Regression for legacy safety gates that made large revisions UNCERTAIN."""
-from types import SimpleNamespace
 import numpy as np
 from dsac29.assignment import assign
 from dsac29 import deferred_alignment
 
 
 def fake_parts(centers):
-    return [SimpleNamespace(center=np.array([float(x),0.,0.]),tag='repeat') for x in centers]
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from dsac29.geometry import describe
+    from dsac29.alignment import _relocate
+    base=describe(BRepPrimAPI_MakeBox(1,2,3).Shape(),'repeat','repeat')
+    return [_relocate(base,np.eye(3),np.array([float(x),0.,0.])-base.center) for x in centers]
 
 
 def test_large_strict_rows_not_all_uncertain():
@@ -35,14 +38,12 @@ def test_large_global_conflict_stays_conservative():
 
 
 def test_unequal_repeats_do_not_trigger_global_shift(monkeypatch):
-    monkeypatch.setattr(deferred_alignment,'signature',lambda p:p.tag)
     a=fake_parts(range(100));b=fake_parts(list(range(1,100))+[150,180])
     assert not deferred_alignment._periodic_global_offset_possible(
         a,b,.01,100,free_a={0},free_b={99,100},baseline=99)
 
 
 def test_periodic_one_pitch_shift_remains_detectable(monkeypatch):
-    monkeypatch.setattr(deferred_alignment,'signature',lambda p:p.tag)
     a=fake_parts([i*40 for i in range(30)])
     b=fake_parts([i*40+40 for i in range(30)])
     assert deferred_alignment._periodic_global_offset_possible(
@@ -50,7 +51,6 @@ def test_periodic_one_pitch_shift_remains_detectable(monkeypatch):
 
 
 def test_unshifted_1482_of_1597_stays_in_world_frame(monkeypatch):
-    monkeypatch.setattr(deferred_alignment,'signature',lambda p:p.tag)
     a=fake_parts([i*30 for i in range(1597)])
     b=fake_parts([i*30 for i in range(1482)]+[100000+i*30 for i in range(115)])
     assert not deferred_alignment._periodic_global_offset_possible(

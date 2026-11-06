@@ -1,0 +1,47 @@
+{
+  "label": "0.6.4",
+  "synthetic_cases": [
+    {
+      "case": "translation",
+      "registered": true,
+      "correct_frame": true,
+      "frame_error": 0.0,
+      "seconds": 0.0321,
+      "native_certified_pairs": 18
+    },
+    {
+      "case": "translation_reexport_drift",
+      "registered": false,
+      "correct_frame": false,
+      "frame_error": null,
+      "seconds": 0.0059,
+      "native_certified_pairs": 0
+    },
+    {
+      "case": "rotation_reexport_drift",
+      "registered": false,
+      "correct_frame": false,
+      "frame_error": null,
+      "seconds": 0.1124,
+      "native_certified_pairs": 0
+    },
+    {
+      "case": "repeated_rotation",
+      "registered": false,
+      "correct_frame": false,
+      "frame_error": null,
+      "seconds": 0.1232,
+      "native_certified_pairs": 0
+    },
+    {
+      "case": "sparse_8_of_80_reexport",
+      "registered": false,
+      "correct_frame": false,
+      "frame_error": null,
+      "seconds": 0.0031,
+      "native_certified_pairs": 0
+    }
+  ],
+  "correct_frames": 1,
+  "total": 5
+}

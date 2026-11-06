@@ -20,7 +20,9 @@ def test_extended_search_recovers_named_shift_missed_by_signature_buckets(monkey
     monkeypatch.setattr(reg,'signature',lambda p:'old-export' if id(p) in ids else 'new-export')
     records=[Record(i,None,'REMOVED','') for i in range(8)]+[Record(None,j,'ADDED','') for j in range(8)]
     state=setup_state(a,b)
-    assert reg.propose(a,b,records,.01,search_state=state) is None
+    initial=reg.propose(a,b,records,.01,search_state=state)
+    assert initial['status']=='registered'  # Native CAD landmarks survive signature drift
+    state=setup_state(a,b)
     monkeypatch.setattr(alignment,'align_assembly',lambda *a,**kw:pytest.fail('legacy registration invoked'))
     proposal=continue_registration(a,b,.01,state)
     assert proposal['status']=='registered'
@@ -30,6 +32,10 @@ def test_extended_search_recovers_named_shift_missed_by_signature_buckets(monkey
 
 
 def test_completed_failed_pose_is_not_replayed(monkeypatch):
+    from dsac29 import surface_registration
+    # Test the body-proof retry contract independently of the NEW, different
+    # preserved-surface proof which is allowed for changed whole bodies.
+    monkeypatch.setattr(surface_registration,'propose',lambda *a,**k:None)
     a,b=parts(),parts(shift=1000)
     state=setup_state(a,b);state.completed.append(np.array([-1000.,0,0]))
     monkeypatch.setattr(reg,'frame_support',lambda *a,**kw:pytest.fail('completed pose replayed'))

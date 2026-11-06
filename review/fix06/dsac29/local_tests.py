@@ -100,10 +100,50 @@ def run(folder, progress=None, source_step=None):
         proposal=continue_registration(a,b,.01,state)
         assert proposal['status']=='registered' and proposal['votes']==8
         assert np.allclose(proposal['translation_B_to_A_mm'],[-1000,0,0])
-        assert proposal['search_diagnostics']['algorithm']=='current_translation_consensus'
+        assert proposal['search_diagnostics']['algorithm']=='cad_global_consensus_trimmed_refinement'
         assert state.expanded and len(proposal['certified_pairs'])==8
         return 'Rozszerzone wyszukiwanie biezacego silnika; 8/8 B-Rep; bez starego align_assembly'
     check("Kontynuacja biezacego wyrownania",current_registration_continuation)
+
+    def interrupted_frame_continuation():
+        import numpy as np
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
+        from OCP.gp import gp_Pnt
+        from .geometry import describe
+        from .alignment import _relocate
+        from .compare import Record
+        from .cad_registration import propose
+        from .registration_gate import frame_support
+        from .registration_search import RegistrationSearch,continue_registration
+        from .native_guard import NativeGeometryFailure
+        left=BRepPrimAPI_MakeBox(20,30,5).Shape()
+        right=BRepAlgoAPI_Fuse(BRepPrimAPI_MakeBox(4,30,5).Shape(),
+            BRepPrimAPI_MakeBox(gp_Pnt(4,0,0),16,30,5).Shape()).Shape()
+        a=[];b=[];offset=np.array([1000.,250.,-50.])
+        for i in range(8):
+            pos=np.array([i*57.,i*i*3.,i%3*40.])
+            a.append(_relocate(describe(left,'DIAG_REV_A','DIAG'),np.eye(3),pos))
+            b.append(_relocate(describe(right,'DIAG_REV_B','DIAG'),np.eye(3),pos+offset))
+        rows=[Record(i,None,'REMOVED','') for i in range(8)]+[Record(None,j,'ADDED','') for j in range(8)]
+        state=RegistrationSearch();state.free_a=frozenset(range(8));state.free_b=frozenset(range(8))
+        injected=[False]
+        def interrupted(*args,**kwargs):
+            if not injected[0]:
+                injected[0]=True
+                raise NativeGeometryFailure('DIAGNOSTIC_ONLY: injected transient native interruption')
+            return frame_support(*args,**kwargs)
+        propose(a,b,rows,.01,search_state=state,support=interrupted)
+        assert injected[0] and state.failures
+        assert not any(np.array_equal(t,np.asarray(f['offset'])) for f in state.failures for t in state.completed)
+        result=continue_registration(a,b,.01,state)
+        assert result['status']=='registered' and result['votes']==8
+        assert np.allclose(result['translation_B_to_A_mm'],-offset)
+        assert len(result['certified_pairs'])==8 and not state.failures
+        assert state.resolved_failures
+        return 'Syntetyczne przerwanie -> wznowienie -> 8/8 natywnych dowodow dla bryl z innym podzialem scian'
+    check("Wznowienie nieukonczonego dowodu B-Rep",interrupted_frame_continuation)
+
 
 
     def centroid_drift_registration():
@@ -130,6 +170,32 @@ def run(folder, progress=None, source_step=None):
         assert len(final)==80 and all(r.status=='SAME' for r in final)
         return 'Dryf srodka .18 mm; przesuniecie z CAD i koncowe porownanie 80/80 B-Rep'
     check("Przesuniecie z niedokladnym srodkiem STEP",centroid_drift_registration)
+
+    def rotated_reexport_registration():
+        from dataclasses import replace
+        from .geometry import describe
+        from .alignment import _relocate
+        from .deferred_alignment import propose
+        from .compare import Record
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+        import numpy as np
+        rng=np.random.default_rng(779)
+        r=np.array([[0.,-1.,0.],[1.,0.,0.],[0.,0.,1.]])
+        t=np.array([1000.,-300.,200.])
+        a=[_relocate(describe(BRepPrimAPI_MakeBox(10+i,12+i*.3,8+i*.7).Shape(),'DIAG','DIAG'),
+                     np.eye(3),rng.uniform(-400,400,3)) for i in range(12)]
+        b=[_relocate(p,r,t) for p in a]
+        b=[replace(p,volume=p.volume*1.01,area=p.area*1.005,center=p.center+.18,
+                   eigenvalues=p.eigenvalues*1.02) for p in b][::-1]
+        records=[Record(i,None,'REMOVED','') for i in range(12)]
+        records += [Record(None,j,'ADDED','') for j in range(12)]
+        result=propose(a,b,records,.01)
+        assert result['status']=='registered' and result['votes']==12
+        rr=np.asarray(result['rotation_B_to_A']);tt=np.asarray(result['translation_B_to_A_mm'])
+        assert np.allclose(rr@r,np.eye(3)) and np.allclose(rr@t+tt,0)
+        assert len(result['certified_pairs'])==12
+        return 'Obrot, przesuniecie, inne sygnatury reeksportu i kolejnosc; 12/12 B-Rep'
+    check("Globalne wyrownanie CAD po reeksporcie",rotated_reexport_registration)
 
     def export_variant(label,name,flat,rootless):
         from dsac29.step_io import _export_revision_step,inspect_step_colors
