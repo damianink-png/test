@@ -32,6 +32,10 @@ def test_extended_search_recovers_named_shift_missed_by_signature_buckets(monkey
 
 
 def test_completed_failed_pose_is_not_replayed(monkeypatch):
+    from dsac29 import surface_registration
+    # Test the body-proof retry contract independently of the NEW, different
+    # preserved-surface proof which is allowed for changed whole bodies.
+    monkeypatch.setattr(surface_registration,'propose',lambda *a,**k:None)
     a,b=parts(),parts(shift=1000)
     state=setup_state(a,b);state.completed.append(np.array([-1000.,0,0]))
     monkeypatch.setattr(reg,'frame_support',lambda *a,**kw:pytest.fail('completed pose replayed'))

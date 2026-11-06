@@ -66,7 +66,8 @@ def propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress=None,cancel
         strict=propose(a,b,records,tolerance,progress,cancelled,search_state=search_state)
     else:
         strict=propose(a,b,records,tolerance,progress,cancelled)
-    return strict
+    # Original-frame evidence does not interrupt/restart ordinary compare.
+    return None if strict and strict.get('status')=='already_aligned' else strict
 
 
 def _step_reexport_fallback(a,b,baseline,tolerance,progress=None,cancelled=None):

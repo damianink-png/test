@@ -74,6 +74,19 @@ with sync_playwright() as p:
  page.get_by_role('alertdialog').wait_for()
  assert page.get_by_role('button',name='Szukaj dokładniej',exact=True).count()==0
  page.get_by_role('button',name='Oryginalne położenie',exact=True).click()
+ # A surface-proven pose after Search must show its concrete placement and
+ # still wait for approval. Include rotation-only poses (zero translation).
+ page.get_by_role('alertdialog').wait_for(state='hidden')
+ page.evaluate("window.__job.question={token:'surface-pose',unresolved:false,translation_mm:[0,0,0],rotation_deg:90,surface_anchor_count:16,surface_parts_a:8,surface_parts_b:8,reason:'preserved_native_faces'}")
+ page.get_by_role('alertdialog').wait_for()
+ assert '16 zachowanych powierzchniach' in page.get_by_role('alertdialog').inner_text()
+ assert '90.0000°' in page.get_by_role('alertdialog').inner_text()
+ assert page.locator('.translation').count()==1
+ assert not page.evaluate("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='surface-pose')")
+ page.screenshot(path=str(out/'alignment-surface-rotation.png'))
+ page.get_by_role('button',name='Wyrównaj modele',exact=True).click()
+ page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='surface-pose'&&c.args.decision==='align')")
+ page.get_by_role('alertdialog').wait_for(state='hidden')
  # Material uncertainty must never require a user decision or show the old modal.
  page.evaluate("window.__job.question={token:'material-case',unresolved:false,material_unverified:true,translation_mm:[0,0,0],reason:'INVALID_BREP_AFTER_REPAIR',unverified_A:2,unverified_B:2}")
  page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='material-case'&&c.args.decision==='review')",timeout=5000)

@@ -11,6 +11,28 @@ from .alignment import _relocate
 from .registration_gate import FrameProofCache
 
 
+def place_for_proof(part,rotation,translation):
+    """Place original B-Rep without reintegrating every candidate solid.
+
+    Rigid placements preserve volume, area and principal moments; rotate the
+    inertia tensor and axes algebraically. The AABB here is conservative and
+    ONLY a search descriptor. Native proofs inspect the actual placed shape.
+    The accepted final model still uses alignment._relocate/describe for its
+    report dimensions. This shortcut never publishes a SAME verdict.
+    """
+    from dataclasses import replace
+    from .geometry import transform
+    r=np.asarray(rotation,dtype=float);t=np.asarray(translation,dtype=float)
+    if (r.shape!=(3,3) or t.shape!=(3,) or not np.isfinite(r).all() or not np.isfinite(t).all()
+            or not np.allclose(r.T@r,np.eye(3),rtol=0,atol=1e-10)
+            or not np.isclose(np.linalg.det(r),1.,rtol=0,atol=1e-10)):
+        raise ValueError('Hipoteza CAD wymaga obrotu właściwego i skończonej translacji')
+    if np.array_equal(r,np.eye(3)):return _relocate(part,r,t)
+    return replace(part,shape=transform(part.shape,r,t),center=r@part.center+t,
+                   inertia=r@part.inertia@r.T,axes=r@part.axes,
+                   bbox=tuple(float(v) for v in np.abs(r)@np.asarray(part.bbox)))
+
+
 def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=None,extended=False,support=None):
     from .registration_gate import frame_support
     from .registration_search import RegistrationSearch
@@ -29,6 +51,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
         state.features=(search.landmarks(a,cancelled),search.landmarks(b,cancelled))
     native=support or frame_support
     deadline=monotonic()+(120 if extended else 60)
+    body_deadline=min(deadline,monotonic()+(60 if extended else 30))
     budget=32 if extended or population==1 else 12
     radius=max((float(np.linalg.norm(p.bbox)) for p in b),default=0.)
     attempted=0;best_sample=(0,0,0);winners=state.pose_winners
@@ -53,12 +76,22 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
             if winners:
                 best=max(w['votes'] for w in winners)
                 if count<best and pose.volume<max(w['_volume'] for w in winners):continue
-            if attempted>=budget or monotonic()>=deadline:
+            if attempted>=budget or monotonic()>=body_deadline:
                 return False
             attempted+=1
             if progress:progress(f'Wyrównanie: hipoteza {attempted}/{budget}, {count} kandydatów; {pose.source}.')
-            placed=[_relocate(p,pose.rotation,pose.translation) for p in b]
-            cache=FrameProofCache();cache.deadline=deadline;cache.pair_timeout=12.
+            placed=[]
+            for number,p in enumerate(b):
+                if number%32==0:
+                    search.check_cancel(cancelled)
+                    if monotonic()>=body_deadline:return False
+                if progress and number%100==0:
+                    progress(f'Przygotowanie położenia CAD: {number}/{len(b)} brył; bez ponownego całkowania geometrii.')
+                placed.append(place_for_proof(p,pose.rotation,pose.translation))
+            # Preparation can exhaust the search budget. Do not announce
+            # five synthetic native failures when no proof has even started.
+            if monotonic()>=body_deadline:return False
+            cache=FrameProofCache();cache.deadline=body_deadline;cache.pair_timeout=12.
             cache.lookup_points=(state.features[0],state.features[1]@pose.rotation.T+pose.translation)
             try:
                 pre=native(a,placed,tolerance,proofs=24,progress=progress,cancelled=cancelled,proof_cache=cache)
@@ -119,6 +152,18 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
             complete=verify(rotations)
         if complete:
             complete=verify(translations[3:])
+        if not winners and baseline<max(8,int(.2*population)) and monotonic()<deadline:
+            from .surface_registration import propose as preserved_frame
+            frame=preserved_frame(a,b,tolerance,state,extended=extended,progress=progress,
+                                  cancelled=cancelled,deadline=deadline)
+            if frame is not None:
+                state.surface_diagnostics={k:v for k,v in frame.items() if k not in ('rotation_B_to_A',)}
+                if frame.get('status') in ('registered','already_aligned'):
+                    frame['search_diagnostics']=state.summary()
+                    return frame
+                if frame.get('status')=='unresolved':
+                    frame['search_diagnostics']=state.summary()
+                    return frame
     if not complete:
         return {'status':'unresolved','reason':'Osiągnięto limit czasu lub hipotez wyrównania; nie przyjęto niejednoznacznego wyniku.',
                 'search_diagnostics':state.summary()}

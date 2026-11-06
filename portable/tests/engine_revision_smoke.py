@@ -113,6 +113,55 @@ try:
 finally:
     if proc.poll() is None:proc.kill();proc.wait()
 
+# Independent STEP exports cover both changed revisions and the same solid
+# re-exported with a different face partition. No mocked import or proof.
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut,BRepAlgoAPI_Fuse
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+from OCP.gp import gp_Ax2,gp_Pnt,gp_Dir
+base=BRepPrimAPI_MakeBox(20,30,5).Shape()
+hole=BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(6,9,-1),gp_Dir(0,0,1)),2.,7.).Shape()
+changed=BRepAlgoAPI_Cut(base,hole).Shape()
+partitioned=BRepAlgoAPI_Fuse(BRepPrimAPI_MakeBox(4,30,5).Shape(),
+    BRepPrimAPI_MakeBox(gp_Pnt(4,0,0),16,30,5).Shape()).Shape()
+for case,new_shape,expected in [('changed_surface_frame',changed,{'CHANGED':8}),
+                                ('same_partitioned_frame',partitioned,{'SAME':8})]:
+    old=ColoredDocument();new=ColoredDocument()
+    offset=np.array([1000.,250.,-50.])
+    for i in range(8):
+        pos=np.array([i*57.,i*i*3.,(i%3)*40.])
+        old.add(transform(base,np.eye(3),pos),'PLATE_123_REV_A',(.2,.5,.8))
+        new.add(transform(new_shape,np.eye(3),pos+offset),'PLATE_123_REV_B',(.2,.5,.8))
+    pa=root/(case+'_old.step');pb=root/(case+'_new.step')
+    old.write(pa);new.write(pb);output=root/case
+    proc=subprocess.Popen([exe,'--worker','compare','--a',str(pa),'--b',str(pb),
+        '--output',str(output),'--revision-style','--no-bom','--generate-step','--align-auto'])
+    deadline=time.monotonic()+300;approved_tokens=set()
+    try:
+        while proc.poll() is None:
+            if time.monotonic()>deadline:raise TimeoutError(case)
+            request=output/'_WYROWNANIE_PYTANIE.json'
+            if request.exists():
+                proposal=json.loads(request.read_text(encoding='utf-8'))
+                if proposal['token'] not in approved_tokens:
+                    assert not proposal.get('unresolved') and not proposal.get('unrelated'),proposal
+                    assert np.allclose(proposal['translation_mm'],-offset,atol=1e-5),proposal
+                    (output/'_WYROWNANIE_ODPOWIEDZ.json').write_text(json.dumps(
+                        dict(token=proposal['token'],decision='align')),encoding='utf-8')
+                    approved_tokens.add(proposal['token'])
+            time.sleep(.25)
+        assert proc.returncode==0,(case,proc.returncode)
+        summary=json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
+        assert summary['statuses']==expected,(case,summary['statuses'])
+        assert summary['alignment']['applied']
+        assert np.allclose(summary['alignment']['translation_B_to_A_mm'],-offset,atol=1e-5)
+        assert summary['main_step_ready'] and not summary.get('material_errors'),summary
+        if case=='changed_surface_frame':
+            assert approved_tokens,'Surface-only placement must require explicit approval'
+            assert summary['alignment']['certified_pairs']==[],summary['alignment']
+        print('Frozen comparison PASS: '+case,flush=True)
+    finally:
+        if proc.poll() is None:proc.kill();proc.wait()
+
 # The onefile executable must also work as its own isolated native worker.
 a = describe(BRepPrimAPI_MakeBox(20,10,7).Shape(), 'A', 'A')
 b = describe(BRepPrimAPI_MakeBox(20,11,7).Shape(), 'B', 'B')

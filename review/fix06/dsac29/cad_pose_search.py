@@ -79,7 +79,8 @@ def landmarks(parts, cancelled=None):
 def compatible(a,b):
     # Loose descriptor admission, including ordinary STEP integration drift.
     # This threshold is NOT passed to any native geometry proof.
-    return (min(a.area,b.area,a.volume,b.volume)>0 and
+    return (getattr(a,'feature_kind',None)==getattr(b,'feature_kind',None) and
+            min(a.area,b.area,a.volume,b.volume)>0 and
             abs(a.area-b.area)<=max(1.,.025*max(a.area,b.area)) and
             abs(a.volume-b.volume)<=max(.01,.05*max(a.volume,b.volume)))
 
@@ -136,17 +137,24 @@ def correspondences(a,b,aa,bb,limit=256):
     return pairs
 
 
-def match_pose(a,b,aa,bb,rotation,translation,gate):
-    cells=defaultdict(list)
-    for i,point in enumerate(aa):cells[tuple(np.floor(point/gate).astype('int64'))].append(i)
+def match_pose(a,b,aa,bb,rotation,translation,gate,additional_points=None):
+    inputs=[(aa,bb)]
+    if additional_points is not None:inputs.append(additional_points)
+    indexes=[]
+    for left,right in inputs:
+        cells=defaultdict(list)
+        for i,point in enumerate(left):cells[tuple(np.floor(point/gate).astype('int64'))].append(i)
+        indexes.append((cells,left,right@rotation.T+translation))
     options={}
-    for j,point in enumerate(bb@rotation.T+translation):
-        base=tuple(np.floor(point/gate).astype('int64'));near=[]
-        for delta in product((-1,0,1),repeat=3):
-            for i in cells.get(tuple(base[k]+delta[k] for k in range(3)),()):
-                distance=float(np.linalg.norm(aa[i]-point))
-                if distance<=gate and compatible(a[i],b[j]):near.append((distance,i))
-        if near:options[j]=[i for _,i in sorted(near)]
+    for j in range(len(b)):
+        near={}
+        for cells,left,moved in indexes:
+            point=moved[j];base=tuple(np.floor(point/gate).astype('int64'))
+            for delta in product((-1,0,1),repeat=3):
+                for i in cells.get(tuple(base[k]+delta[k] for k in range(3)),()):
+                    distance=float(np.linalg.norm(left[i]-point))
+                    if distance<=gate and compatible(a[i],b[j]):near[i]=min(near.get(i,float('inf')),distance)
+        if near:options[j]=[i for i in sorted(near,key=lambda i:(near[i],i))]
     # Maximum-cardinality one-to-one matching. Iterative augmenting paths do
     # not overflow the Python stack on large repeated component families.
     owner={};reverse={}
@@ -206,6 +214,11 @@ def refine(a,b,aa,bb,rotation,translation,gate,cancelled=None):
 def hypotheses(a,b,tolerance,*,features=None,extended=False,rotations=False,cancelled=None,progress=None):
     if not a or not b:return []
     aa,bb=features if features is not None else (landmarks(a,cancelled),landmarks(b,cancelled))
+    mass_points=None
+    if not any(getattr(p,'feature_kind',None) is not None for p in a+b):
+        # Secondary SEARCH index: STEP face splitting can bias vertex means.
+        # Neither this index nor its mean translation is an equality proof.
+        mass_points=(np.asarray([p.center for p in a]),np.asarray([p.center for p in b]))
     radius=max((float(np.linalg.norm(p.bbox)) for p in b),default=0.)
     gate=max(.05,5*tolerance)
     pool=correspondences(a,b,aa,bb,512 if extended else 256)
@@ -214,7 +227,7 @@ def hypotheses(a,b,tolerance,*,features=None,extended=False,rotations=False,canc
         if not np.isfinite(rotation).all() or not np.isfinite(translation).all():return
         if np.linalg.norm(rotation-np.eye(3))<1e-9 and np.linalg.norm(translation)<=tolerance:return
         if any(pose_distance(rotation,translation,p.rotation,p.translation,bb,radius)<=tolerance*.1 for p in poses):return
-        pairs=match_pose(a,b,aa,bb,rotation,translation,gate)
+        pairs=match_pose(a,b,aa,bb,rotation,translation,gate,mass_points)
         if len(pairs)<(1 if len(a)==len(b)==1 else 2):return
         volume=sum(max(0.,a[i].volume) for i,j in pairs)
         poses.append(Pose(rotation,translation,pairs,volume,source))
@@ -233,6 +246,8 @@ def hypotheses(a,b,tolerance,*,features=None,extended=False,rotations=False,canc
         for k in sorted(groups_a.keys() & groups_b.keys()):
             ii,jj=groups_a[k],groups_b[k]
             if len(ii)==len(jj):offer(np.eye(3),np.mean(aa[ii],axis=0)-np.mean(bb[jj],axis=0),'cad_cohort_translation')
+        if mass_points is not None and len(a)==len(b):
+            offer(np.eye(3),np.mean(mass_points[0],axis=0)-np.mean(mass_points[1],axis=0),'mass_center_search_hint')
     elif len(pool)>=3:
         if progress:progress(f'Wyrównanie globalne: graf zgodności {len(pool)} skojarzeń CAD; szukanie obrotu i przesunięcia.')
         ij=np.asarray(pool);left=aa[ij[:,0]];right=bb[ij[:,1]]
@@ -281,5 +296,8 @@ def hypotheses(a,b,tolerance,*,features=None,extended=False,rotations=False,canc
                     rr=np.asarray(a[i].axes)@basis@np.asarray(b[j].axes).T
                     if np.linalg.det(rr)<.999999:continue
                     offer(rr,aa[i]-rr@bb[j],'cad_principal_frame_proposal')
+    if rotations and mass_points is not None and len(a)==len(b):
+        for p in sorted(poses,key=lambda p:-len(p.pairs))[:3]:
+            offer(p.rotation,np.mean(mass_points[0],axis=0)-p.rotation@np.mean(mass_points[1],axis=0),'mass_center_rigid_hint')
     poses.sort(key=lambda p:(-len(p.pairs),-p.volume,tuple(p.translation)))
     return poses

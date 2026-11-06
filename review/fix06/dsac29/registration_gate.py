@@ -131,7 +131,8 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
       if remaining<=0:raise native_guard.NativeGeometryFailure('Limit czasu wyszukiwania CAD')
       timeout['timeout_s']=max(.1,min(proof_cache.pair_timeout or 90.,remaining))
      same=trace.brep_call('verify_reexport_guarded',i,j,
-         native_guard.guarded_world_reexport,left,right,tolerance,allow_boolean=False,**timeout)
+         (native_guard.guarded_registered_world if proof_cache is not None and proof_cache.deadline is not None
+          else native_guard.guarded_world_reexport),left,right,tolerance,allow_boolean=False,**timeout)
     except native_guard.NativeGeometryFailure as exc:
      if proof_cache is not None:
       proof_cache.failed_pairs.add((i,j))
@@ -174,9 +175,11 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
  points_a,points_b=(proof_cache.lookup_points if proof_cache is not None and proof_cache.lookup_points is not None
                     else ([p.center for p in a],[p.center for p in b]))
  buckets=defaultdict(list)
+ mass_buckets=defaultdict(list) if proof_cache is not None and proof_cache.lookup_points is not None else None
  for i,part in enumerate(a):
   pos=tuple(floor(float(v)/cell_size) for v in points_a[i])
   buckets[pos].append(i)
+  if mass_buckets is not None:mass_buckets[tuple(floor(float(v)/cell_size) for v in part.center)].append(i)
  options={}
  for j,part in enumerate(b):
   if cancelled and cancelled():raise Cancelled('Przerwano analizę')
@@ -189,7 +192,15 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
     distance=float(np.linalg.norm(points_a[i]-pos))
     if distance<=radius and world_candidate(a[i],part,tol):
      choices.append((distance,i))
-  if choices:options[j]=[i for _,i in sorted(set(choices))]
+  if mass_buckets is not None:
+   point=np.asarray(part.center);mass_base=tuple(floor(float(v)/cell_size) for v in point)
+   for steps in product((-1,0,1),repeat=3):
+    loc=tuple(x+y for x,y in zip(mass_base,steps))
+    for i in mass_buckets.get(loc,()):
+     distance=float(np.linalg.norm(a[i].center-point))
+     if distance<=radius and world_candidate(a[i],part,tol):choices.append((distance,i))
+  if choices:
+   seen=set();options[j]=[i for _,i in sorted(set(choices)) if not (i in seen or seen.add(i))]
  # Iterative maximum-cardinality assignment; B-Rep proof before edge use.
  owner={};reverse={};checked_pairs={}
  for n,start in enumerate(sorted(options,key=lambda j:(len(options[j]),j))):

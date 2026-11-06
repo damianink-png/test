@@ -29,7 +29,8 @@ class RegistrationSearch:
     def summary(self):
         return {'algorithm':'cad_global_consensus_trimmed_refinement',
                 'expanded':self.expanded,'completed_hypotheses':len(self.poses_completed) or len(self.completed),
-                'failed_native_attempts':len(self.failures)}
+                'failed_native_attempts':len(self.failures),
+                'surface_evidence':getattr(self,'surface_diagnostics',{})}
 
 
 def continue_registration(a,b,tolerance,state,progress=None,cancelled=None):
@@ -42,7 +43,7 @@ def continue_registration(a,b,tolerance,state,progress=None,cancelled=None):
     state.expanded=True
     if progress:
         progress(f'Wyrównanie: rozszerzone wyszukiwanie bieżącego silnika; '
-                 f'pomijam {len(state.completed)} ukończonych hipotez. '
+                 f'pomijam {state.summary()["completed_hypotheses"]} wcześniej sprawdzanych hipotez (translacje i obroty). '
                  'Sprawdzam dodatkowe hipotezy położenia i obrotu CAD.')
     records=list(state.stage1_records)
     records.extend(Record(i,None,'REMOVED','Etap 1') for i in state.free_a)

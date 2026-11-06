@@ -12,6 +12,9 @@ from test_r13_deferred_alignment import models
 
 @pytest.mark.parametrize("sample_passes",[True,False])
 def test_large_shift_never_launches_full_native_preverification(monkeypatch,sample_passes):
+    from dsac29 import surface_registration
+    # Isolate body-sample admission from independent preserved-face proofs.
+    monkeypatch.setattr(surface_registration,'propose',lambda *a,**kw:None)
     a,b=models(count=601,stable=601,shift=1000)
     existing=[Record(i,None,"REMOVED","") for i in range(len(a))]
     existing.extend(Record(None,j,"ADDED","") for j in range(len(b)))
@@ -115,4 +118,4 @@ def test_large_registered_final_comparison_uses_native_session():
     from dsac29 import cli
     import inspect
     source = inspect.getsource(cli.process)
-    assert 'with world_session(max(len(a),len(b))>=80 and bool(certified_pairs))' in source
+    assert 'with world_session(registered_frame or (max(len(a),len(b))>=80 and bool(certified_pairs)))' in source

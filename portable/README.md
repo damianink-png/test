@@ -1,4 +1,4 @@
-# DS Compare Portable 0.6.6
+# DS Compare Portable 0.6.7
 
 Dwa pakiety Windows x64 nie wymagają instalatora ani uprawnień administratora:
 
@@ -19,7 +19,7 @@ Pakiet WebView2 i jego skrót są przypięte w `webview-source.json`, pobrane z 
 Wersja 0.6.2 dopuszcza automatyczny Common dla powtarzających się detali, jeżeli ich pełne liczby wystąpień w A i B są takie same i nazwy wskazują tę samą rodzinę po pominięciu oddzielonej rewizji. Uwzględniane są m.in. `12345_REV_A` / `12345_REV_B`, `12345_A` / `12345_B` oraz `12345_01` / `12345_02`. Nie są dopasowywane dowolne krótkie fragmenty ani różne numery rysunków (`PART_100` / `PART_200`). Liczone są całe modele, również części już dopasowane. Same nazwy i liczby nie dowodzą zmiany materiału: każda dopuszczona para przechodzi natywne Common/Cut. Nazwy ani podobne wymiary nie dowodzą powtórzenia: grupowanie wymaga natywnej, dokładnej lub zweryfikowanej geometrii B-Rep. Niedopuszczone lub niepotwierdzone pary pozostają jako osobne stare usunięte i nowe dodane; rzeczywiste błędy geometrii pozostają do sprawdzenia. Poprawiono pamięć tożsamości obiektów oraz deterministyczne szukanie przesunięć. Obecny interfejs Tauri, podgląd WebGL, raporty masy, paleta i dołączony WebView2 są zachowane.
 
 
-## Wydanie 0.6.6
+## Wydania 0.6.5 i 0.6.6
 
 Bazą jest wydana 0.6.4, commit `1cae4bc4e273ca778116a33976cec360ba2ba72c`. Przebudowano aktywną ścieżkę wyrównania: globalny konsensus oryginalnych punktów CAD, graf zgodnych odległości, obrót i translacja bez skalowania, następnie dopracowanie z odrzucaniem odstających par. W szczególnych przypadkach pojedynczej bryły lub współliniowych komponentów natywne ramy bezwładności służą wyłącznie generowaniu propozycji. Powtarzające się definicje CAD są odczytywane raz. Nazwy i przybliżone deskryptory nie dowodzą zgodności.
 
@@ -28,3 +28,12 @@ Położenie nadal musi przejść B-Rep przy niezmienionej tolerancji. Dla dużyc
 Reguły Common z jednakową liczbą powtórzeń i zgodną rodziną nazwy pozostają zachowane. W folderze zadania `ENGINE_BUILD.json` identyfikuje rzeczywisty silnik i commit. Diagnostyka zawiera 11 prób, w tym końcową kontrolę 80/80 brył z niedokładnymi środkami oraz obrót i przesunięcie po reeksporcie. Audyt, źródła wyboru metody i odtwarzalne porównanie z 0.6.4 znajdują się w `docs/registration-audit-0.6.5.md` w repozytorium.
 
 W 0.6.6 `czesc1_afm0`, `czesc1_afm2` oraz `czesc1_xyz2` mają wspólną bazę `czesc1`. Oddzielony dopisek z literami i krótkim numerem rewizji nie wymaga identycznego kodu literowego. W nazwach wieloczłonowych zachowane są wcześniejsze pola identyfikujące detal, np. `12345_LEWY_afm0` i `12345_PRAWY_afm2` pozostają różne. Różne bazy, liczby wystąpień i numery rysunków nadal nie dopuszczają rodziny do Common. Nazwy jedynie dopuszczają próbę; materiał musi przejść natywne Common/Cut.
+
+
+## Wydanie 0.6.7
+
+Bazą jest 0.6.6. Przygotowanie hipotezy obrotu nie przelicza ponownie własności masowych wszystkich brył. Dla prawidłowych brył o innym podziale ścian po eksporcie dodano natywny dowód przez dwie puste różnice brył. Punkty CAD i środki masy służą jako niezależne wskazówki wyszukiwania; każda zgodność nadal wymaga dowodu geometrii.
+
+Gdy całe detale zostały zmienione, program może zaproponować położenie na podstawie zachowanych oryginalnych powierzchni z dokładną kontrolą ich obrysów. Taka propozycja wymaga zatwierdzenia, również po „Szukaj dokładniej”. Okno pokazuje przesunięcie, obrót i liczbę potwierdzonych powierzchni. Dowód położenia nie oznacza zgodności całych detali: po zatwierdzeniu następuje niezależne porównanie materiału. Zachowano reguły Common z 0.6.6.
+
+Dodano testy rzeczywistych zapisów STEP: zmieniona i przesunięta rewizja (8 zmienionych detali), identyczne przesunięte bryły z podziałem ścian (8 bez zmian) oraz dotychczasowy obrót i przesunięcie (18 bez zmian). Szczegóły i ograniczenia opisano w `docs/registration-audit-0.6.7.md`. Bez oryginalnych plików użytkownika nie potwierdzono przyczyny zgłoszonego błędu.

@@ -155,6 +155,11 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             from .native_guard import NativeGeometryFailure
             try:
                 proposal=propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress,cancelled,search_state=registration_search)
+                if proposal is None and getattr(registration_search,'surface_diagnostics',{}).get('status')=='already_aligned':
+                    # The GUI can finish its comparison in a verified frame,
+                    # including independent native checks of unproven bodies.
+                    # Standalone stage-1 hooks still decline identity moves.
+                    return dict(registration_search.surface_diagnostics)
                 if related_warning and proposal is None and not matched:
                     return {'status':'unrelated','unrelated':True,'reason':related_warning+' Nie znaleziono również potwierdzonego wspólnego układu CAD.'}
                 return proposal
@@ -170,11 +175,12 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         # OCCT process, NOT its verdicts, across those checks. Each request
         # retains its own input B-Rep and 90s bounded deadline.
         from .native_session import world_session
-        with world_session(max(len(a),len(b))>=80 and bool(certified_pairs)):
+        registered_frame=bool(alignment.get('applied') or (alignment.get('status')=='already_aligned' and alignment.get('verification_scope')=='surface_anchors_then_full_revision'))
+        with world_session(registered_frame or (max(len(a),len(b))>=80 and bool(certified_pairs))):
             return compare(a,b,tolerance,progress=progress,cancelled=cancelled,
                            revision_only=revision_style and not manual_review,
                            exact_serialization=True,geometry_context=geometry_context,
-                           stage1_check=stage_hook,step_reexport_tolerance=step_reexport_tol,certified_pairs=certified_pairs)
+                           stage1_check=stage_hook,step_reexport_tolerance=step_reexport_tol,certified_pairs=certified_pairs,registered_frame=registered_frame)
 
     proposal=None
     with trace.phase('initial_comparison'):
@@ -194,7 +200,10 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         if proposal is None:
             # Stage 1 ruled out expensive registration, not all possible
             # geometric differences; continue the ordinary compare unchanged.
-            if rec:
+            if registration_search.summary().get('surface_evidence',{}).get('status')=='already_aligned':
+                alignment.update(status='already_aligned',applied=False,frame_verified=True,
+                                 reason='Zachowane powierzchnie potwierdziły oryginalny układ CAD.')
+            elif rec:
                 baseline=sum(r.status in ('SAME','RENAMED') for r in rec)
                 population=min(len(a),len(b))
                 if baseline<max(2,ceil(.20*population)):
@@ -205,6 +214,9 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         else:
             decision=None
             automatic=False
+            if proposal.get('status')=='already_aligned':
+                decision='align';automatic=True
+                if progress:progress('Zachowane powierzchnie potwierdziły oryginalny układ CAD. Porównuję zmiany detali bez przesuwania modeli.')
             # Automatic relocation is reserved for a LARGE, fully B-Rep
             # confirmed and unambiguous gain over the original CAD frame.
             if proposal.get('status')=='registered':
@@ -248,12 +260,13 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                     proposal=continue_registration(a,b,tolerance,registration_search,
                                                    progress,cancelled)
                     # The user has already explicitly requested a search.
-                    # Apply a verified registration directly rather than
-                    # asking whether to search a second time.
+                    # Strong whole-body evidence can apply directly.
+                    # Surface-only evidence still needs concrete approval.
                     if proposal.get('status') in ('registered','already_aligned'):
-                        decision='align'
-                        if progress:
-                            progress('Znaleziono potwierdzone wyrównanie B do A; stosuję przesunięcie i kontynuuję analizę.')
+                        decision=(alignment_approval(proposal) if proposal.get('requires_confirmation') else 'align')
+                        if progress and decision=='align':
+                            progress('Potwierdzono oryginalny układ CAD; kontynuuję bez przesuwania modeli.' if proposal.get('status')=='already_aligned' else
+                                     'Znaleziono potwierdzone wyrównanie B do A; stosuję przesunięcie i kontynuuję analizę.')
                     else:
                         alignment.update(status='search_unresolved_original',applied=False,
                                          reason=str(proposal.get('reason','Nie potwierdzono przesunięcia.')))
@@ -276,7 +289,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                 rotation=np.asarray(proposal.get('rotation_B_to_A',np.eye(3)))
                 offset=np.asarray(proposal.get('translation_B_to_A_mm',[0,0,0]))
                 b=[_relocate(p,rotation,offset) for p in b]
-                alignment={**proposal,'approved_by_user':not automatic,'applied':True}
+                alignment={**proposal,'approved_by_user':not automatic,'applied':proposal.get('status')!='already_aligned'}
                 step_reexport_tol=bool(proposal.get('step_reexport_tolerance'))
                 certified_pairs=proposal.get('certified_pairs',[])
             else:
@@ -320,6 +333,9 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     if manual_review:
         from .manual_pairs import apply_pairs
         rec=apply_pairs(a,b,rec,manual_review['pairs'],tolerance)
+    if should_align and progress:
+        progress('Układ porównania: zastosowano zatwierdzone wyrównanie B → A.' if alignment.get('applied') else
+                 'Układ porównania: oryginalne współrzędne; nie zastosowano przesunięcia modeli.')
     precomputed_regions={}
     overlap_diagnostics=None
     if revision_style:
