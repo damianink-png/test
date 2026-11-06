@@ -1,4 +1,4 @@
-# DS Compare Portable 0.6.10
+# DS Compare Portable 0.6.11
 
 Dwa pakiety Windows x64 nie wymagają instalatora ani uprawnień administratora:
 
@@ -54,3 +54,8 @@ Po klasyfikacji rewizji przygotowanie Common nie przelicza już niezwiązanych r
 ## Wydanie 0.6.10
 
 Zgodna geometria i liczba wystąpień nie oznaczają zgodnego położenia. Wyrównanie złożenia może zostać zaproponowane na podstawie sześciu w pełni potwierdzonych części, mimo że dwa spośród ośmiu kandydatów przemieściły się lokalnie. Dla dużego złożenia wymaga to potwierdzonej unikatowej kotwicy albo przestrzennego konsensusu co najmniej 6/8 sprawdzonych kandydatów, a propozycja oparta na mniej niż ośmiu parach wymaga zatwierdzenia. Tylko pozytywnie sprawdzone pary są certyfikowane. Pozostałe części przechodzą niezależne porównanie i mogą otrzymać MOVED, CHANGED lub wynik do sprawdzenia. Przy samych lokalnych ruchach model nie jest globalnie przesuwany. Podsumowanie zapisuje końcową liczbę części MOVED po wyrównaniu. Reguły Common i optymalizacja przygotowania z 0.6.9 pozostają.
+
+
+## Wydanie 0.6.11
+
+Nieukończona hipoteza B-Rep nie trafia już na listę zakończonych. „Szukaj dokładniej” w pierwszej kolejności ponawia takie hipotezy z większym limitem na parę, zachowując wyłącznie pozytywne dowody dla dokładnie tych samych wejść, tolerancji i transformacji. Ukończony ponowny test usuwa wcześniejszą blokadę konkurencyjnej hipotezy; ponownie nieukończony nadal pozostaje nierozstrzygnięty. Reguły potwierdzania geometrii nie są poluzowane. Diagnostyka zapisuje `WYROWNANIE_DIAGNOSTYKA.json` w folderze zadania, także po anulowaniu; obejmuje wektory, próby, postęp dowodów i przyczyny błędów. Końcowe okno zachowuje te szczegóły. Diagnostyka syntetyczna ma 12 prób, w tym wznowienie po celowo zasymulowanym przerwaniu. Bez pary STEP lub dziennika nie można potwierdzić przyczyny konkretnego niepowodzenia użytkownika.

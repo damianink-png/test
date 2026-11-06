@@ -105,6 +105,46 @@ def run(folder, progress=None, source_step=None):
         return 'Rozszerzone wyszukiwanie biezacego silnika; 8/8 B-Rep; bez starego align_assembly'
     check("Kontynuacja biezacego wyrownania",current_registration_continuation)
 
+    def interrupted_frame_continuation():
+        import numpy as np
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
+        from OCP.gp import gp_Pnt
+        from .geometry import describe
+        from .alignment import _relocate
+        from .compare import Record
+        from .cad_registration import propose
+        from .registration_gate import frame_support
+        from .registration_search import RegistrationSearch,continue_registration
+        from .native_guard import NativeGeometryFailure
+        left=BRepPrimAPI_MakeBox(20,30,5).Shape()
+        right=BRepAlgoAPI_Fuse(BRepPrimAPI_MakeBox(4,30,5).Shape(),
+            BRepPrimAPI_MakeBox(gp_Pnt(4,0,0),16,30,5).Shape()).Shape()
+        a=[];b=[];offset=np.array([1000.,250.,-50.])
+        for i in range(8):
+            pos=np.array([i*57.,i*i*3.,i%3*40.])
+            a.append(_relocate(describe(left,'DIAG_REV_A','DIAG'),np.eye(3),pos))
+            b.append(_relocate(describe(right,'DIAG_REV_B','DIAG'),np.eye(3),pos+offset))
+        rows=[Record(i,None,'REMOVED','') for i in range(8)]+[Record(None,j,'ADDED','') for j in range(8)]
+        state=RegistrationSearch();state.free_a=frozenset(range(8));state.free_b=frozenset(range(8))
+        injected=[False]
+        def interrupted(*args,**kwargs):
+            if not injected[0]:
+                injected[0]=True
+                raise NativeGeometryFailure('DIAGNOSTIC_ONLY: injected transient native interruption')
+            return frame_support(*args,**kwargs)
+        propose(a,b,rows,.01,search_state=state,support=interrupted)
+        assert injected[0] and state.failures
+        assert not any(np.array_equal(t,np.asarray(f['offset'])) for f in state.failures for t in state.completed)
+        result=continue_registration(a,b,.01,state)
+        assert result['status']=='registered' and result['votes']==8
+        assert np.allclose(result['translation_B_to_A_mm'],-offset)
+        assert len(result['certified_pairs'])==8 and not state.failures
+        assert state.resolved_failures
+        return 'Syntetyczne przerwanie -> wznowienie -> 8/8 natywnych dowodow dla bryl z innym podzialem scian'
+    check("Wznowienie nieukonczonego dowodu B-Rep",interrupted_frame_continuation)
+
+
 
     def centroid_drift_registration():
         from dataclasses import replace

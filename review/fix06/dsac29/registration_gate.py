@@ -17,7 +17,7 @@ class FrameProofCache:
   from .geometry_registry import GeometryRegistry
   self.registry=GeometryRegistry();self.anchors={};self.results={}
   self.exact_anchors={};self.failed_pairs=set();self.exact_anchor_hits=0
-  self.timed_out_pairs=set();self.skipped_timeouts=0
+  self.timed_out_pairs=set();self.skipped_timeouts=0;self.native_errors={}
   self.deadline=None;self.pair_timeout=None;self.lookup_points=None
   self._binding=None
   self.hits=0;self.proof_calls=0
@@ -136,6 +136,7 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
     except native_guard.NativeGeometryFailure as exc:
      if proof_cache is not None:
       proof_cache.failed_pairs.add((i,j))
+      proof_cache.native_errors[i,j]=str(exc)
       if 'timeout' in str(exc).casefold():proof_cache.timed_out_pairs.add((i,j))
      unverified.add((i,j));failed_groups.add(key)
      trace.mark('registration_proof','UNVERIFIED',a_id=i,b_id=j,

@@ -16,6 +16,9 @@ class RegistrationSearch:
         self.pose_winners=[]
         self.expanded=False
         self.failures=[]
+        self.resolved_failures=[]
+        self.sample_history=[]
+        self.diagnostic_path=None
         self.stage1_records=[]
         self.free_a=frozenset()
         self.free_b=frozenset()
@@ -30,8 +33,39 @@ class RegistrationSearch:
         return {'algorithm':'cad_global_consensus_trimmed_refinement',
                 'expanded':self.expanded,'completed_hypotheses':len(self.poses_completed) or len(self.completed),
                 'failed_native_attempts':len(self.failures),
+                'pending_hypotheses':[{
+                    'translation_B_to_A_mm':f['offset'],
+                    'rotation_B_to_A':f.get('rotation',np.eye(3).tolist()),
+                    'candidate_count':f['count_upper_bound'],
+                    'verified_pair_count':len(f.get('proven_pairs',())),
+                    'attempts':f.get('attempts',1),'last_pass':f.get('last_pass','unknown'),
+                    'last_error':f['reason'],'pair_timeout_s':f.get('pair_timeout_s'),
+                    'retryable':bool(f.get('pairs')), 'native_errors':f.get('native_errors',[])}
+                    for f in self.failures[:16]],
+                'resolved_incomplete_hypotheses':self.resolved_failures[-16:],
+                'world_samples':self.sample_history[-32:],
                 'surface_evidence':getattr(self,'surface_diagnostics',{}),
                 'unique_anchor_evidence':getattr(self,'unique_anchor_diagnostics',{})}
+
+
+    def checkpoint(self,proposal=None):
+        if self.diagnostic_path is None:return
+        import json
+        from pathlib import Path
+        from . import trace_r22 as trace
+        path=Path(self.diagnostic_path)
+        data=self.summary()
+        if proposal is not None:
+            data['result_status']=proposal.get('status')
+            data['result_reason']=proposal.get('reason','')
+        try:
+            path.parent.mkdir(parents=True,exist_ok=True)
+            temporary=path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8')
+            temporary.replace(path)
+        except OSError as exc:
+            trace.mark('registration_diagnostics','WRITE_FAILED',error=str(exc))
+
 
 
 def continue_registration(a,b,tolerance,state,progress=None,cancelled=None):
@@ -56,7 +90,12 @@ def continue_registration(a,b,tolerance,state,progress=None,cancelled=None):
     except NativeGeometryFailure as exc:
         proposal={'status':'unresolved','reason':'Rozszerzone wyszukiwanie: '+str(exc)}
     if proposal is None:
-        proposal={'status':'unresolved','reason':
-                  'Nie znaleziono dodatkowego przesunięcia potwierdzonego B-Rep.'}
+        reason='Brak nowych hipotez położenia; wcześniej sprawdzone wyniki pozostają niepotwierdzone.'
+        if state.sample_history:
+            best=max(state.sample_history,key=lambda s:(s['world_proofs'],s['checked']))
+            reason+=(f' Najlepsza próba: {best["world_proofs"]}/{best["checked"]} zgodnych położeń B-Rep, '
+                     f'B→A {best["translation_B_to_A_mm"]} mm. Szczegóły: WYROWNANIE_DIAGNOSTYKA.json.')
+        proposal={'status':'unresolved','reason':reason}
     proposal['search_diagnostics']=state.summary()
+    state.checkpoint(proposal)
     return proposal

@@ -53,16 +53,56 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
     radius=max((float(np.linalg.norm(p.bbox)) for p in b),default=0.)
     attempted=0;best_sample=(0,0,0);winners=state.pose_winners
 
+    search_pass='extended' if extended else 'initial'
+
+    def same_pending(pose,failure):
+        return (np.array_equal(pose.rotation,np.asarray(failure.get('rotation',np.eye(3)))) and
+                np.array_equal(pose.translation,np.asarray(failure['offset'])))
+
     def seen(pose):
+        # At most one native retry of an unknown pose per search pass.
+        # It remains eligible for the explicitly extended pass.
+        if any(same_pending(pose,f) and f.get('last_pass')==search_pass for f in state.failures):return True
+        if extended and any(same_pending(pose,f) and f.get('pairs') for f in state.failures):return False
         return (any(search.pose_distance(pose.rotation,pose.translation,r,t,state.features[1],radius)<=tolerance
                     for r,t in state.poses_completed)
                 or (np.linalg.norm(pose.rotation-np.eye(3))<1e-7 and
                     any(np.linalg.norm(pose.translation-t)<=tolerance for t in state.completed)))
 
     def finish(pose):
+        remaining=[]
+        for failure in state.failures:
+            if same_pending(pose,failure):
+                state.resolved_failures.append(dict(translation_B_to_A_mm=failure['offset'],
+                    attempts=failure.get('attempts',1),resolution='completed_native_evaluation',
+                    previous_error=failure['reason']))
+            else:remaining.append(failure)
+        state.failures[:]=remaining
         state.poses_completed.append((pose.rotation.copy(),pose.translation.copy()))
         if np.linalg.norm(pose.rotation-np.eye(3))<1e-7:
             state.completed.append(pose.translation.copy())
+
+
+    def incomplete(pose,cache,reason):
+        old=next((f for f in state.failures if same_pending(pose,f)),None)
+        entry=dict(offset=pose.translation.tolist(),rotation=pose.rotation.tolist(),
+            reason=str(reason),count_upper_bound=len(pose.pairs),volume_upper_bound=pose.volume,
+            pairs=[tuple(pair) for pair in pose.pairs],
+            anchor_pairs=list(getattr(pose,'anchor_pairs',())),
+            proof_rotation=pose.rotation.tolist(),proof_offset=pose.translation.tolist(),
+            proven_pairs=[pair for pair,result in cache.results.items() if result is True],
+            native_errors=[dict(a=i,b=j,error=error) for (i,j),error in cache.native_errors.items()][:8],
+            attempts=(old.get('attempts',1)+1 if old else 1),
+            last_pass=search_pass,pair_timeout_s=cache.pair_timeout)
+        if old is not None:state.failures[state.failures.index(old)]=entry
+        else:state.failures.append(entry)
+        state.checkpoint()
+        if progress:progress('Wyrównanie: dowód B-Rep nieukończony; hipoteza oczekuje na ponowne sprawdzenie, nie jest wynikiem negatywnym. '+str(reason)[:300])
+
+    def close_or_defer(pose,cache):
+        if cache.failed_pairs:
+            incomplete(pose,cache,'Niepełna próba B-Rep: '+str(len(cache.failed_pairs))+' nieukończonych par. '+ '; '.join(list(cache.native_errors.values())[:3]))
+        else:finish(pose)
 
     def verify(poses):
         nonlocal attempted,best_sample
@@ -91,16 +131,20 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
             # Preparation can exhaust the search budget. Do not announce
             # five synthetic native failures when no proof has even started.
             if monotonic()>=body_deadline:return False
-            cache=FrameProofCache();cache.deadline=body_deadline;cache.pair_timeout=12.
-            for pair in getattr(pose,'anchor_pairs',()):cache.results[pair]=True
+            cache=FrameProofCache();cache.deadline=body_deadline;cache.pair_timeout=24. if extended else 12.
+            for pair in [*getattr(pose,'anchor_pairs',()),*getattr(pose,'retry_proven_pairs',())]:cache.results[tuple(pair)]=True
             cache.lookup_points=(state.features[0],state.features[1]@pose.rotation.T+pose.translation)
             try:
                 pre=native(a,placed,tolerance,proofs=24,progress=progress,cancelled=cancelled,proof_cache=cache)
                 checked=int(pre['checked']);positive=int(pre['proofs'])
+                state.sample_history.append(dict(translation_B_to_A_mm=pose.translation.tolist(),
+                    rotation_B_to_A=pose.rotation.tolist(),search_pass=search_pass,source=pose.source,
+                    candidate_count=int(pre['count']),checked=checked,world_proofs=positive,
+                    unknown_pair_count=len(cache.failed_pairs)))
                 best_sample=max(best_sample,(positive,checked,int(pre['count'])))
                 if (pre['count']<required or pre['count']<=baseline or
                     checked<min(8,pre['count']) or positive<min(pre['count'],max(4,ceil(.65*checked)))):
-                    finish(pose);continue
+                    close_or_defer(pose,cache);continue
                 sampled=population>=80 and pre['count']>=max(48,ceil(.55*population))
                 if sampled:
                     proof=native(a,placed,tolerance,proofs=48,progress=progress,cancelled=cancelled,proof_cache=cache)
@@ -149,7 +193,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                     ratio=volume/max(total,1e-12)
                     weak=population>=40 and (votes<8 or (votes<ceil(.5*population) and ratio<.15))
                     if weak and (sampled or len(certified)!=votes):
-                        finish(pose);continue
+                        close_or_defer(pose,cache);continue
                     winners.append({'status':'registered','method':'cad_global_consensus_trimmed_refinement',
                         'translation_B_to_A_mm':pose.translation.tolist(),'rotation_B_to_A':pose.rotation.tolist(),
                         'votes':votes,'previous_world_matches':baseline,'requested':True,'enabled':True,
@@ -163,13 +207,11 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                         'initial_world_proof_count':int(pre['proofs']),
                         'full_pair_map':certified if not sampled and len(certified)==len(a)==len(b) else [],
                         'search_algorithm':pose.source,'_volume':volume})
-                finish(pose)
+                if accepted:finish(pose)
+                else:close_or_defer(pose,cache)
             except NativeGeometryFailure as exc:
-                # An unknown native outcome is not a negative geometry proof.
-                finish(pose)
-                state.failures.append({'offset':pose.translation.tolist(),'rotation':pose.rotation.tolist(),
-                    'reason':str(exc),'count_upper_bound':count,'volume_upper_bound':pose.volume})
-                if progress:progress('Wyrównanie: nieukończony dowód B-Rep; zachowuję diagnostykę i sprawdzam inną hipotezę.')
+                # Unknown outcomes must not enter the completed-pose veto.
+                incomplete(pose,cache,exc)
         return True
 
     # Pure translations get priority. If they cannot be proven, the SAME
@@ -178,6 +220,23 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
     from .native_session import world_session
     from .unique_anchors import proven_translations
     with world_session(True):
+        retry_complete=True
+        if extended:
+            pending=[f for f in state.failures if f.get('pairs') and f.get('last_pass')!=search_pass]
+            pending.sort(key=lambda f:(-len(f.get('proven_pairs',())),-f['count_upper_bound']))
+            retry_poses=[]
+            for f in pending:
+                pose=search.Pose(np.asarray(f.get('rotation',np.eye(3))),np.asarray(f['offset']),
+                    [tuple(pair) for pair in f['pairs']],f['volume_upper_bound'],'retry_incomplete_brep')
+                exact_proof_pose=(np.array_equal(pose.rotation,np.asarray(f.get('proof_rotation',[]))) and
+                                  np.array_equal(pose.translation,np.asarray(f.get('proof_offset',[]))))
+                pose.anchor_pairs=[tuple(pair) for pair in f.get('anchor_pairs',())] if exact_proof_pose else []
+                pose.retry_proven_pairs=[tuple(pair) for pair in f.get('proven_pairs',())] if exact_proof_pose else []
+                retry_poses.append(pose)
+            if retry_poses:
+                if state.features is None:state.features=(search.landmarks(a,cancelled),search.landmarks(b,cancelled))
+                if progress:progress(f'Wyrównanie: ponawiam {len(retry_poses)} nieukończonych hipotez; zachowuję ukończone pozytywne dowody dla dokładnie tego samego położenia.')
+                retry_complete=verify(retry_poses)
         anchors=proven_translations(a,b,tolerance,state,body_deadline,extended=extended,
                                    progress=progress,cancelled=cancelled,clock=monotonic)
         if state.features is None:
@@ -194,7 +253,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                                       cancelled=cancelled,progress=progress)
         # Reserve native work for rotation even when many periodic-grid
         # translations have high descriptor support but fail real geometry.
-        complete=anchor_complete and verify(translations[:3])
+        complete=retry_complete and anchor_complete and verify(translations[:3])
         if complete and not winners:
             rotations=search.hypotheses(a,b,tolerance,features=state.features,extended=extended,
                                        rotations=True,cancelled=cancelled,progress=progress)
@@ -207,17 +266,25 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                                   cancelled=cancelled,deadline=deadline)
             if frame is not None:
                 state.surface_diagnostics={k:v for k,v in frame.items() if k not in ('rotation_B_to_A',)}
+                state.checkpoint(frame)
                 if frame.get('status') in ('registered','already_aligned'):
                     frame['search_diagnostics']=state.summary()
                     return frame
                 if frame.get('status')=='unresolved':
                     frame['search_diagnostics']=state.summary()
                     return frame
+    state.checkpoint()
     if not complete:
         return {'status':'unresolved','reason':'Osiągnięto limit czasu lub hipotez wyrównania; nie przyjęto niejednoznacznego wyniku.',
                 'search_diagnostics':state.summary()}
     if not winners:
-        if not attempted:return None
+        if not attempted and not state.failures:return None
+        if state.failures:
+            f=state.failures[0]
+            return {'status':'unresolved','reason':
+                f'Nieukończona weryfikacja B-Rep dla B→A {f["offset"]} mm; '
+                f'kandydaci {f["count_upper_bound"]}, próby {f.get("attempts",1)}. Przyczyna: {str(f["reason"])[:600]}',
+                'search_diagnostics':state.summary()}
         return {'status':'unresolved','reason':f'Brak potwierdzonego położenia: najlepsza próbka {best_sample[0]}/{best_sample[1]} B-Rep, {best_sample[2]} kandydatów.',
                 'search_diagnostics':state.summary()}
     winners.sort(key=lambda w:(-w['votes'],-w['_volume']))
@@ -227,9 +294,15 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
     if any(w['votes']>=best['votes']-margin and w['_volume']>=best['_volume']*.9 and
            different(w['rotation_B_to_A'],w['translation_B_to_A_mm']) for w in winners[1:]):
         return {'status':'unresolved','reason':'Kilka położeń ma podobne dowody B-Rep; nie wybrano arbitralnego wyrównania.'}
-    if any(f['count_upper_bound']>=best['votes']-margin and f['volume_upper_bound']>=best['_volume']*.9 and
-           different(f.get('rotation',np.eye(3)),f['offset']) for f in state.failures):
-        return {'status':'unresolved','reason':'Niezweryfikowana konkurencyjna hipoteza B-Rep; nie zgadnięto położenia.'}
+    rivals=[f for f in state.failures if f['count_upper_bound']>=best['votes']-margin and
+            f['volume_upper_bound']>=best['_volume']*.9 and different(f.get('rotation',np.eye(3)),f['offset'])]
+    if rivals:
+        f=rivals[0]
+        return {'status':'unresolved','reason':
+            f'Niezweryfikowana konkurencyjna hipoteza B-Rep: B→A {f["offset"]} mm; '
+            f'{f["count_upper_bound"]} kandydatów, {f.get("attempts",1)} prób. '
+            f'Najlepszy potwierdzony wynik: {best["votes"]} par. Przyczyna: {str(f["reason"])[:600]}',
+            'search_diagnostics':state.summary()}
     result={k:v for k,v in best.items() if not k.startswith('_')}
     result['search_diagnostics']=state.summary()
     if progress:progress(f'Wyrównanie CAD: {best["votes"]}/{population} kandydatów, {best["verified_sample_count"]}/{best["checked_sample_count"]} dowodów B-Rep; B→A {t.tolist()} mm.')

@@ -95,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "dscompare-portable"
-version = "0.6.10"
+version = "0.6.11"
 dependencies = [
  "fs2",
  "memmap2",

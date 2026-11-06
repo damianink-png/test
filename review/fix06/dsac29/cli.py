@@ -9,7 +9,7 @@ from .report import produce
 from . import trace_r22 as trace
 
 
-def confirm_original_after_failed_search(alignment_approval,reason,progress=None):
+def confirm_original_after_failed_search(alignment_approval,reason,progress=None,search_diagnostics=None):
     """Never silently undo a suspected shift after an explicit failed search.
 
     The caller may continue in original coordinates ONLY on a new, explicit
@@ -20,8 +20,9 @@ def confirm_original_after_failed_search(alignment_approval,reason,progress=None
         progress('UWAGA: nie potwierdzono przesuniecia. Nie uruchamiam automatycznie porownania bez wyrownania.')
     if alignment_approval is None:
         raise InterruptedError('Nie potwierdzono przesuniecia: '+reason)
-    decision=alignment_approval({'status':'unresolved','search_failed':True,
-                                 'reason':reason})
+    question={'status':'unresolved','search_failed':True,'reason':reason}
+    if search_diagnostics is not None:question['search_diagnostics']=search_diagnostics
+    decision=alignment_approval(question)
     if decision!='original':
         raise InterruptedError('Przerwano: przesuniecie niepotwierdzone, nie wybrano oryginalnego polozenia.')
     if progress:progress('Uzytkownik swiadomie wybral porownanie w oryginalnym polozeniu.')
@@ -148,6 +149,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     trace.mark('signatures','END')
     from .registration_search import RegistrationSearch
     registration_search=RegistrationSearch()
+    registration_search.diagnostic_path=Path(output)/'WYROWNANIE_DIAGNOSTYKA.json'
     def inspect_stage1(matched,free_a,free_b):
         if not should_align:return None
         from .deferred_alignment import propose_from_stage1
@@ -155,6 +157,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             from .native_guard import NativeGeometryFailure
             try:
                 proposal=propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress,cancelled,search_state=registration_search)
+                registration_search.checkpoint(proposal)
                 if proposal is None and getattr(registration_search,'surface_diagnostics',{}).get('status')=='already_aligned':
                     # The GUI can finish its comparison in a verified frame,
                     # including independent native checks of unproven bodies.
@@ -271,14 +274,14 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                         alignment.update(status='search_unresolved_original',applied=False,
                                          reason=str(proposal.get('reason','Nie potwierdzono przesunięcia.')))
                         decision=confirm_original_after_failed_search(
-                            alignment_approval,alignment['reason'],progress)
+                            alignment_approval,alignment['reason'],progress,search_diagnostics=registration_search.summary())
                 except AlignmentUnavailable as exc:
                     # An unsuccessful explicit search must not reopen the
                     # same "search for shift" dialog indefinitely.
                     alignment.update(status='search_failed_original',applied=False,
                                      reason='Nie znaleziono potwierdzonego przesunięcia: '+str(exc))
                     decision=confirm_original_after_failed_search(
-                        alignment_approval,alignment['reason'],progress)
+                        alignment_approval,alignment['reason'],progress,search_diagnostics=registration_search.summary())
             if decision=='original':
                 if alignment.get('status') in ('search_failed_original','search_unresolved_original'):
                     alignment.update(applied=False)
