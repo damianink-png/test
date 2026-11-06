@@ -106,8 +106,14 @@ def geometry_groups(parts, progress=None, report_progress=None, context=None, to
             if progress:progress('BOM: przekroczono limit dokładnego grupowania; pozostałe unikalne definicje zachowano jako osobne pozycje.')
         possible = [] if budget_exceeded else [group_index for group_index in buckets.get(sig, ())
                     if candidate(parts[groups[group_index][0]], part, tolerance)]
+        # Existing completed congruence is already sufficient for BOM,
+        # including fast mode. Do not serialize the same definitions again.
+        has_proof=getattr(context,'has_rigid_proof',None)
+        if matched is None and has_proof is not None:
+            matched=next((g for g in possible if has_proof(
+                parts[groups[g][0]],part,tolerance)),None)
         digest = None
-        if possible:
+        if possible and matched is None:
             # The first occurrence of a definition is hashed only once an
             # independent compatible candidate appears; cached across A/B.
             digest = context.exact_digest(part)

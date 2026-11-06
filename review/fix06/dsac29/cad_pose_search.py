@@ -104,7 +104,7 @@ def correspondences(a,b,aa,bb,limit=256):
     order=sorted(range(len(b)),key=lambda j:b[j].area)
     areas=np.asarray([b[j].area for j in order]);families=[];descriptor_cache={}
     for i,p in enumerate(a):
-        descriptor=(float(p.area),float(p.volume))
+        descriptor=(float(p.area),float(p.volume),getattr(p,'feature_kind',None))
         if descriptor not in descriptor_cache:
             width=max(1.1,p.area*.027)
             lo=int(np.searchsorted(areas,p.area-width));hi=int(np.searchsorted(areas,p.area+width,side='right'))

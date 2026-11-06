@@ -1,4 +1,4 @@
-# DS Compare Portable 0.6.11
+# DS Compare Portable 0.6.12
 
 Dwa pakiety Windows x64 nie wymagają instalatora ani uprawnień administratora:
 
@@ -59,3 +59,10 @@ Zgodna geometria i liczba wystąpień nie oznaczają zgodnego położenia. Wyró
 ## Wydanie 0.6.11
 
 Nieukończona hipoteza B-Rep nie trafia już na listę zakończonych. „Szukaj dokładniej” w pierwszej kolejności ponawia takie hipotezy z większym limitem na parę, zachowując wyłącznie pozytywne dowody dla dokładnie tych samych wejść, tolerancji i transformacji. Ukończony ponowny test usuwa wcześniejszą blokadę konkurencyjnej hipotezy; ponownie nieukończony nadal pozostaje nierozstrzygnięty. Reguły potwierdzania geometrii nie są poluzowane. Diagnostyka zapisuje `WYROWNANIE_DIAGNOSTYKA.json` w folderze zadania, także po anulowaniu; obejmuje wektory, próby, postęp dowodów i przyczyny błędów. Końcowe okno zachowuje te szczegóły. Diagnostyka syntetyczna ma 12 prób, w tym wznowienie po celowo zasymulowanym przerwaniu. Bez pary STEP lub dziennika nie można potwierdzić przyczyny konkretnego niepowodzenia użytkownika.
+
+
+## Wydanie 0.6.12
+
+Pominięto generowanie hipotez brył po wyczerpaniu limitu ich sprawdzania. BOM korzysta z już ukończonych dowodów zgodności przed ponownym zapisem B-Rep. Podgląd obu rewizji nie przelicza dwa razy własności tej samej bryły Common. Oddzielna weryfikacja geometrii, nieukończone próby, ilości i lokalne ruchy pozostają kontrolowane. Zakres przeglądu i ograniczenia: docs/operation-audit-0.6.12.md.
+
+Dodatkowo odczyt postępu pobiera końcówkę dziennika potrzebną do 100 ostatnich poprawnych wpisów, zamiast ponownie czytać cały plik. Pamięć kandydatów powierzchni uwzględnia typ powierzchni, aby nie mieszać równych pól różnych rodzajów geometrii.

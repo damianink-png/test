@@ -51,6 +51,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
     body_deadline=min(deadline,monotonic()+(60 if extended else 30))
     budget=32 if extended or population==1 else 12
     radius=max((float(np.linalg.norm(p.bbox)) for p in b),default=0.)
+    mass=(np.asarray([p.center for p in a]),np.asarray([p.center for p in b]))
     attempted=0;best_sample=(0,0,0);winners=state.pose_winners
 
     search_pass='extended' if extended else 'initial'
@@ -180,7 +181,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                     delta=float(np.linalg.norm(refined-pose.translation))
                     if tolerance*.01<delta<=max(.05,5*tolerance):
                         pairs=search.match_pose(a,b,*state.features,np.eye(3),refined,max(.05,5*tolerance),
-                            (np.asarray([p.center for p in a]),np.asarray([p.center for p in b])))
+                            mass)
                         correction=search.Pose(np.eye(3),refined,pairs,sum(a[i].volume for i,j in pairs),'cad_inlier_translation_refinement')
                         correction.refined_from_world_pairs=True
                         before=len(winners)
@@ -243,17 +244,20 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
             if progress:progress('Wyrównanie: wyznaczam punkty odniesienia z oryginalnej geometrii CAD…')
             state.features=(search.landmarks(a,cancelled),search.landmarks(b,cancelled))
         anchor_poses=[]
-        mass=(np.asarray([p.center for p in a]),np.asarray([p.center for p in b]))
         for shift,pair in anchors:
             pairs=search.match_pose(a,b,*state.features,np.eye(3),shift,max(.05,5*tolerance),mass)
             pose=search.Pose(np.eye(3),shift,pairs,sum(a[i].volume for i,j in pairs),'unique_largest_inertia_anchor')
             pose.anchor_pairs=[pair];anchor_poses.append(pose)
         anchor_complete=verify(anchor_poses)
-        translations=search.hypotheses(a,b,tolerance,features=state.features,extended=extended,
+        # A finished budget cannot verify any new body hypotheses. Keep
+        # the independent surface fallback below, without building unused
+        # translation cohorts and correspondence pools first.
+        translations=(search.hypotheses(a,b,tolerance,features=state.features,extended=extended,
                                       cancelled=cancelled,progress=progress)
+                      if retry_complete and anchor_complete and monotonic()<body_deadline else [])
         # Reserve native work for rotation even when many periodic-grid
         # translations have high descriptor support but fail real geometry.
-        complete=retry_complete and anchor_complete and verify(translations[:3])
+        complete=retry_complete and anchor_complete and monotonic()<body_deadline and verify(translations[:3])
         if complete and not winners:
             rotations=search.hypotheses(a,b,tolerance,features=state.features,extended=extended,
                                        rotations=True,cancelled=cancelled,progress=progress)
