@@ -195,6 +195,52 @@ try:
 finally:
     if proc.poll() is None:proc.kill();proc.wait()
 
+# Identical geometry/count does not make every peer a global-frame witness.
+# Two parts move locally by 220 mm after a global translation. Exercise both
+# repeated geometry and a six-anchor sparse frame in an otherwise changed model.
+for case,repeated,extra in [('repeated_local_moves',True,0),('sparse_six_local_moves',False,72)]:
+    old=ColoredDocument();new=ColoredDocument();offset=np.array([1700.,-250.,90.])
+    for i in range(8):
+        dims=(20,13,7) if repeated else (20+i*3,13+i,7+i*.3)
+        shape=BRepPrimAPI_MakeBox(*dims).Shape();pos=np.array([i*77.,(i*i%17)*41.,i%3*51.])
+        local=np.array([0.,220.,0.]) if i>=6 else np.zeros(3)
+        name='REPEATED' if repeated else f'PART_{i}'
+        old.add(transform(shape,np.eye(3),pos),name+'_REV_A',(.2,.5,.8))
+        new.add(transform(shape,np.eye(3),pos+offset+local),name+'_REV_B',(.2,.5,.8))
+    for i in range(extra):
+        old.add(transform(BRepPrimAPI_MakeBox(3+i*.01,4,5).Shape(),np.eye(3),np.array([i*35.,1500.,0.])),f'OLD_{i}',(.2,.5,.8))
+        new.add(transform(BRepPrimAPI_MakeBox(60+i,70,80).Shape(),np.eye(3),np.array([10000.+i*100.,10000.,10000.])),f'NEW_{i}',(.2,.5,.8))
+    pa=root/(case+'_old.step');pb=root/(case+'_new.step');old.write(pa);new.write(pb);output=root/case
+    proc=subprocess.Popen([exe,'--worker','compare','--a',str(pa),'--b',str(pb),'--output',str(output),
+        '--revision-style','--no-bom','--generate-step','--align-auto'])
+    deadline=time.monotonic()+300;approved=set()
+    try:
+        while proc.poll() is None:
+            if time.monotonic()>deadline:raise TimeoutError(case)
+            request=output/'_WYROWNANIE_PYTANIE.json'
+            if request.exists():
+                proposal=json.loads(request.read_text(encoding='utf-8'))
+                if proposal['token'] not in approved:
+                    assert not proposal.get('unresolved') and not proposal.get('unrelated'),proposal
+                    assert np.allclose(proposal['translation_mm'],-offset,atol=1e-5),proposal
+                    (output/'_WYROWNANIE_ODPOWIEDZ.json').write_text(json.dumps(dict(token=proposal['token'],decision='align')),encoding='utf-8')
+                    approved.add(proposal['token'])
+            time.sleep(.25)
+        assert proc.returncode==0,(case,proc.returncode)
+        summary=json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
+        expected={'SAME':6,'MOVED':2}
+        if extra:expected.update(REMOVED=extra,ADDED=extra)
+        assert summary['statuses']==expected,(case,summary['statuses'])
+        assert approved and summary['alignment']['applied']
+        assert summary['alignment']['votes']==6 and summary['alignment']['final_moved_count']==2
+        assert len(summary['alignment']['certified_pairs'])==6
+        assert summary['main_step_ready']
+        moved=[r for r in summary['records'] if r['status']=='MOVED']
+        assert len(moved)==2 and all(abs(r['delta_y']-220.)<1e-5 for r in moved),moved
+        print('Frozen comparison PASS: '+case,flush=True)
+    finally:
+        if proc.poll() is None:proc.kill();proc.wait()
+
 # The onefile executable must also work as its own isolated native worker.
 a = describe(BRepPrimAPI_MakeBox(20,10,7).Shape(), 'A', 'A')
 b = describe(BRepPrimAPI_MakeBox(20,11,7).Shape(), 'B', 'B')

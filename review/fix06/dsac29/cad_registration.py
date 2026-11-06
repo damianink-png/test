@@ -69,7 +69,10 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
         for pose in poses:
             search.check_cancel(cancelled)
             count=len(pose.pairs)
-            if seen(pose) or count<minimum or count<=baseline:continue
+            # A native-proven unique seed can have only six unchanged
+            # witnesses while other anchors moved locally in this revision.
+            required=min(minimum,6) if getattr(pose,'anchor_pairs',()) else minimum
+            if seen(pose) or count<required or count<=baseline:continue
             if winners:
                 best=max(w['votes'] for w in winners)
                 if count<best and pose.volume<max(w['_volume'] for w in winners):continue
@@ -95,7 +98,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                 pre=native(a,placed,tolerance,proofs=24,progress=progress,cancelled=cancelled,proof_cache=cache)
                 checked=int(pre['checked']);positive=int(pre['proofs'])
                 best_sample=max(best_sample,(positive,checked,int(pre['count'])))
-                if (pre['count']<minimum or pre['count']<=baseline or
+                if (pre['count']<required or pre['count']<=baseline or
                     checked<min(8,pre['count']) or positive<min(pre['count'],max(4,ceil(.65*checked)))):
                     finish(pose);continue
                 sampled=population>=80 and pre['count']>=max(48,ceil(.55*population))
@@ -109,11 +112,42 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                     proof=native(a,placed,tolerance,verify_all=True,progress=progress,cancelled=cancelled,proof_cache=cache)
                     n=int(proof['checked']);positive=int(proof['proofs']);votes=int(proof['count'])
                     certified=list(proof['pairs']);volume=sum(max(0.,a[i].volume) for i,j in certified)
-                    accepted=votes>=minimum and votes>baseline
+                    # Global frame support and individual part motion are
+                    # different questions. Six complete native proofs supported by
+                    # a unique anchor or a spatially independent consensus may establish a candidate frame even when
+                    # two of eight geometric peers moved locally. Always ask
+                    # for approval for this sparse, sub-eight frame evidence.
+                    sparse_six=False
+                    if population>=40 and votes>=6 and votes>baseline and len(certified)==votes:
+                        coordinates=np.asarray([a[i].center for i,j in certified])
+                        spread=np.linalg.matrix_rank(coordinates-coordinates.mean(axis=0),tol=tolerance)>=2
+                        sparse_six=bool(getattr(pose,'anchor_pairs',()) or
+                            (spread and int(pre['count'])>=8 and int(pre['proofs'])>=6 and
+                             int(pre['proofs'])>=ceil(.75*int(pre['checked']))))
+                    accepted=(votes>=minimum or sparse_six) and votes>baseline
+                if (accepted and not sampled and 6<=votes<8 and
+                    np.linalg.norm(pose.rotation-np.eye(3))<1e-9 and
+                    not getattr(pose,'refined_from_world_pairs',False)):
+                    # Remove locally moved candidates from the estimator as
+                    # well as the certificate map. Re-check the corrected
+                    # frame natively; old proofs never transfer to a new pose.
+                    ii,jj=np.asarray(certified,dtype=int).T
+                    refined=np.median(state.features[0][ii]-state.features[1][jj],axis=0)
+                    delta=float(np.linalg.norm(refined-pose.translation))
+                    if tolerance*.01<delta<=max(.05,5*tolerance):
+                        pairs=search.match_pose(a,b,*state.features,np.eye(3),refined,max(.05,5*tolerance),
+                            (np.asarray([p.center for p in a]),np.asarray([p.center for p in b])))
+                        correction=search.Pose(np.eye(3),refined,pairs,sum(a[i].volume for i,j in pairs),'cad_inlier_translation_refinement')
+                        correction.refined_from_world_pairs=True
+                        before=len(winners)
+                        if progress:progress(f'Wyrównanie: dopracowuję wektor z {votes} potwierdzonych części; pozostałe kandydatury nie wpływają na wyznaczanie wektora.')
+                        verify([correction])
+                        if any(w['votes']>=votes for w in winners[before:]):
+                            finish(pose);continue
                 if accepted:
                     total=sum(max(0.,p.volume) for p in a)
                     ratio=volume/max(total,1e-12)
-                    weak=population>=40 and votes<ceil(.5*population) and ratio<.15
+                    weak=population>=40 and (votes<8 or (votes<ceil(.5*population) and ratio<.15))
                     if weak and (sampled or len(certified)!=votes):
                         finish(pose);continue
                     winners.append({'status':'registered','method':'cad_global_consensus_trimmed_refinement',
@@ -123,6 +157,10 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                         'verified_volume_ratio':round(ratio,4),'certified_pairs':certified,
                         'verification_scope':'sample_then_final_compare' if sampled else 'full_brep',
                         'checked_sample_count':n,'verified_sample_count':positive,
+                        'independent_local_motion_allowed':True,
+                        'initial_position_candidate_count':int(pre['count']),
+                        'initial_checked_count':int(pre['checked']),
+                        'initial_world_proof_count':int(pre['proofs']),
                         'full_pair_map':certified if not sampled and len(certified)==len(a)==len(b) else [],
                         'search_algorithm':pose.source,'_volume':volume})
                 finish(pose)

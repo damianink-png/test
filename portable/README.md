@@ -1,4 +1,4 @@
-# DS Compare Portable 0.6.9
+# DS Compare Portable 0.6.10
 
 Dwa pakiety Windows x64 nie wymagają instalatora ani uprawnień administratora:
 
@@ -49,3 +49,8 @@ Detale z niejednoznacznymi deskryptorami pozostają dla ogólnego wyszukiwania. 
 ## Wydanie 0.6.9
 
 Po klasyfikacji rewizji przygotowanie Common nie przelicza już niezwiązanych rodzin części bez zmian. Dla części uczestniczących w Common nadal liczone są wszystkie zgodne geometrycznie wystąpienia w całych rewizjach, także już dopasowane. Powtórne sprawdzenie tej samej pary korzysta również z ukończonych ujemnych wyników zgodności przy tej samej tolerancji; awaria lub timeout nie stają się wynikiem negatywnym ani dowodem zgodności. Postęp od razu przechodzi do „Weryfikacji materiału” i pokazuje przygotowanie/liczenie wystąpień. Osobne czasy klasyfikacji i dopasowania materiału zapisuje `CZASY_ANALIZY.json`. Reguły Common oraz wykrywanie przesunięcia z 0.6.8 pozostają.
+
+
+## Wydanie 0.6.10
+
+Zgodna geometria i liczba wystąpień nie oznaczają zgodnego położenia. Wyrównanie złożenia może zostać zaproponowane na podstawie sześciu w pełni potwierdzonych części, mimo że dwa spośród ośmiu kandydatów przemieściły się lokalnie. Dla dużego złożenia wymaga to potwierdzonej unikatowej kotwicy albo przestrzennego konsensusu co najmniej 6/8 sprawdzonych kandydatów, a propozycja oparta na mniej niż ośmiu parach wymaga zatwierdzenia. Tylko pozytywnie sprawdzone pary są certyfikowane. Pozostałe części przechodzą niezależne porównanie i mogą otrzymać MOVED, CHANGED lub wynik do sprawdzenia. Przy samych lokalnych ruchach model nie jest globalnie przesuwany. Podsumowanie zapisuje końcową liczbę części MOVED po wyrównaniu. Reguły Common i optymalizacja przygotowania z 0.6.9 pozostają.

@@ -350,7 +350,12 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         rec,precomputed_regions,overlap_diagnostics=merge_material_revisions(a,b,rec,tolerance,progress,cancelled,review_approval=material_approval,geometry_context=geometry_context)
         material_revision_matching_s=perf_counter()-material_started
         trace.mark('revision_classification','END',pairs=len(rec),boolean_checks=(overlap_diagnostics or {}).get('boolean_checks'))
+        if alignment.get('applied'):
+            alignment['final_same_count']=sum(r.status in ('SAME','RENAMED') for r in rec)
+            alignment['final_moved_count']=sum(r.status=='MOVED' for r in rec)
         if progress:
+            if alignment.get('applied') and alignment.get('final_moved_count'):
+                progress(f'Ruch detali po wyrównaniu: {alignment["final_moved_count"]} części zachowało geometrię i przemieściło się lokalnie względem złożenia.')
             same=sum(r.status in ("SAME","RENAMED") for r in rec)
             renamed=sum(r.name_changed for r in rec if r.status in ("SAME","RENAMED"))
             progress(f"Po wyrównaniu: {same} brył BEZ ZMIAN geometrycznych (różnice zapisu nazw: {renamed}).")
