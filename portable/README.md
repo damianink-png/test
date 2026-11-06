@@ -1,4 +1,4 @@
-# DS Compare Portable 0.6.8
+# DS Compare Portable 0.6.9
 
 Dwa pakiety Windows x64 nie wymagają instalatora ani uprawnień administratora:
 
@@ -44,3 +44,8 @@ Dodano testy rzeczywistych zapisów STEP: zmieniona i przesunięta rewizja (8 zm
 Wykrywanie translacji rozpoczyna się od największych detali o unikatowym zestawie objętości, pola powierzchni i głównych centralnych momentów bezwładności po obu stronach. Nazwa nie jest warunkiem dopasowania. Te własności jedynie wybierają kandydatów: wektor jest dopuszczany dopiero po rzeczywistym dowodzie geometrii całego detalu B-Rep. Następnie program sprawdza pozostałe złożenie w tym położeniu. Pojedynczy lokalnie przesunięty detal nie potwierdza globalnego ruchu.
 
 Detale z niejednoznacznymi deskryptorami pozostają dla ogólnego wyszukiwania. Nieukończony dowód geometrii nie staje się zgodnością. W postępie i diagnostyce widać kolejność unikatowych detali, wyniki dowodów oraz wyznaczony wektor. Common pozostaje według zasad 0.6.6. Szczegóły: `docs/registration-audit-0.6.8.md`.
+
+
+## Wydanie 0.6.9
+
+Po klasyfikacji rewizji przygotowanie Common nie przelicza już niezwiązanych rodzin części bez zmian. Dla części uczestniczących w Common nadal liczone są wszystkie zgodne geometrycznie wystąpienia w całych rewizjach, także już dopasowane. Powtórne sprawdzenie tej samej pary korzysta również z ukończonych ujemnych wyników zgodności przy tej samej tolerancji; awaria lub timeout nie stają się wynikiem negatywnym ani dowodem zgodności. Postęp od razu przechodzi do „Weryfikacji materiału” i pokazuje przygotowanie/liczenie wystąpień. Osobne czasy klasyfikacji i dopasowania materiału zapisuje `CZASY_ANALIZY.json`. Reguły Common oraz wykrywanie przesunięcia z 0.6.8 pozostają.

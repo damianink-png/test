@@ -1,0 +1,7 @@
+{
+  "scope": "RepeatedMaterialPolicy construction only; original native guarded_rigid; synthetic baked STEP solids",
+  "scene": {"unchanged_per_revision": 24, "common_operands_per_revision": 1},
+  "baseline_0_6_8": {"native_calls": 46, "seconds": 52.92218802000025},
+  "focused_0_6_9": {"native_calls": 0, "seconds": 0.0018119649994332576},
+  "note": "Does not measure total comparison, Common/Cut, import or export. Machine-specific times; unavailable user files were not tested."
+}

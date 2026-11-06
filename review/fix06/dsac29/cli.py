@@ -338,12 +338,17 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                  'Układ porównania: oryginalne współrzędne; nie zastosowano przesunięcia modeli.')
     precomputed_regions={}
     overlap_diagnostics=None
+    revision_classification_s=material_revision_matching_s=0.
     if revision_style:
         trace.mark('revision_classification','BEGIN',pairs=len(rec))
         from .revision_rules import classify_revisions
+        revision_started=perf_counter()
         rec=classify_revisions(a,b,rec,tolerance,progress=progress,geometry_context=geometry_context,geometry_first=True)
+        revision_classification_s=perf_counter()-revision_started
+        material_started=perf_counter()
         from .revision_overlap import merge_material_revisions
         rec,precomputed_regions,overlap_diagnostics=merge_material_revisions(a,b,rec,tolerance,progress,cancelled,review_approval=material_approval,geometry_context=geometry_context)
+        material_revision_matching_s=perf_counter()-material_started
         trace.mark('revision_classification','END',pairs=len(rec),boolean_checks=(overlap_diagnostics or {}).get('boolean_checks'))
         if progress:
             same=sum(r.status in ("SAME","RENAMED") for r in rec)
@@ -388,7 +393,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         except Exception as exc:
             (folder/'UWAGI_SCENA.txt').write_text(str(exc),encoding='utf-8')
             if progress:progress('Podgląd niedostępny: '+str(exc))
-    timing={'import_A_including_fingerprint_s':import_a_s,'import_B_s':import_b_s,'import_mode':import_mode,'parallel_import_wall_s':import_parallel_wall_s,'parallel_worker_import_s':import_parallel_worker_s,'alignment_preflight_and_optional_registration_s':alignment_s,'alignment_status':alignment.get('status','not_requested'),'matching_and_classification_s':matching_s,'bom_grouping_s':summary.get('bom_seconds',0),
+    timing={'import_A_including_fingerprint_s':import_a_s,'import_B_s':import_b_s,'import_mode':import_mode,'parallel_import_wall_s':import_parallel_wall_s,'parallel_worker_import_s':import_parallel_worker_s,'alignment_preflight_and_optional_registration_s':alignment_s,'alignment_status':alignment.get('status','not_requested'),'matching_and_classification_s':matching_s,'revision_occurrence_classification_s':revision_classification_s,'material_revision_matching_s':material_revision_matching_s,'bom_grouping_s':summary.get('bom_seconds',0),
          'step_and_reports_stage_s':output_stage_s,
          'total_s':perf_counter()-ts,'registry':dict(geometry_context.stats),'slowest_bom_or_population_checks':geometry_context.slow_checks}
     (folder/'CZASY_ANALIZY.json').write_text(json.dumps(timing,ensure_ascii=False,indent=2),encoding='utf-8')

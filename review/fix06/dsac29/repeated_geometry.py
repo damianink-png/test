@@ -5,12 +5,13 @@ Only native identity, exact local B-Rep or a completed rigid proof can group
 occurrences. Unknown geometry is never silently declared equal.
 """
 from collections import defaultdict
+from time import perf_counter
 from .compare import _VolumeIndex, Cancelled
 from .geometry import candidate
 from .geometry_registry import GeometryRegistry
 
 
-def geometry_populations(parts, tolerance=.01, geometry_context=None, cancelled=None):
+def geometry_populations(parts, tolerance=.01, geometry_context=None, cancelled=None, *, relevant_ids=None, progress=None):
     context=geometry_context if geometry_context is not None else GeometryRegistry()
     # Native groups need no serialization or Boolean, irrespective of count.
     groups=defaultdict(list)
@@ -27,28 +28,44 @@ def geometry_populations(parts, tolerance=.01, geometry_context=None, cancelled=
             parent[i]=parent[parent[i]]
             i=parent[i]
         return i
-    for i in representatives:
+    # Count full-revision populations, but only explore components touching
+    # requested Common operands. Unrelated SAME/MOVED families need no tests.
+    relevant=None if relevant_ids is None else set(relevant_ids)
+    if relevant is not None and not relevant.issubset(range(len(parts))):
+        raise ValueError('Nieprawidłowy zakres części do liczenia wystąpień')
+    queue=list(representatives) if relevant is None else [i for i in representatives if relevant.intersection(members[i])]
+    scheduled=set(queue);processed=set();native_checks=0;started=perf_counter();last=started
+    if progress:progress(f'Zmiany materiału: liczby wystąpień — {len(queue)} rodzin wymagających kontroli w modelu z {len(parts)} częściami.')
+    for i in queue:
         for j in index.query(parts[i].volume,tolerance):
-            if j<=i or find(i)==find(j):continue
+            if j in processed or find(i)==find(j):continue
             if cancelled and cancelled():raise Cancelled('Przerwano analizę')
             left,right=parts[i],parts[j]
-            proven=context.has_rigid_proof(left,right,tolerance)
+            known=(context.rigid_result(left,right,tolerance) if hasattr(context,'rigid_result') else None)
+            if known is False:continue
+            proven=known is True or context.has_rigid_proof(left,right,tolerance)
             if not proven and not candidate(left,right,tolerance):continue
-            if not proven:
-                proven=context.same_definition(left,right)
+            if not proven:proven=context.same_definition(left,right)
             if not proven and isinstance(context,GeometryRegistry):
-                # Baked placements or independent STEP serializations can
-                # differ bytewise. Keep this native operation crash-contained.
                 from .native_guard import guarded_rigid,NativeGeometryFailure
-                try:
-                    proven=bool(guarded_rigid(left,right,tolerance)[0])
-                except NativeGeometryFailure:
-                    continue
+                native_checks+=1
+                if progress and (native_checks==1 or perf_counter()-last>=.75):
+                    progress(f'Zmiany materiału: liczby wystąpień — test B-Rep {native_checks}, definicje {i}/{j}; {perf_counter()-started:.1f} s.')
+                    last=perf_counter()
+                try:proven=bool(guarded_rigid(left,right,tolerance)[0])
+                except NativeGeometryFailure:continue
                 context.remember_equivalence(left,right,tolerance,proven)
-            if proven:parent[find(j)]=find(i)
+            if proven:
+                parent[find(j)]=find(i)
+                if j not in scheduled:queue.append(j);scheduled.add(j)
+        processed.add(i)
+        if progress and perf_counter()-last>=.75:
+            progress(f'Zmiany materiału: liczby wystąpień — sprawdzono {len(processed)}/{len(queue)} definicji; testy B-Rep {native_checks}.')
+            last=perf_counter()
+    if progress:progress(f'Zmiany materiału: liczby wystąpień — ukończono w {perf_counter()-started:.2f} s; testy B-Rep {native_checks}.')
     populations=defaultdict(list)
     for i,ids in members.items():populations[find(i)].extend(ids)
-    return [tuple(sorted(ids)) for ids in populations.values()]
+    return [tuple(sorted(ids)) for ids in populations.values() if relevant is None or relevant.intersection(ids)]
 
 
 def repeated_ids(parts, tolerance=.01, geometry_context=None, cancelled=None):
@@ -62,17 +79,19 @@ class RepeatedMaterialPolicy:
 Every admitted pair still requires the unchanged spatial and native Common/
 Cut checks. Equal names or quantities never prove that geometry is unchanged.
 """
-    def __init__(self,a,b,tolerance=.01,geometry_context=None,cancelled=None):
+    def __init__(self,a,b,tolerance=.01,geometry_context=None,cancelled=None,*,old_ids=None,new_ids=None,progress=None):
         from collections import Counter
         from .material_names import material_name_key
         self.keys_a=[material_name_key(p.name) for p in a]
         self.keys_b=[material_name_key(p.name) for p in b]
         totals_a=Counter(self.keys_a)
         totals_b=Counter(self.keys_b)
+        self.scope_a=set(range(len(a))) if old_ids is None else set(old_ids)
+        self.scope_b=set(range(len(b))) if new_ids is None else set(new_ids)
         self.sizes_a=[1]*len(a)
         self.sizes_b=[1]*len(b)
-        for parts,sizes in ((a,self.sizes_a),(b,self.sizes_b)):
-            for group in geometry_populations(parts,tolerance,geometry_context,cancelled):
+        for parts,sizes,scope in ((a,self.sizes_a,self.scope_a),(b,self.sizes_b,self.scope_b)):
+            for group in geometry_populations(parts,tolerance,geometry_context,cancelled,relevant_ids=scope,progress=progress):
                 for i in group:sizes[i]=len(group)
         self.repeated_a={i for i,n in enumerate(self.sizes_a) if n>1}
         self.repeated_b={j for j,n in enumerate(self.sizes_b) if n>1}
@@ -84,10 +103,13 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
                        for n,k in zip(self.sizes_b,self.keys_b)]
 
     def allows(self,i,j):
+        if i not in self.scope_a or j not in self.scope_b:return False
         if i not in self.repeated_a and j not in self.repeated_b:return True
         return self.tokens_a[i] is not None and self.tokens_a[i]==self.tokens_b[j]
 
     def eligible(self,old_ids,new_ids):
+        if not set(old_ids).issubset(self.scope_a) or not set(new_ids).issubset(self.scope_b):
+            raise ValueError('Nieprzeliczona rodzina geometrii poza zakresem Common')
         tokens_a={self.tokens_a[i] for i in old_ids if self.tokens_a[i] is not None}
         tokens_b={self.tokens_b[j] for j in new_ids if self.tokens_b[j] is not None}
         unique_a=bool(old_ids-self.repeated_a)

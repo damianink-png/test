@@ -34,6 +34,17 @@ def patch(path):
                               'self._part_ids[identifier] = (index, part)')
     elif new_cache not in source:
         raise RuntimeError('Unknown registry identity cache; refusing patch')
+    anchor='    def has_rigid_proof(self, left, right, tolerance=0.01):'
+    method="""    def rigid_result(self, left, right, tolerance=0.01):
+        # Previously completed congruence result; None means untested.
+        l,r=self.definition(left),self.definition(right)
+        if l==r:return True
+        return self._rigid_checks.get((min(l,r),max(l,r),float(tolerance)))
+
+"""
+    if '    def rigid_result(' not in source:
+        if source.count(anchor)!=1:raise RuntimeError('Unknown rigid-result cache anchor')
+        source=source.replace(anchor,method+anchor)
     compile(source,str(path),'exec')
     path.write_text(source,encoding='utf-8')
     print('DSCOMPARE_GEOMETRY_REGISTRY_STREAMING_DIGEST_PASS',path)
