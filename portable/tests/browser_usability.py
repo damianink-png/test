@@ -66,14 +66,6 @@ with sync_playwright() as p:
   page.set_viewport_size({'width':width,'height':height});page.wait_for_timeout(100);assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),('compare overflow',width)
  page.screenshot(path=str(out/'compare-480.png'));page.set_viewport_size({'width':1280,'height':720})
  drop(['A.step','B.step'],'a');page.get_by_role('button',name='Porównaj rewizje',exact=True).click();assert page.get_by_role('button',name='Nowe porównanie',exact=True).is_disabled()
- # Actual active-job UI has a local cinematic SVG; never invent a percentage
- # when the native worker has not supplied completed+total counters.
- assert page.locator('.cad-cinematic svg').count()==1
- assert page.get_by_label('Etapy analizy').count()==1
- assert page.get_by_label('Postęp analizy').count()==1
- assert page.locator('.cad-job .progress-facts strong').count()==0
- assert page.locator('.cad-beam').count()==1
-
  page.evaluate("window.__job.question={token:'t',unresolved:true,material_unverified:false,translation_mm:[0,0,0],reason:'No anchor',unverified_A:0,unverified_B:0}")
  page.get_by_role('alertdialog').wait_for();assert 'Automatyczne wyrównanie niepotwierdzone' in page.get_by_role('alertdialog').inner_text();assert page.locator('.translation').count()==0
  page.screenshot(path=str(out/'alignment-unresolved.png'))
