@@ -109,7 +109,7 @@ def test_zw3d_mass_drift_never_means_geometry_same_without_native_proof(monkeypa
     assert not any(r.a_index==0 and r.status in ('SAME','RENAMED') for r in out)
 
 
-def test_zw3d_solid_set_fallback_requires_original_pair_and_same_name(monkeypatch):
+def test_zw3d_solid_set_fallback_is_name_independent_and_still_requires_brep(monkeypatch):
     from dataclasses import replace
     a=[_part(0,'plate')]+[_part(1000+i*50,'old'+str(i)) for i in range(79)]
     b=[replace(_part(0,'plate'),center=a[0].center+np.array([.2,0.,0.]))]+[
@@ -125,7 +125,7 @@ def test_zw3d_solid_set_fallback_requires_original_pair_and_same_name(monkeypatc
     b[0]=replace(b[0],name='renamed_plate')
     calls.clear()
     comparator.compare(a,b,exact_serialization=False,revision_only=True)
-    assert not any(k.get('allow_solid_set_proof') for k in calls)
+    assert any(k.get('allow_solid_set_proof') is True for k in calls)
 
 
 def test_cad_no_shift_negative_proofs_are_never_promoted_to_same():
