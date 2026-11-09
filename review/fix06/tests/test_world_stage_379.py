@@ -20,6 +20,15 @@ def _isolate_stage_one_from_rigid_matching(monkeypatch):
     """
     monkeypatch.setattr(comparator,'equivalent_rigid',
                         lambda *args,**kwargs:(False,None,None))
+    # This suite deliberately drives the stage-one native guard with
+    # synthetic negative, timeout and transient-crash responses. An exact
+    # canonical STEP digest must not short-circuit the simulated failure:
+    # the dedicated test_occurrence_identity.py verifies the canonical
+    # identity optimization independently.
+    from dsac29 import occurrence_identity
+    monkeypatch.setattr(occurrence_identity,'prepare_occurrence_identities',
+                        lambda *args,**kwargs: {'selected':0,'proven':0,
+                                               'skipped':0,'elapsed_s':0.0})
 
 
 def _part(x,name):
