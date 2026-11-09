@@ -31,6 +31,15 @@ wrapper='''def worker(request_path, result_path, *args, **kwargs):
     except Exception as exc:
         import traceback
         reply=Path(result_path)
+        # The material worker already publishes an explicit fail-closed reply
+        # before its real os._exit(70). Do not replace that reply in tests
+        # where os._exit is deliberately patched to raise an exception.
+        try:
+            prior=json.loads(reply.read_text(encoding='utf-8'))
+        except (OSError, UnicodeError, ValueError, TypeError):
+            prior={}
+        if isinstance(prior,dict) and prior.get('ok') is False:
+            raise
         phase=reply.with_suffix('.phase')
         try:
             stage=phase.read_text(encoding='utf-8') if phase.exists() else 'unknown'
