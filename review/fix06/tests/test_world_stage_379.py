@@ -228,7 +228,14 @@ def test_four_native_failures_abort_without_publishing_unverified_same(monkeypat
     """Real native failures (unlike completed False) fail closed."""
     import pytest
     from dsac29.geometry_registry import GeometryRegistry
-    a,b=_repeated_150()
+    # Four independent world-position candidates. A single repeated
+    # definition deliberately stops retrying after three native crashes,
+    # so using 150 copies of ONE family cannot exercise the global
+    # four-failure fail-closed policy.
+    a=[_part(i*30,'P') for i in range(4)]+[
+        _part(10000+i*50,'old'+str(i)) for i in range(76)]
+    b=[_part(i*30,'P') for i in range(4)]+[
+        _part(100000+i*50,'new'+str(i)) for i in range(76)]
     monkeypatch.setattr(GeometryRegistry,'same_definition',lambda *args:False)
     tries=[]
     def crashed_worker(*args,**kwargs):
