@@ -1,0 +1,160 @@
+name: DSCompare 0.6.12 - SwissTransfer verified upload
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'request = new email code; finish = confirm code and upload; reuse = upload with already confirmed sender'
+        type: choice
+        required: true
+        default: request
+        options: [request, finish, reuse]
+      state_run_id:
+        description: 'For finish or reuse: GitHub run ID containing swissfer-validation-state'
+        required: false
+        type: string
+permissions:
+  actions: read
+  contents: read
+jobs:
+  send:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      XDG_CONFIG_HOME: /tmp/dscompare-swissfer
+      SENDER: damianink@gmail.com
+      STAGE: ${{ inputs.stage }}
+      STATE_RUN_ID: ${{ inputs.state_run_id }}
+    steps:
+      - name: Start a new sender verification session without compiling anything
+        if: ${{ inputs.stage == 'request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import http.cookiejar, json, os
+          from pathlib import Path
+          from urllib.request import Request, build_opener, HTTPCookieProcessor
+          base='https://www.swisstransfer.com'
+          agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36'
+          opener=build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+          opener.open(Request(base+'/en',headers={'User-Agent':agent}),timeout=30).read()
+          payload=json.dumps({'email':os.environ['SENDER']}).encode()
+          request=Request(base+'/api/1/email-validations',data=payload,headers={'User-Agent':agent,'Content-Type':'application/json','Accept':'application/json'},method='POST')
+          with opener.open(request,timeout=30) as reply:
+              answer=json.load(reply)
+          if answer.get('result')=='error':
+              raise SystemExit('SwissTransfer error: '+str(answer.get('error',{}).get('description','Unknown')))
+          ident=answer.get('data',{}).get('id')
+          if not ident:
+              raise SystemExit('SwissTransfer did not provide a validation ID')
+          path=Path(os.environ['XDG_CONFIG_HOME'])/'swissfer'/'email-validations.json'
+          path.parent.mkdir(parents=True,exist_ok=True)
+          path.write_text(json.dumps({'validations':{os.environ['SENDER']:{'id':ident,'validated':False}}}),encoding='utf-8')
+          print('A NEW six-character code was sent to sender email. Confirm within 15 minutes.')
+          PY
+      - name: Restore the matching pending or confirmed verification state
+        if: ${{ inputs.stage != 'request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "$STATE_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo 'Provide state_run_id from the request or last successful transfer run.' >&2
+            exit 1
+          fi
+          mkdir -p recovered "$XDG_CONFIG_HOME/swissfer"
+          gh run download "$STATE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name swissfer-validation-state --dir recovered
+          cp recovered/email-validations.json "$XDG_CONFIG_HOME/swissfer/email-validations.json"
+      - name: Confirm entered email code immediately before heavy work
+        if: ${{ inputs.stage == 'finish' }}
+        shell: bash
+        env:
+          VERIFY_CODE: ${{ secrets.SWISSFER_VERIFY_CODE }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import http.cookiejar,json,os,re
+          from pathlib import Path
+          from urllib.request import Request,build_opener,HTTPCookieProcessor
+          code=os.environ.get('VERIFY_CODE','').strip()
+          if not re.fullmatch(r'[A-Za-z0-9]{6}',code):
+              raise SystemExit('Missing six-character SWISSFER_VERIFY_CODE GitHub Actions secret')
+          path=Path(os.environ['XDG_CONFIG_HOME'])/'swissfer'/'email-validations.json'
+          state=json.loads(path.read_text(encoding='utf-8'))
+          email=os.environ['SENDER']
+          entry=state.get('validations',{}).get(email,{})
+          ident=entry.get('id')
+          if not ident:
+              raise SystemExit('No matching pending validation ID')
+          base='https://www.swisstransfer.com'
+          agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36'
+          opener=build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+          opener.open(Request(base+'/en',headers={'User-Agent':agent}),timeout=30).read()
+          payload=json.dumps({'token':code}).encode()
+          request=Request(base+'/api/1/email-validations/'+ident+'/confirm',data=payload,headers={'User-Agent':agent,'Accept':'application/json','Content-Type':'application/json'},method='POST')
+          with opener.open(request,timeout=30) as reply:
+              result=json.load(reply)
+          if result.get('result')=='error':
+              raise SystemExit('SwissTransfer confirmation rejected: '+str(result.get('error',{}).get('description','Unknown')))
+          entry['validated']=True
+          state['validations'][email]=entry
+          state['last_email']=email
+          path.write_text(json.dumps(state),encoding='utf-8')
+          print('SwissTransfer sender confirmed; cache saved.')
+          PY
+      - name: Build uploader (only after code has been verified)
+        if: ${{ inputs.stage != 'request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout -q --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+      - name: Download the exact OneEXE build and package one-file ZIP
+        if: ${{ inputs.stage != 'request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload outgoing
+          gh run download 42273753253 --repo "$GITHUB_REPOSITORY" --name DSCompare-0.6.12-Portable-OneEXE --dir payload
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZIP_STORED,ZipFile
+          exe=Path('payload/DSCompare.exe')
+          assert exe.is_file() and exe.stat().st_size > 100_000_000
+          dest=Path('outgoing/DSCompare-0.6.12-OneEXE-42273753253.zip')
+          with ZipFile(dest,'w',compression=ZIP_STORED) as archive:
+              archive.write(exe,arcname=exe.name)
+          with ZipFile(dest) as archive:
+              assert archive.namelist()==['DSCompare.exe']
+              assert archive.getinfo('DSCompare.exe').file_size==exe.stat().st_size
+          print('ZIP bytes:',dest.stat().st_size)
+          PY
+      - name: Send ZIP without asking for an email code again
+        if: ${{ inputs.stage != 'request' }}
+        shell: bash
+        timeout-minutes: 18
+        run: |
+          set -euo pipefail
+          timeout 900s swissfer/target/release/swissfer outgoing/DSCompare-0.6.12-OneEXE-42273753253.zip \
+            --email "$SENDER" --duration 30 --message 'DSCompare 0.6.12 OneEXE from run 42273753253' </dev/null > transfer.log 2>&1
+          cat transfer.log
+          link=$(grep -Eo 'https://(www\.)?swisstransfer\.com/dl/[a-zA-Z0-9-]+' transfer.log | tail -n 1 || true)
+          test -n "$link"
+          echo "SwissTransfer download: $link" >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain verification state for 30 days
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-validation-state
+          path: /tmp/dscompare-swissfer/swissfer/email-validations.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Retain non-secret transfer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-transfer-log
+          path: transfer.log
+          retention-days: 7
+          if-no-files-found: ignore
