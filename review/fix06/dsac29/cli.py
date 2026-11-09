@@ -29,6 +29,29 @@ def confirm_original_after_failed_search(alignment_approval,reason,progress=None
     return 'original'
 
 
+def _use_confirmed_frame(parts,proposal,relocate):
+    """Only an actually changed world frame requires a B-Rep relocation."""
+    if proposal.get('status')=='already_aligned':
+        return parts
+    import numpy as np
+    rotation=np.asarray(proposal.get('rotation_B_to_A',np.eye(3)),dtype=float)
+    translation=np.asarray(proposal.get('translation_B_to_A_mm',[0,0,0]),dtype=float)
+    return [relocate(part,rotation,translation) for part in parts]
+
+
+def _reused_world_pairs(existing,stage1_records,proposal):
+    """Carry only already-proven SAME stage-1 pairs into original-frame pass.
+
+    Never use face-only votes and NEVER carry these pairs to a shifted pose.
+    """
+    saved=list(existing)
+    if proposal.get('status')=='already_aligned':
+        saved.extend((r.a_index,r.b_index) for r in stage1_records
+                     if r.status in ('SAME','RENAMED')
+                     and r.a_index is not None and r.b_index is not None)
+    return sorted(set(map(tuple,saved)))
+
+
 def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress=print,cancelled=None,colors=None,diff_step=True,preview3d=False,align=False,direct_scene=False,manual_review=None,revision_style=False,old_alpha=0.4,thumbnails=False,max_solids=20000,full_bom=True,bom_fast=False,bom_csv=True,auto_align=False,alignment_approval=None,force_unrelated=False,material_approval=None):
     # Both the desktop UI and CLI use this entrypoint. Reject NaN/Inf and
     # impossible settings before importing any CAD or touching output files.
@@ -111,7 +134,23 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                         precomputed_sha256=fingerprints['B'],source_stat=source_stats['B'])
         import_b_s=perf_counter()-tb
         if progress:progress(f'Wczytywanie B: {import_b_s:.1f} s; brył: {len(b)}')
-    trace.mark('import','END',solids_a=len(a),solids_b=len(b))
+    # Read at most 128 KiB of FILE_SCHEMA header: AP203, AP214 and AP242
+    # metadata helps diagnose ZW3D re-exports without re-importing STEP.
+    from .step_diagnostics import schema_header
+    for role,source in (('A',a_path),('B',b_path)):
+        import_stats[role].update(schema_header(source))
+    schema_a=import_stats['A'].get('application_protocol','unknown')
+    schema_b=import_stats['B'].get('application_protocol','unknown')
+    if progress:
+        progress(f'Format STEP: A={schema_a}, B={schema_b}; bryły A={len(a)}, B={len(b)}.')
+        if schema_a!=schema_b and 'unknown' not in (schema_a,schema_b):
+            progress('Uwaga: porównywane pliki mają różne schematy STEP; '
+                     'porównuję geometrię, a nie nazwy lub sam format.')
+        if len(a)!=len(b):
+            progress('Uwaga: zaimportowano różną liczbę brył SOLID; '
+                     'sprawdzam, czy eksporter podzielił część na dodatkowe bryły.')
+    trace.mark('import','END',solids_a=len(a),solids_b=len(b),
+               step_ap_a=schema_a,step_ap_b=schema_b)
     alignment={'requested':bool(align or auto_align),'enabled':False}
     alignment_started=perf_counter()
     (Path(output)/'OSTRZEZENIA.txt').unlink(missing_ok=True)
@@ -289,12 +328,18 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                     alignment.update(**{**proposal,'status':'original_by_user','applied':False,
                                         'reason':'Użytkownik wybrał oryginalne położenie.'})
             elif decision=='align' and proposal.get('status') in ('registered','already_aligned'):
-                rotation=np.asarray(proposal.get('rotation_B_to_A',np.eye(3)))
-                offset=np.asarray(proposal.get('translation_B_to_A_mm',[0,0,0]))
-                b=[_relocate(p,rotation,offset) for p in b]
+                # Identity frame is not a relocation. Preserve imported
+                # TopoDS shapes and the already-completed world B-Rep proofs.
+                b=_use_confirmed_frame(b,proposal,_relocate)
                 alignment={**proposal,'approved_by_user':not automatic,'applied':proposal.get('status')!='already_aligned'}
                 step_reexport_tol=bool(proposal.get('step_reexport_tolerance'))
-                certified_pairs=proposal.get('certified_pairs',[])
+                certified_pairs=_reused_world_pairs(
+                    proposal.get('certified_pairs',[]),
+                    registration_search.stage1_records,proposal)
+                if proposal.get('status')=='already_aligned' and progress:
+                    progress('Wyrównanie: oryginalny układ już potwierdzony; '
+                             f'pomijam transformację {len(b)} brył i ponowną weryfikację '
+                             f'{len(certified_pairs)} dowodów B-Rep z etapu 1.')
             else:
                 raise InterruptedError('Anulowano analizę — modele pozostały niezmienione.')
             # The re-export rescue already proved EVERY CAD face of EVERY

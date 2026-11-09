@@ -27,7 +27,14 @@ def place_for_proof(part,rotation,translation):
             or not np.allclose(r.T@r,np.eye(3),rtol=0,atol=1e-10)
             or not np.isclose(np.linalg.det(r),1.,rtol=0,atol=1e-10)):
         raise ValueError('Hipoteza CAD wymaga obrotu właściwego i skończonej translacji')
-    if np.array_equal(r,np.eye(3)):return _relocate(part,r,t)
+    if np.array_equal(r,np.eye(3)):
+        if not np.any(t):return part
+        # Pure translation preserves intrinsic shape mass properties.
+        # Do not recompute OCCT VolumeProperties/SurfaceProperties on every
+        # body for every rival shift hypothesis. Native proofs use the
+        # transformed TopoDS shape; these descriptors remain search-only.
+        return replace(part,shape=transform(part.shape,r,t),
+                       center=part.center+t)
     return replace(part,shape=transform(part.shape,r,t),center=r@part.center+t,
                    inertia=r@part.inertia@r.T,axes=r@part.axes,
                    bbox=tuple(float(v) for v in np.abs(r)@np.asarray(part.bbox)))

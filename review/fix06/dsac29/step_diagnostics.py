@@ -17,6 +17,29 @@ _SHELL=re.compile(rb"(?m)^#\d+\s*=\s*CLOSED_SHELL\(")
 _SOLID=re.compile(rb"(?m)^#\d+\s*=\s*MANIFOLD_SOLID_BREP\(")
 _COMPONENT=re.compile(rb"(?m)^#\d+\s*=\s*PRODUCT_DEFINITION_SHAPE\(")
 _STATUS=("BEZ_ZMIAN","PRZESUNIETE","NOWE","USUNIETE","ZMIENIONE")
+_SCHEMA=re.compile(rb"(?is)\bFILE_SCHEMA\s*\(\s*\(\s*'([^']+)'")
+
+def _schema_from_bytes(header):
+    match=_SCHEMA.search(header[:131072])
+    raw=match.group(1).decode('ascii','replace').strip().upper() if match else ''
+    if 'CONFIG_CONTROL_DESIGN' in raw or 'AP203' in raw:
+        protocol='AP203'
+    elif 'AUTOMOTIVE_DESIGN' in raw or 'AP214' in raw:
+        protocol='AP214'
+    elif 'AP242' in raw or 'MANAGED_MODEL_BASED_3D' in raw:
+        protocol='AP242'
+    else:
+        protocol='unknown'
+    return {'file_schema':raw or 'unknown',
+            'application_protocol':protocol}
+
+def schema_header(path):
+    """Cheap source metadata, not an identity proof or geometry shortcut."""
+    try:
+        with Path(path).open('rb') as stream:
+            return _schema_from_bytes(stream.read(131072))
+    except (OSError,ValueError):
+        return {'file_schema':'unknown','application_protocol':'unknown'}
 
 def inspect(path, export_info=None, omitted_geometry=None):
     file=Path(path)
@@ -29,12 +52,15 @@ def _inspect_mapped(file,data,export_info=None,omitted_geometry=None):
     n_usage=len(_USAGE.findall(data))
     n_solids=len(_SOLID.findall(data))
     info=dict(export_info or {})
+    schema=_schema_from_bytes(data[:131072])
     actual=info.get("rzeczywiste_bryly_step")
     if not isinstance(actual,int) or isinstance(actual,bool):
         actual=info.get("liczba_bryl") if isinstance(info.get("liczba_bryl"),int) else None
     candidates=[p for p in products if p.upper().startswith("ABSR")]
     result={
        "format":"DSCOMPARE_STEP_DIAG_V2",
+       "file_schema":schema['file_schema'],
+       "application_protocol":schema['application_protocol'],
        "data_utc":datetime.now(timezone.utc).isoformat(),
        "plik":file.name,
        "rozmiar_bajty":len(data),
