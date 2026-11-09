@@ -87,7 +87,11 @@ s=once(s,
 ""","world fallback guards")
 s=once(s,
 "                else:\n                    if checks >= max_checks: raise RuntimeError(f'Limit testów B-Rep ({max_checks}) — analiza niekompletna')",
-"""                elif (gs,gt) in world_exhausted:
+"""                elif ((gs,gt) in world_exhausted and
+                      any(_relative_location_is_same(s,a[aa],b[j],b[bb],tolerance)
+                          for aa,bb in world_probe_pairs.get((gs,gt),()))):
+                    # Never let failures at a DIFFERENT relative placement
+                    # hide valid matches of a locally moved repeated part.
                     failed_a.add(i);failed_b.add(j);failed_pairs.add((i,j))
                     trace.mark('world_matching','UNVERIFIED_REPEATED_DEFINITION',
                                a_id=i,b_id=j,group_attempts=world_probe_failures.get((gs,gt),0))
