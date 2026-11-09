@@ -1,0 +1,86 @@
+name: Confirm fresh SwissTransfer code and deliver DSCompare 0.6.12
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/complete-dscompare-42273753253-newcode.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  send:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      XDG_CONFIG_HOME: /tmp/swissfer-config
+    steps:
+      - name: Build SwissTransfer uploader
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout -q --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+      - name: Restore latest pending email verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p restore "$XDG_CONFIG_HOME/swissfer"
+          gh run download 42573456606 --repo "$GITHUB_REPOSITORY" --name swissfer-validation-state --dir restore
+          cp restore/email-validations.json "$XDG_CONFIG_HOME/swissfer/email-validations.json"
+      - name: Download and pack exact OneEXE 0.6.12
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload outgoing
+          gh run download 42273753253 --repo "$GITHUB_REPOSITORY" --name DSCompare-0.6.12-Portable-OneEXE --dir payload
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_STORED
+          exe=Path('payload/DSCompare.exe')
+          assert exe.is_file() and exe.stat().st_size > 100_000_000
+          dest=Path('outgoing/DSCompare-0.6.12-OneEXE-42273753253.zip')
+          with ZipFile(dest,'w',compression=ZIP_STORED) as z:
+              z.write(exe,arcname='DSCompare.exe')
+          with ZipFile(dest) as z:
+              assert z.namelist()==['DSCompare.exe']
+              assert z.getinfo('DSCompare.exe').file_size == exe.stat().st_size
+          print('ZIP bytes:',dest.stat().st_size)
+          PY
+      - name: Verify new code and send to SwissTransfer
+        timeout-minutes: 18
+        shell: bash
+        env:
+          VERIFY_CODE: ${{ secrets.SWISSFER_VERIFY_CODE }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERIFY_CODE" =~ ^[A-Za-z0-9]{6}$ ]]; then
+            echo 'SWISSFER_VERIFY_CODE secret missing or incorrect length.' >&2
+            exit 1
+          fi
+          echo "::add-mask::$VERIFY_CODE"
+          printf '%s\n' "$VERIFY_CODE" | timeout 900s swissfer/target/release/swissfer \
+            outgoing/DSCompare-0.6.12-OneEXE-42273753253.zip \
+            --email damianink@gmail.com --duration 30 \
+            --message 'DSCompare 0.6.12 OneEXE build 42273753253' > transfer.log 2>&1
+          cat transfer.log
+          url=$(grep -Eo 'https://(www\.)?swisstransfer\.com/dl/[a-zA-Z0-9-]+' transfer.log | tail -n 1 || true)
+          test -n "$url"
+          echo "Download link: $url" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save sender verification for next time
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-validation-state
+          path: /tmp/swissfer-config/swissfer/email-validations.json
+          retention-days: 2
+          if-no-files-found: warn
+      - name: Save transfer status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dscompare-42273753253-newcode-transfer-log
+          path: transfer.log
+          retention-days: 2
+          if-no-files-found: warn
