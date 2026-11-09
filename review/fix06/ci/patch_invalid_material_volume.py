@@ -11,7 +11,7 @@ root=Path(sys.argv[1])
 native=root/'dsac29/native_guard.py'
 step=root/'dsac29/step_reexport_tolerance.py'
 source=native.read_text(encoding='utf-8')
-pattern=r'(?m)^def worker\\(([^\\n]*)\\):'
+pattern=r'(?m)^def worker\(([^\n]*)\):'
 found=re.findall(pattern,source)
 if len(found)!=1:
     raise RuntimeError('Unexpected native worker signature; refusing unverified patch')
