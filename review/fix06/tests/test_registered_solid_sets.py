@@ -64,3 +64,38 @@ def test_translated_same_revision_with_repartitioned_faces_finishes_as_same(tmp_
     assert data['alignment']['translation_B_to_A_mm']==pytest.approx(-shift,abs=1e-5)
     assert data['alignment']['applied']
     if questions:assert all(p['status']=='registered' for p in questions)
+
+
+def test_zw3d_like_reexport_without_global_shift_preserves_80_stable_occurrences():
+    """Two identical solid sets with different face topology, same placement.
+
+    A 80-part no-shift revision must not depend on a preceding registration
+    proposal to unlock the independent verified solid-set proof.
+    """
+    from dsac29.compare import compare
+    old,new=shapes()
+    old_template=describe(old,'PROFILE_40x40','old/profile')
+    new_template=describe(new,'PROFILE_40x40','new/profile')
+    a=[];b=[]
+    for i in range(80):
+        pos=np.array([i*70.,(i%7)*50.,(i%3)*45.])
+        a.append(_relocate(old_template,np.eye(3),pos))
+        b.append(_relocate(new_template,np.eye(3),pos))
+    with world_session(True):
+        result=compare(a,b,.01,revision_only=True,exact_serialization=True)
+    assert len(result)==80
+    assert all(r.status=='SAME' for r in result),result
+
+
+def test_zw3d_like_unshifted_face_repartition_does_not_hide_real_revision():
+    from dsac29.compare import compare
+    old,new=shapes()
+    a=describe(old,'BRACKET','old/bracket')
+    b=describe(new,'BRACKET','new/bracket')
+    modified=describe(BRepPrimAPI_MakeBox(20,30,6).Shape(),'BRACKET','changed')
+    from dsac29.geometry_registry import GeometryRegistry
+    with world_session(True):
+        exact=compare([a],[b],.01,revision_only=True,exact_serialization=True)
+        changed=compare([a],[modified],.01,revision_only=True,exact_serialization=True)
+    assert any(r.status in ('SAME','RENAMED') for r in exact)
+    assert not any(r.status in ('SAME','RENAMED') for r in changed)
