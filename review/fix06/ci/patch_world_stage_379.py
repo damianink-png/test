@@ -74,13 +74,12 @@ s=once(s,
     native_world_timeouts=0
     def bounded_reexport(left,right,tol):
         # One native worker first checks oriented faces and trims, then may
-        # verify TWO empty solid differences if ZW3D changed face topology.
-        # Native Cut is opt-in for the same named part and never substitutes
-        # a numeric signature for a real B-Rep proof.
-        same_name=bool(_normalized_name(left.name) and
-            _normalized_name(left.name)==_normalized_name(right.name))
+        # verify TWO empty solid differences if re-export changed topology.
+        # Names are never used to permit or deny geometric equivalence:
+        # a renamed unchanged part must receive the same full proof.
+        candidate_world=bool(world_candidate(left,right,tol))
         return guarded_world_reexport(left,right,tol,timeout_s=25,
-            allow_solid_set_proof=same_name)
+            allow_solid_set_proof=candidate_world)
     def bounded_registered(left,right,tol):
         return guarded_registered_world(left,right,tol,timeout_s=25)
     def bounded_world(left,right,tol):
