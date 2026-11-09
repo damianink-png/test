@@ -33,6 +33,39 @@ def place_for_proof(part,rotation,translation):
                    bbox=tuple(float(v) for v in np.abs(r)@np.asarray(part.bbox)))
 
 
+
+def _sampled_frame_decision(checked,positive,candidate_count,certified,a,tolerance,
+                            pre_checked,pre_positive,baseline,population):
+    """Distinguish changed parts from a false global frame without certifying
+    any untested part. Strict 90% policy remains first choice. A bounded
+    recovery needs independently proven, diverse, spatially spread solids
+    and must be confirmed before the full per-part revision comparison.
+    """
+    strict_required=max(24,ceil(.90*checked))
+    if checked<min(40,candidate_count):
+        return False,False,f'Niepełna próbka: {positive}/{checked}, wymagane {min(40,candidate_count)} sprawdzeń'
+    if positive>=strict_required:
+        return True,False,f'Próg standardowy: {positive}/{checked}, wymagane {strict_required}'
+    if (checked<40 or pre_checked<20 or pre_positive<ceil(.85*pre_checked)
+            or positive<max(32,ceil(.80*checked))):
+        return False,False,f'Próbka poniżej progów: {positive}/{checked}, standard {strict_required}'
+    pairs=sorted(set((int(i),int(j)) for i,j in certified))
+    if len(pairs)<positive or len({i for i,j in pairs})<32 or len({j for i,j in pairs})<32:
+        return False,False,'Za mało niezależnych par całych brył B-Rep'
+    from .geometry import signature
+    coords=np.asarray([a[i].center for i,j in pairs],dtype=float)
+    diverse=len({signature(a[i]) for i,j in pairs})
+    spread=(np.isfinite(coords).all() and
+            np.linalg.matrix_rank(coords-coords.mean(axis=0),tol=tolerance)>=2)
+    if not spread or diverse<4:
+        return False,False,f'Niejednoznaczne kotwice: typy={diverse}, rozkład przestrzenny={bool(spread)}'
+    projected=candidate_count*positive/checked
+    if projected<=baseline+max(3,ceil(.05*population)):
+        return False,False,f'Wzrost poparcia za mały wobec bazowych {baseline} części'
+    return True,True,(f'Warunkowy konsensus: {positive}/{checked} pełnych B-Rep, '
+                      f'{diverse} różnych geometrii; pozostałe części wymagają końcowego porównania')
+
+
 def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=None,extended=False,support=None):
     from .registration_gate import frame_support
     from .registration_search import RegistrationSearch
@@ -52,7 +85,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
     budget=32 if extended or population==1 else 12
     radius=max((float(np.linalg.norm(p.bbox)) for p in b),default=0.)
     mass=(np.asarray([p.center for p in a]),np.asarray([p.center for p in b]))
-    attempted=0;best_sample=(0,0,0);winners=state.pose_winners
+    attempted=0;best_sample=(0,0,0);winners=state.pose_winners;extra_time_given=False
 
     search_pass='extended' if extended else 'initial'
 
@@ -106,7 +139,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
         else:finish(pose)
 
     def verify(poses):
-        nonlocal attempted,best_sample
+        nonlocal attempted,best_sample,body_deadline,deadline,extra_time_given
         for pose in poses:
             search.check_cancel(cancelled)
             count=len(pose.pairs)
@@ -146,13 +179,33 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                 if (pre['count']<required or pre['count']<=baseline or
                     checked<min(8,pre['count']) or positive<min(pre['count'],max(4,ceil(.65*checked)))):
                     close_or_defer(pose,cache);continue
+                # A strong 21/24 preliminary sample may have used most of
+                # the former 30-second budget. Reserve time for the actual
+                # 48-proof stage instead of silently rejecting the candidate.
+                if (population>=80 and checked>=20 and
+                    positive>=ceil(.80*checked) and not extra_time_given):
+                    reserve=min(180.,max(90.,.15*population))
+                    body_deadline=max(body_deadline,monotonic()+reserve)
+                    deadline=max(deadline,body_deadline+30.)
+                    cache.deadline=body_deadline
+                    extra_time_given=True
+                    if progress:progress(
+                        f'Wyrównanie: {positive}/{checked} pozytywnych B-Rep; '
+                        f'rezerwuję czas na 48 niezależnych dowodów i kontrolę konkurencji.')
                 sampled=population>=80 and pre['count']>=max(48,ceil(.55*population))
+                recovered_sample=False
                 if sampled:
                     proof=native(a,placed,tolerance,proofs=48,progress=progress,cancelled=cancelled,proof_cache=cache)
                     n=int(proof['checked']);positive=int(proof['proofs'])
-                    accepted=n>=min(40,proof['count']) and positive>=max(24,ceil(.9*n))
                     certified=sorted(cache.results)
                     votes=int(proof['count']);volume=pose.volume
+                    accepted,recovered_sample,sample_reason=_sampled_frame_decision(
+                        n,positive,votes,certified,a,tolerance,checked,int(pre['proofs']),baseline,population)
+                    state.sample_history[-1].update(
+                        expanded_checked=n,expanded_proofs=positive,
+                        accepted=bool(accepted),requires_confirmation=bool(recovered_sample),
+                        decision=sample_reason,unknown_pair_count=len(cache.failed_pairs))
+                    if progress:progress('Wyrównanie: '+sample_reason)
                 else:
                     proof=native(a,placed,tolerance,verify_all=True,progress=progress,cancelled=cancelled,proof_cache=cache)
                     n=int(proof['checked']);positive=int(proof['proofs']);votes=int(proof['count'])
@@ -192,7 +245,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                 if accepted:
                     total=sum(max(0.,p.volume) for p in a)
                     ratio=volume/max(total,1e-12)
-                    weak=population>=40 and (votes<8 or (votes<ceil(.5*population) and ratio<.15))
+                    weak=bool(recovered_sample) or (population>=40 and (votes<8 or (votes<ceil(.5*population) and ratio<.15)))
                     if weak and (sampled or len(certified)!=votes):
                         close_or_defer(pose,cache);continue
                     winners.append({'status':'registered','method':'cad_global_consensus_trimmed_refinement',
