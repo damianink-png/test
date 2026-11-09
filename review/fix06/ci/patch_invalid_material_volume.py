@@ -105,16 +105,18 @@ helper='''def _ds_checked_cut_volume(residual, direction, operation, tolerance, 
     from .material_deltas import volume
     raw=None
     try:
-        properties=GProp_GProps()
-        BRepGProp.VolumeProperties_s(residual,properties)
-        raw=float(properties.Mass())
-    except Exception:
-        pass
-    try:
         measured=float((volume_fn or volume)(residual))
         if not math.isfinite(measured) or measured<0:
             raise ValueError('non-finite or negative residual volume: '+repr(measured))
     except Exception as exc:
+        # Expensive OCCT mass integral is repeated ONLY on failure,
+        # never on the fast path for each accepted Cut residual.
+        try:
+            properties=GProp_GProps()
+            BRepGProp.VolumeProperties_s(residual,properties)
+            raw=float(properties.Mass())
+        except Exception:
+            pass
         orientation=str(residual.Orientation()) if not residual.IsNull() else 'NULL'
         valid=shape_valid(residual)
         cut_done=bool(operation.IsDone())
