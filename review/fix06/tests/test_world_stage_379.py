@@ -70,3 +70,67 @@ def test_per_part_native_progress_reports_last_active_pair():
     src=inspect.getsource(comparator.compare)
     assert 'Zgodność położenia: B-Rep A[' in src
     assert 'unknown_world_groups' in src
+
+
+def test_zw3d_reexport_mass_center_drift_does_not_hide_no_shift_candidate(monkeypatch):
+    """Medium 80-599 assemblies must check an 0.2 mm integrated center drift.
+
+    The mocked native proof stands in for the unchanged B-Rep (not a
+    descriptor-based SAME). Without the wider lookup no native call occurs.
+    """
+    from dataclasses import replace
+    a=[_part(0,'plate')]+[_part(1000+i*50,'old'+str(i)) for i in range(79)]
+    b=[replace(_part(0,'plate'),center=a[0].center+np.array([.2,0.,0.]))]+[
+        _part(100000+i*50,'new'+str(i)) for i in range(79)]
+    calls=[]
+    def verified(*args,**kwargs):
+        calls.append(kwargs)
+        return True
+    monkeypatch.setattr(comparator,'guarded_world_equivalent',verified)
+    monkeypatch.setattr(comparator,'guarded_world_reexport',verified)
+    out=comparator.compare(a,b,exact_serialization=False,revision_only=True)
+    assert calls, 'The centered re-export candidate must reach native B-Rep'
+    assert any(r.a_index==r.b_index==0 and r.status=='SAME' for r in out)
+
+
+def test_zw3d_mass_drift_never_means_geometry_same_without_native_proof(monkeypatch):
+    from dataclasses import replace
+    a=[_part(0,'plate')]+[_part(1000+i*50,'old'+str(i)) for i in range(79)]
+    b=[replace(_part(0,'plate'),center=a[0].center+np.array([.2,0.,0.]))]+[
+        _part(100000+i*50,'new'+str(i)) for i in range(79)]
+    calls=[]
+    def unproven(*args,**kwargs):
+        calls.append(1)
+        return False
+    monkeypatch.setattr(comparator,'guarded_world_equivalent',unproven)
+    monkeypatch.setattr(comparator,'guarded_world_reexport',unproven)
+    out=comparator.compare(a,b,exact_serialization=False,revision_only=True)
+    assert calls
+    assert not any(r.a_index==0 and r.status in ('SAME','RENAMED') for r in out)
+
+
+def test_zw3d_solid_set_fallback_requires_original_pair_and_same_name(monkeypatch):
+    from dataclasses import replace
+    a=[_part(0,'plate')]+[_part(1000+i*50,'old'+str(i)) for i in range(79)]
+    b=[replace(_part(0,'plate'),center=a[0].center+np.array([.2,0.,0.]))]+[
+        _part(100000+i*50,'new'+str(i)) for i in range(79)]
+    calls=[]
+    def proven(*args,**kwargs):
+        calls.append(kwargs)
+        return False
+    monkeypatch.setattr(comparator,'guarded_world_equivalent',proven)
+    monkeypatch.setattr(comparator,'guarded_world_reexport',proven)
+    comparator.compare(a,b,exact_serialization=False,revision_only=True)
+    assert any(k.get('allow_solid_set_proof') is True for k in calls)
+    b[0]=replace(b[0],name='renamed_plate')
+    calls.clear()
+    comparator.compare(a,b,exact_serialization=False,revision_only=True)
+    assert not any(k.get('allow_solid_set_proof') for k in calls)
+
+
+def test_cad_no_shift_negative_proofs_are_never_promoted_to_same():
+    original=_part(0,'plate')
+    changed=describe(BRepPrimAPI_MakeBox(gp_Pnt(0,0,0),9.,9.,10.).Shape(),
+                     'plate','plate-new')
+    out=comparator.compare([original],[changed],revision_only=True,exact_serialization=True)
+    assert not any(r.status in ('SAME','RENAMED') for r in out)
