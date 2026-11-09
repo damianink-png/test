@@ -69,7 +69,7 @@ def test_same_position_medium_assembly_uses_shared_guarded_process():
 def test_per_part_native_progress_reports_last_active_pair():
     src=inspect.getsource(comparator.compare)
     assert 'Zgodność położenia: B-Rep A[' in src
-    assert 'unknown_world_groups' in src
+    assert 'world_probe_failures' in src
 
 
 def test_zw3d_reexport_mass_center_drift_does_not_hide_no_shift_candidate(monkeypatch):
@@ -134,3 +134,75 @@ def test_cad_no_shift_negative_proofs_are_never_promoted_to_same():
                      'plate','plate-new')
     out=comparator.compare([original],[changed],revision_only=True,exact_serialization=True)
     assert not any(r.status in ('SAME','RENAMED') for r in out)
+
+
+def _repeated_150(extra=False):
+    """150 located copies from distinct STEP export definitions."""
+    from dsac29.alignment import _relocate
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    first=_part(0,'P')
+    second=describe(BRepPrimAPI_MakeBox(8.,9.,10.).Shape(),'P','new_definition')
+    a=[];b=[]
+    for i in range(150):
+        pos=np.array([float(i*23),float(i%7*30),float(i%5*10)])
+        a.append(_relocate(first,np.eye(3),pos))
+        b.append(_relocate(second,np.eye(3),pos))
+    if extra:
+        b.append(_part(100000,'EXTRA_SOLID'))
+    return a,b
+
+
+def test_150_repeated_zw3d_copies_recover_after_one_unproven_world_sample(monkeypatch):
+    from collections import Counter
+    from dsac29.geometry_registry import GeometryRegistry
+    a,b=_repeated_150(extra=True)
+    calls=[]
+    # Separate exporter definitions share no serialization shortcut.
+    monkeypatch.setattr(GeometryRegistry,'same_definition',lambda *args:False)
+    def proof(*args,**kwargs):
+        calls.append(1)
+        # First old-world/face proof is inconclusive. A different occurrence
+        # is independently proven; only then may all copies reuse the anchor.
+        return len(calls)>=3
+    monkeypatch.setattr(comparator,'guarded_world_equivalent',proof)
+    monkeypatch.setattr(comparator,'guarded_world_reexport',proof)
+    records=comparator.compare(a,b,revision_only=True,exact_serialization=False)
+    counts=Counter(r.status for r in records)
+    assert counts['SAME']==150,counts
+    assert counts['ADDED']==1 and counts['UNCERTAIN']==0,counts
+    assert len(calls)==3, 'Do not run 150 independent native Booleans'
+
+
+def test_one_native_timeout_cannot_poison_150_repeated_occurrences(monkeypatch):
+    from collections import Counter
+    from dsac29.geometry_registry import GeometryRegistry
+    a,b=_repeated_150()
+    monkeypatch.setattr(GeometryRegistry,'same_definition',lambda *args:False)
+    tries=[]
+    def occasionally_crashes(*args,**kwargs):
+        tries.append(1)
+        if len(tries)==1:
+            raise native_guard.NativeGeometryFailure('OCC transient worker error')
+        return True
+    monkeypatch.setattr(comparator,'guarded_world_equivalent',occasionally_crashes)
+    monkeypatch.setattr(comparator,'guarded_world_reexport',occasionally_crashes)
+    records=comparator.compare(a,b,revision_only=True,exact_serialization=False)
+    assert Counter(r.status for r in records)=={'SAME':150}
+    assert len(tries)==2
+
+
+def test_three_failed_native_probes_remain_unverified_not_same(monkeypatch):
+    from collections import Counter
+    from dsac29.geometry_registry import GeometryRegistry
+    a,b=_repeated_150()
+    monkeypatch.setattr(GeometryRegistry,'same_definition',lambda *args:False)
+    calls=[]
+    def unverified(*args,**kwargs):
+        calls.append(1)
+        return False
+    monkeypatch.setattr(comparator,'guarded_world_equivalent',unverified)
+    monkeypatch.setattr(comparator,'guarded_world_reexport',unverified)
+    result=comparator.compare(a,b,revision_only=True,exact_serialization=False)
+    assert not any(r.status in ('SAME','RENAMED') for r in result)
+    assert any(r.status=='UNCERTAIN' for r in result)
+    assert len(calls)<=6, 'Do not retry the same failed definition 150 times'
