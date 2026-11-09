@@ -158,6 +158,27 @@ def _features(parts,points,root,deadline,cancelled,timeout_cap=15):
     return data.get('features',[])
 
 
+
+def _independent_parent_matches(verified, left, right):
+    """Give one frame vote per independent matched pair of complete parent parts.
+
+    Multiple verified faces cannot promote a single parent into many anchors.
+    This is FRAME evidence only: complete body SAME still needs native proof.
+    """
+    from collections import Counter
+    counts=Counter((int(left[i].parent),int(right[j].parent)) for i,j in verified)
+    first={}
+    for i,j in verified:
+        first.setdefault((int(left[i].parent),int(right[j].parent)),(i,j))
+    used_a=set();used_b=set();out=[]
+    for parent_a,parent_b in sorted(counts,key=lambda k:(-counts[k],k)):
+        if parent_a in used_a or parent_b in used_b:
+            continue
+        out.append(first[(parent_a,parent_b)])
+        used_a.add(parent_a);used_b.add(parent_b)
+    return out
+
+
 def propose(a,b,tolerance,state,*,extended=False,progress=None,cancelled=None,deadline=None):
     from .native_session import world_session
     from .native_guard import NativeGeometryFailure
@@ -217,7 +238,10 @@ def propose(a,b,tolerance,state,*,extended=False,progress=None,cancelled=None,de
                     if not isinstance(matches,list) or len(matches)!=len(pairs) or any(type(v) is not bool for v in matches):
                         raise NativeGeometryFailure('Nieprawidłowa mapa dowodów powierzchni')
                     verified=[pair for pair,match in zip(pairs,matches) if match]
-                    old={aa[i].parent for i,j in verified};new={bb[j].parent for i,j in verified}
+                    # A repeated face can support a frame, not cast another part vote.
+                    independent=_independent_parent_matches(verified,aa,bb)
+                    old={aa[i].parent for i,j in independent}
+                    new={bb[j].parent for i,j in independent}
                     dirs=[aa[i].direction for i,j in verified if aa[i].direction is not None]
                     direction_rank=np.linalg.matrix_rank(np.asarray(dirs),tol=1e-5) if dirs else 0
                     corroborated=0
@@ -236,24 +260,25 @@ def propose(a,b,tolerance,state,*,extended=False,progress=None,cancelled=None,de
                                                             tolerance,timeout_s=min(4.,remaining),allow_boolean=False):
                                     corroborated=1;break
                             except NativeGeometryFailure:continue
-                    spread_ok=(len(verified)>=8 and min(len(old),len(new))>=4 and
-                        np.linalg.matrix_rank(pa[[i for i,j in verified]]-np.mean(pa[[i for i,j in verified]],axis=0),tol=tolerance)>=2 and
+                    independent_points=pa[[i for i,j in independent]] if independent else np.empty((0,3))
+                    spread_ok=(len(verified)>=8 and len(independent)>=4 and
+                        np.linalg.matrix_rank(independent_points-independent_points.mean(axis=0),tol=tolerance)>=2 and
                         (direction_rank>=2 or corroborated>0))
-                    trace.mark('registration_surfaces','PROOF',faces=len(verified),parents_a=len(old),parents_b=len(new),accepted=bool(spread_ok))
+                    trace.mark('registration_surfaces','PROOF',faces=len(verified),independent_parts=len(independent),parents_a=len(old),parents_b=len(new),accepted=bool(spread_ok))
                     state.surface_done.append((pose.rotation.copy(),pose.translation.copy()))
                     if progress:progress(f'Zachowane powierzchnie: {len(verified)}/{len(pairs)} dowodów; detale A/B: {len(old)}/{len(new)}. Całe bryły nadal wymagają porównania.')
                     if spread_ok:
                         state.surface_winners.append(dict(rotation=pose.rotation,translation=pose.translation,
-                            faces=len(verified),parents_a=len(old),parents_b=len(new),area=sum(aa[i].area for i,j in verified),
+                            faces=len(verified),parents_a=len(old),parents_b=len(new),independent_parts=len(independent),area=sum(aa[i].area for i,j in verified),
                             corroborating_bodies=corroborated))
             winners=state.surface_winners
             if not winners:return None
-            winners.sort(key=lambda w:(-min(w['parents_a'],w['parents_b']),-w['faces'],-w['area']))
+            winners.sort(key=lambda w:(-w['independent_parts'],-w['faces'],-w['area']))
             best=winners[0]
             identity=next((w for w in winners if np.linalg.norm(w['rotation']-np.eye(3))<1e-8 and np.linalg.norm(w['translation'])<=tolerance),None)
             if identity and identity['faces']>=best['faces'] and identity['area']>=best['area']*.95:best=identity
-            elif any(min(w['parents_a'],w['parents_b'])>=min(best['parents_a'],best['parents_b']) and
-                     w['faces']>=best['faces'] and w['area']>=best['area']*.95 and
+            elif any(w['independent_parts']>=max(4,best['independent_parts']-1) and
+                     w['faces']>=best['faces']*.75 and w['area']>=best['area']*.8 and
                      search.pose_distance(w['rotation'],w['translation'],best['rotation'],best['translation'],pb)>tolerance for w in winners[1:]):
                 return {'status':'unresolved','reason':'Kilka układów ma równoważne dowody zachowanych powierzchni; brak jednoznacznego wyrównania.'}
             original=np.linalg.norm(best['rotation']-np.eye(3))<1e-8 and np.linalg.norm(best['translation'])<=tolerance
