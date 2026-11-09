@@ -140,6 +140,37 @@ mod win {
         );
         text(dc, label, x + 6, y + 6, 22, 19, rgb(245, 250, 255), true);
     }
+    // Lightweight vector drawing: no webview, images, or installed fonts.
+    // Win32/GDI renders the splash immediately even on a cold portable start.
+    unsafe fn stroke(dc: HDC, x1: i32, y1: i32, x2: i32, y2: i32, color: u32, width: i32) {
+        let pen = CreatePen(PS_SOLID, width, color);
+        let old = SelectObject(dc, pen);
+        MoveToEx(dc, x1, y1, null_mut());
+        LineTo(dc, x2, y2);
+        SelectObject(dc, old);
+        DeleteObject(pen);
+    }
+    unsafe fn panel(dc: HDC, x: i32, y: i32, w: i32, h: i32, border: u32) {
+        stroke(dc, x, y, x+w, y, border, 1);
+        stroke(dc, x+w, y, x+w, y+h, border, 1);
+        stroke(dc, x+w, y+h, x, y+h, border, 1);
+        stroke(dc, x, y+h, x, y, border, 1);
+    }
+    unsafe fn outline_cube(dc: HDC, x: i32, y: i32, color: u32) {
+        // 12 visible isometric edges / blueprint-like highlight.
+        let p=(x,y-28);
+        let left=(x-34,y-12);
+        let right=(x+34,y-12);
+        let core=(x,y+5);
+        let bottom=(x,y+42);
+        let low_l=(x-34,y+24);
+        let low_r=(x+34,y+24);
+        for (a,b) in [(p,left),(p,right),(left,core),(right,core),
+                      (left,low_l),(right,low_r),(core,bottom),
+                      (low_l,bottom),(low_r,bottom)] {
+            stroke(dc,a.0,a.1,b.0,b.1,color,1);
+        }
+    }
     unsafe fn paint(hwnd: HWND) {
         let mut ps: PAINTSTRUCT = std::mem::zeroed();
         let target = BeginPaint(hwnd, &mut ps);
@@ -153,93 +184,88 @@ mod win {
         SetMapMode(dc, MM_ANISOTROPIC);
         SetWindowExtEx(dc, 660, 360, null_mut());
         SetViewportExtEx(dc, w, h, null_mut());
-        rect(dc, 0, 0, 660, 360, rgb(12, 18, 28));
-        rect(dc, 0, 0, 660, 2, rgb(68, 174, 154));
-        let t = START.get().unwrap().elapsed().as_secs_f64();
+        // Quiet dark geometry-workspace palette: readable at 100-200% DPI.
+        rect(dc, 0, 0, 660, 360, rgb(10, 16, 26));
+        rect(dc, 0, 0, 660, 3, rgb(25, 151, 142));
+        let elapsed = START.get().unwrap().elapsed().as_secs_f64();
         let mut motion = 1i32;
-        SystemParametersInfoW(
-            SPI_GETCLIENTAREAANIMATION,
-            0,
-            &mut motion as *mut _ as *mut _,
-            0,
-        );
-        let t = if motion != 0 { t } else { 2.0 };
-        let ease = (t / 1.1).min(1.0);
-        let offset = (65.0 * (1.0 - ease).powi(3)) as i32;
-        text(dc, "DS Compare", 28, 22, 520, 28, rgb(232, 240, 250), true);
-        text(
-            dc,
-            "PORÓWNANIE REWIZJI CAD",
-            30,
-            60,
-            520,
-            11,
-            rgb(147, 167, 190),
-            false,
-        );
-        cube(dc, 293 - offset, 135, false, "A");
-        cube(dc, 367 + offset, 135, true, "B");
+        SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0,
+            &mut motion as *mut _ as *mut _, 0);
+        let animated = motion != 0;
+        let elapsed = if animated { elapsed } else { 3.0 };
+        let cycle = (elapsed / 2.4).fract();
+        let approach = (elapsed / 1.0).min(1.0);
+        let ease = 1.0 - (1.0-approach).powi(3);
+        let spread = (62.0 * (1.0-ease)) as i32;
+
+        text(dc, "DS COMPARE", 30, 19, 490, 29, rgb(237, 245, 253), true);
+        text(dc, "GEOMETRY  /  REVISION ENGINE", 31, 61, 490, 11,
+             rgb(123, 153, 175), false);
+        rect(dc, 29, 98, 602, 155, rgb(15, 25, 39));
+        panel(dc, 29, 98, 602, 155, rgb(38, 56, 75));
+
+        // Fine drafting grid, fixed and cheap to draw.
+        for x in (51..625).step_by(32) {
+            rect(dc, x, 109, 1, 132, rgb(20, 34, 49));
+        }
+        for y in (115..246).step_by(32) {
+            rect(dc, 40, y, 579, 1, rgb(20, 34, 49));
+        }
+        text(dc, "REWIZJA A", 50, 112, 170, 11, rgb(175, 161, 132), true);
+        text(dc, "REWIZJA B", 475, 112, 160, 11, rgb(130, 200, 191), true);
+        let ax = 264-spread;
+        let bx = 396+spread;
+        let y = 171;
+        // Ghost positions and a connecting comparison axis.
+        stroke(dc, 303, 170, 357, 170, rgb(55, 76, 90), 1);
+        stroke(dc, 309, 164, 303, 170, rgb(69, 110, 115), 1);
+        stroke(dc, 309, 176, 303, 170, rgb(69, 110, 115), 1);
+        stroke(dc, 351, 164, 357, 170, rgb(69, 110, 115), 1);
+        stroke(dc, 351, 176, 357, 170, rgb(69, 110, 115), 1);
+        cube(dc, ax, y, false, "A");
+        cube(dc, bx, y, true, "B");
+        outline_cube(dc, ax, y, rgb(238, 195, 121));
+        outline_cube(dc, bx, y, rgb(96, 222, 196));
+
+        // Moving CAD section plane: scans both bodies and reconnects.
+        let scanner = if animated {
+            221 + (cycle * 219.0).round() as i32
+        } else { 330 };
+        stroke(dc, scanner-5, 136, scanner-5, 215,
+               rgb(29, 73, 81), 1);
+        stroke(dc, scanner, 132, scanner, 219,
+               rgb(91, 211, 193), 2);
+        stroke(dc, scanner+5, 136, scanner+5, 215,
+               rgb(29, 73, 81), 1);
+        let pulse = if animated {
+            0.5+0.5*(elapsed*4.2).sin()
+        } else { 0.65 };
+        let glow = (26.0 + pulse*45.0) as u32;
+        rect(dc, 322, 209, 16, 3, rgb(glow, 141, 142));
+        text(dc, "PORÓWNYWANIE GEOMETRII", 231, 230, 240, 10,
+             rgb(127, 168, 183), false);
+
         let state = STATE.get().unwrap();
         let p = state.status.lock().unwrap().clone();
-        text(
-            dc,
-            "Twoje modele. Każda zmiana pod kontrolą.",
-            30,
-            219,
-            600,
-            19,
-            rgb(220, 231, 244),
-            true,
-        );
-        text(dc, &p.text, 30, 263, 548, 14, rgb(157, 178, 200), false);
-        rect(dc, 30, 307, 600, 4, rgb(36, 52, 71));
+        text(dc, &p.text, 30, 269, 535, 15, rgb(203, 217, 231), true);
+        text(dc, "Przygotowywanie bezpiecznego środowiska CAD", 31, 294, 530, 11,
+             rgb(122, 148, 171), false);
+
+        // Monotonic percentage when known, otherwise an honest scanner.
+        rect(dc, 30, 319, 600, 5, rgb(35, 51, 69));
         if let Some(n) = p.percent {
-            rect(
-                dc,
-                30,
-                307,
-                (600 * n.min(100) / 100) as i32,
-                4,
-                rgb(78, 188, 165),
-            );
-            text(
-                dc,
-                &format!("{n}%"),
-                580,
-                263,
-                60,
-                14,
-                rgb(100, 212, 185),
-                true,
-            );
+            let n = n.min(100);
+            rect(dc, 30, 319, (600*n/100) as i32, 5, rgb(59, 200, 173));
+            text(dc, &format!("{n}%"), 579, 271, 55, 13,
+                 rgb(113, 223, 194), true);
         } else {
-            let position = if motion != 0 {
-                ((t * 0.55).fract() * 420.0) as i32
-            } else {
-                210
-            };
-            rect(dc, 30 + position, 307, 180, 4, rgb(78, 188, 165));
+            let position = if animated { (cycle*425.0).round() as i32 } else { 212 };
+            rect(dc, 30+position, 319, 174, 5, rgb(59, 200, 173));
         }
-        text(
-            dc,
-            "LOKALNE PORÓWNYWANIE MODELI STEP",
-            30,
-            331,
-            400,
-            11,
-            rgb(107, 129, 153),
-            false,
-        );
-        text(
-            dc,
-            concat!("PORTABLE ", env!("CARGO_PKG_VERSION")),
-            526,
-            331,
-            120,
-            11,
-            rgb(107, 129, 153),
-            false,
-        );
+        text(dc, "LOKALNIE  ·  TWOJE DANE POZOSTAJĄ NA KOMPUTERZE", 30, 336,
+             465, 10, rgb(102, 126, 149), false);
+        text(dc, concat!("v", env!("CARGO_PKG_VERSION")), 555, 335, 90, 11,
+             rgb(102, 126, 149), false);
         SetMapMode(dc, MM_TEXT);
         BitBlt(target, 0, 0, w, h, dc, 0, 0, SRCCOPY);
         SelectObject(dc, old);
@@ -300,7 +326,7 @@ mod win {
                 WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
                 class.as_ptr(),
                 wide("DS Compare · uruchamianie").as_ptr(),
-                WS_POPUP | WS_VISIBLE | WS_BORDER,
+                WS_POPUP | WS_VISIBLE,
                 x,
                 y,
                 width,

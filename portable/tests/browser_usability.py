@@ -18,6 +18,8 @@ with sync_playwright() as p:
   else:route.fulfill(path=str(demo/name),content_type='text/html')
  page.route('**/artifacts/*',route_artifact)
  page.add_init_script(script);page.goto('http://127.0.0.1:8768');page.wait_for_function("window.__listeners['tauri://drag-drop']!==undefined")
+ assert page.get_by_role('button',name='Diagnostyka',exact=True).count()==0
+ assert page.locator('aside.rail nav button').count()==2
  assert page.get_by_label('Tolerancja geometryczna',exact=True).count()==1
  assert not page.get_by_label('Tolerancja geometryczna',exact=True).is_visible()
  page.get_by_role('button',name='Ustawienia',exact=True).click()

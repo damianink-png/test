@@ -180,6 +180,21 @@ s=once(s,
                                 guarded_rigid,s,b[j],tolerance,registered_reexport=True,
                                 timeout_s=25)""",
 'guard new broad rigid candidates')
+# The former 240-second limit was shared by the ENTIRE rigid stage,
+# which was too short for 1600 occurrences even though each native call
+# already has an independent timeout. Scale the aggregate watchdog only
+# with input size; preserve both the global fail-closed and per-pair guards.
+s=once(s,'def compare(a: list[SolidInfo]',
+"""def native_rigid_stage_budget(solid_count):
+    \"\"\"Bounded stage budget in seconds; source population controls scale.\"\"\"
+    return max(240.0,0.5*max(0,int(solid_count)))
+
+
+def compare(a: list[SolidInfo]""",
+'rigid watchdog helper')
+s=once(s,'    native_guard_budget_s=240.0',
+           '    native_guard_budget_s=native_rigid_stage_budget(max(len(a),len(b)))',
+           'population-scaled registered rigid stage')
 compile(s,str(compare),'exec')
 compare.write_text(s,encoding='utf-8')
 print('STEP_OCCURRENCE_FAMILY_AND_GLOBAL_ASSIGNMENT_PATCH_PASS',flush=True)
