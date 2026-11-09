@@ -218,7 +218,8 @@ def test_three_failed_native_probes_remain_unverified_not_same(monkeypatch):
     result=comparator.compare(a,b,revision_only=True,exact_serialization=False)
     assert not any(r.status in ('SAME','RENAMED') for r in result)
     assert any(r.status=='UNCERTAIN' for r in result)
-    assert len(calls)<=6, 'Do not retry the same failed definition 150 times'
+    assert len(calls)>3, 'Unproven geometry must not poison the whole repeated family'
+    assert len(calls)<=300, 'All hypotheses must remain bounded by the source occurrences'
 
 
 def test_failed_local_positions_cannot_poison_147_true_matches(monkeypatch):

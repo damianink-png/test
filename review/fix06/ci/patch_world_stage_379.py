@@ -164,18 +164,13 @@ s=once(s,
                     geometry_context.remember_equivalence(s,b[j],tolerance)""",
 """                trace.mark('world_matching_pair','END',a_id=i,b_id=j,match=bool(same))
                 if not same:
-                    # A negative face proof can be inconclusive after
-                    # STEP repartition. Never cache it as global inequality.
-                    family=(gs,gt)
-                    world_probe_failures[family]=world_probe_failures.get(family,0)+1
-                    world_probe_pairs.setdefault(family,[]).append((i,j))
-                    if world_probe_failures[family]>=3:
-                        world_exhausted.add(family)
-                        for aa,bb in world_probe_pairs[family]:
-                            failed_a.add(aa);failed_b.add(bb);failed_pairs.add((aa,bb))
-                        trace.mark('world_matching','REPEATED_DEFINITION_UNVERIFIED',
-                                   definition_a=gs,definition_b=gt,
-                                   attempts=world_probe_failures[family])
+                    # The native routine finished, but did not prove equality.
+                    # This is NOT an exception. It must never poison 150
+                    # otherwise independent occurrences or mark the family
+                    # as UNCERTAIN. Only real timeout/crash paths above may
+                    # use the bounded unverified-family guard.
+                    trace.mark('world_matching','NOT_PROVEN',
+                               a_id=i,b_id=j,definition_a=gs,definition_b=gt)
                 if same:
                     geometry_context.remember_equivalence(s,b[j],tolerance)""","world pair completed")
 # Revisit previously inconclusive repeated occurrences only after an
