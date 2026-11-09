@@ -206,3 +206,28 @@ def test_three_failed_native_probes_remain_unverified_not_same(monkeypatch):
     assert not any(r.status in ('SAME','RENAMED') for r in result)
     assert any(r.status=='UNCERTAIN' for r in result)
     assert len(calls)<=6, 'Do not retry the same failed definition 150 times'
+
+
+def test_failed_local_positions_cannot_poison_147_true_matches(monkeypatch):
+    from collections import Counter
+    from dataclasses import replace
+    from dsac29.alignment import _relocate
+    from dsac29.geometry_registry import GeometryRegistry
+    a,b=_repeated_150()
+    # Three locally moved occurrences are not grounds for rejecting
+    # the remaining 147 identical-world-position copies.
+    b[:3]=[_relocate(b[i],np.eye(3),np.array([.2,0.,0.])) for i in range(3)]
+    monkeypatch.setattr(GeometryRegistry,'same_definition',lambda *args:False)
+    calls=[]
+    def native_world(left,right,*args,**kwargs):
+        calls.append(1)
+        return bool(np.linalg.norm(left.center-right.center)<.01)
+    monkeypatch.setattr(comparator,'guarded_world_equivalent',native_world)
+    monkeypatch.setattr(comparator,'guarded_world_reexport',native_world)
+    result=comparator.compare(a,b,revision_only=True,exact_serialization=False)
+    counts=Counter(r.status for r in result)
+    assert counts['SAME']>=147,counts
+    assert all(r.status not in ('SAME','RENAMED') or
+               (r.a_index not in (0,1,2) and r.b_index not in (0,1,2))
+               for r in result)
+    assert len(calls)<=8,'147 unchanged instances should reuse native positive anchor'
