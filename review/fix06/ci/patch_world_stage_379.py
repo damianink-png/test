@@ -67,19 +67,19 @@ s=once(s,
     # Preserve unknown native outcomes for identical definition pairs; never
     # restart the same hung OCCT operation on every duplicated occurrence.
     unknown_world_groups=set()
-    # Do not retry the same completed FALSE world result for each copy of
-    # identical native definitions with the same relative CAD placement.
-    # This is a negative memo only; native errors are never cached as FALSE.
-    world_negative_anchors={}
+    # Native negative/incomplete proofs are not proof that 150 copies differ.
+    # Probe independent occurrences a bounded number of times.
+    world_probe_failures={}
+    world_exhausted=set()
+    world_probe_pairs={}
     native_world_timeouts=0
     def bounded_reexport(left,right,tol):
         # One native worker first checks oriented faces and trims, then may
         # verify TWO empty solid differences if re-export changed topology.
         # Names are never used to permit or deny geometric equivalence:
         # a renamed unchanged part must receive the same full proof.
-        candidate_world=bool(world_candidate(left,right,tol))
         return guarded_world_reexport(left,right,tol,timeout_s=25,
-            allow_solid_set_proof=candidate_world)
+            allow_solid_set_proof=True)
     def bounded_registered(left,right,tol):
         return guarded_registered_world(left,right,tol,timeout_s=25)
     def bounded_world(left,right,tol):
@@ -87,14 +87,10 @@ s=once(s,
 ""","world fallback guards")
 s=once(s,
 "                else:\n                    if checks >= max_checks: raise RuntimeError(f'Limit testów B-Rep ({max_checks}) — analiza niekompletna')",
-"""                elif ((gs,gt) in world_negative_anchors and
-                      _relative_location_is_same(s,a[world_negative_anchors[(gs,gt)][0]],
-                                                 b[j],b[world_negative_anchors[(gs,gt)][1]],
-                                                 tolerance)):
-                    same=False;memo_hits+=1
-                elif (gs,gt) in unknown_world_groups:
+"""                elif (gs,gt) in world_exhausted:
                     failed_a.add(i);failed_b.add(j);failed_pairs.add((i,j))
-                    trace.mark('world_matching','SKIP_UNVERIFIED_GROUP',a_id=i,b_id=j)
+                    trace.mark('world_matching','UNVERIFIED_REPEATED_DEFINITION',
+                               a_id=i,b_id=j,group_attempts=world_probe_failures.get((gs,gt),0))
                     continue
                 else:
                     if checks >= max_checks: raise RuntimeError(f'Limit testów B-Rep ({max_checks}) — analiza niekompletna')""","skip duplicated native failures")
@@ -136,7 +132,11 @@ s=once(s,
                         # to verify independent parts without replaying the
                         # same failed definition pair for every occurrence.
                         failed_a.add(i);failed_b.add(j);failed_pairs.add((i,j))
-                        unknown_world_groups.add((gs,gt))
+                        family=(gs,gt)
+                        world_probe_failures[family]=world_probe_failures.get(family,0)+1
+                        world_probe_pairs.setdefault(family,[]).append((i,j))
+                        if world_probe_failures[family]>=3:
+                            world_exhausted.add(family)
                         native_world_timeouts+=1
                         trace.mark('world_matching_pair','UNVERIFIED',a_id=i,b_id=j,
                                    operation=checks,error=str(exc))
@@ -152,13 +152,59 @@ s=once(s,
                         continue
                     except Exception as exc:""","world native error handling")
 s=once(s,
+"                            if not same and coarse_candidate(s,b[j],tolerance):",
+"                            if not same and (coarse_candidate(s,b[j],tolerance) or (broad_world_lookup and world_candidate(s,b[j],tolerance))):",
+"medium STEP fallback native proof")
+s=once(s,
 """                if same:
                     geometry_context.remember_equivalence(s,b[j],tolerance)""",
 """                trace.mark('world_matching_pair','END',a_id=i,b_id=j,match=bool(same))
                 if not same:
-                    world_negative_anchors.setdefault((gs,gt),(i,j))
+                    # A negative face proof can be inconclusive after
+                    # STEP repartition. Never cache it as global inequality.
+                    family=(gs,gt)
+                    world_probe_failures[family]=world_probe_failures.get(family,0)+1
+                    world_probe_pairs.setdefault(family,[]).append((i,j))
+                    if world_probe_failures[family]>=3:
+                        world_exhausted.add(family)
+                        for aa,bb in world_probe_pairs[family]:
+                            failed_a.add(aa);failed_b.add(bb);failed_pairs.add((aa,bb))
+                        trace.mark('world_matching','REPEATED_DEFINITION_UNVERIFIED',
+                                   definition_a=gs,definition_b=gt,
+                                   attempts=world_probe_failures[family])
                 if same:
                     geometry_context.remember_equivalence(s,b[j],tolerance)""","world pair completed")
+# Revisit previously inconclusive repeated occurrences only after an
+# independent positive native world proof for the same CAD definitions.
+s=once(s,
+"    trace.mark('world_matching','END',matches=len(out),remaining_a=len(free_a),remaining_b=len(free_b),native_checks=checks)",
+"""    if world_anchors and free_a and free_b:
+        rescued=0
+        for i in sorted(tuple(free_a)):
+            s=a[i]
+            candidates=sorted((j for j in _nearby(cells,s,lookup_radius)
+                               if j in free_b and
+                               (group_a[i],group_b[j]) in world_anchors and
+                               dist(s,b[j])<=lookup_radius),
+                              key=lambda j:(norm_a[i]!=norm_b[j],dist(s,b[j]),j))
+            for j in candidates:
+                gs,gt=group_a[i],group_b[j]
+                ai,bj=world_anchors[gs,gt]
+                if not _relative_location_is_same(s,a[ai],b[j],b[bj],tolerance):
+                    continue
+                renamed=genuine_rename(s,b[j])
+                out.append(Record(i,j,'RENAMED' if renamed else 'SAME',
+                                  'Wznowiony dowód powtarzalnej bryły B-Rep',
+                                  name_changed=renamed))
+                free_a.remove(i);free_b.remove(j)
+                rescued+=1
+                break
+        if rescued:
+            trace.mark('world_matching','RESCUED_OCCURRENCES',count=rescued)
+            if progress:progress(f'Etap zgodności: odzyskano {rescued} wystąpień po pozytywnym dowodzie B-Rep.')
+    trace.mark('world_matching','END',matches=len(out),remaining_a=len(free_a),remaining_b=len(free_b),native_checks=checks)""",
+"recover repeats after positive world proof")
+
 compile(s,str(compare),'exec')
 compare.write_text(s,encoding='utf-8')
 
