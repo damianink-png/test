@@ -1,0 +1,23 @@
+name: Diagnose SwissTransfer sender verification 42571145028
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-swisstransfer-42571145028.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Read failed sender verification log
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          gh run download 42571145028 --repo "$GITHUB_REPOSITORY" --name swisstransfer-42273753253-diagnostics --dir diagnostics
+          echo "Swissfer upload log (no user-entered code was supplied):"
+          sed -n '1,80p' diagnostics/upload.log
