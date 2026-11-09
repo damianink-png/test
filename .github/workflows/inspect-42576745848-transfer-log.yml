@@ -1,0 +1,22 @@
+name: Inspect DSCompare 0.6.12 sender response
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-42576745848-transfer-log.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Read uploader response
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          gh run download 42576745848 --repo "$GITHUB_REPOSITORY" --name dscompare-42273753253-newcode-transfer-log --dir diagnostics
+          sed -n '1,60p' diagnostics/transfer.log
