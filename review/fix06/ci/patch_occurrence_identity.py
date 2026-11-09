@@ -192,7 +192,7 @@ s=once(s,'def compare(a: list[SolidInfo]',
 
 def compare(a: list[SolidInfo]""",
 'rigid watchdog helper')
-s=once(s,'    native_guard_budget_s=240.0',
+s=once(s,'    native_guard_budget_s = 240.0',
            '    native_guard_budget_s=native_rigid_stage_budget(max(len(a),len(b)))',
            'population-scaled registered rigid stage')
 compile(s,str(compare),'exec')

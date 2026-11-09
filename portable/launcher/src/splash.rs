@@ -171,6 +171,17 @@ mod win {
             stroke(dc,a.0,a.1,b.0,b.1,color,1);
         }
     }
+    unsafe fn oval(dc: HDC, cx: i32, cy: i32, rx: i32, ry: i32, fill: u32, edge: u32, width: i32) {
+        let brush = CreateSolidBrush(fill);
+        let pen = CreatePen(PS_SOLID, width, edge);
+        let old_brush = SelectObject(dc, brush);
+        let old_pen = SelectObject(dc, pen);
+        Ellipse(dc, cx-rx, cy-ry, cx+rx, cy+ry);
+        SelectObject(dc, old_pen);
+        SelectObject(dc, old_brush);
+        DeleteObject(pen);
+        DeleteObject(brush);
+    }
     unsafe fn paint(hwnd: HWND) {
         let mut ps: PAINTSTRUCT = std::mem::zeroed();
         let target = BeginPaint(hwnd, &mut ps);
@@ -196,55 +207,90 @@ mod win {
         let cycle = (elapsed / 2.4).fract();
         let approach = (elapsed / 1.0).min(1.0);
         let ease = 1.0 - (1.0-approach).powi(3);
-        let spread = (62.0 * (1.0-ease)) as i32;
-
-        text(dc, "DS COMPARE", 30, 19, 490, 29, rgb(237, 245, 253), true);
-        text(dc, "GEOMETRY  /  REVISION ENGINE", 31, 61, 490, 11,
-             rgb(123, 153, 175), false);
-        rect(dc, 29, 98, 602, 155, rgb(15, 25, 39));
-        panel(dc, 29, 98, 602, 155, rgb(38, 56, 75));
-
-        // Fine drafting grid, fixed and cheap to draw.
-        for x in (51..625).step_by(32) {
-            rect(dc, x, 109, 1, 132, rgb(20, 34, 49));
+        let spread = (34.0 * (1.0-ease)) as i32;
+        text(dc, "DS Compare", 28, 18, 500, 30, rgb(242, 249, 255), true);
+        text(dc, "PORÓWNYWANIE REWIZJI CAD", 30, 59, 500, 12, rgb(148, 176, 199), false);
+        rect(dc, 28, 90, 603, 164, rgb(11, 26, 42));
+        panel(dc, 28, 90, 603, 164, rgb(32, 66, 87));
+        // Diagonal technical grid under the model, much quieter than a checkerboard.
+        for x in (40..632).step_by(34) {
+            stroke(dc, x, 94, x, 250, rgb(18, 42, 61), 1);
         }
-        for y in (115..246).step_by(32) {
-            rect(dc, 40, y, 579, 1, rgb(20, 34, 49));
+        for y in (104..250).step_by(34) {
+            stroke(dc, 40, y, 619, y, rgb(18, 42, 61), 1);
         }
-        text(dc, "REWIZJA A", 50, 112, 170, 11, rgb(175, 161, 132), true);
-        text(dc, "REWIZJA B", 475, 112, 160, 11, rgb(130, 200, 191), true);
-        let ax = 264-spread;
-        let bx = 396+spread;
-        let y = 171;
-        // Ghost positions and a connecting comparison axis.
-        stroke(dc, 303, 170, 357, 170, rgb(55, 76, 90), 1);
-        stroke(dc, 309, 164, 303, 170, rgb(69, 110, 115), 1);
-        stroke(dc, 309, 176, 303, 170, rgb(69, 110, 115), 1);
-        stroke(dc, 351, 164, 357, 170, rgb(69, 110, 115), 1);
-        stroke(dc, 351, 176, 357, 170, rgb(69, 110, 115), 1);
-        cube(dc, ax, y, false, "A");
-        cube(dc, bx, y, true, "B");
-        outline_cube(dc, ax, y, rgb(238, 195, 121));
-        outline_cube(dc, bx, y, rgb(96, 222, 196));
+        text(dc, "CAD / STEP", 48, 113, 270, 12, rgb(94, 203, 229), true);
+        text(dc, "ANALIZA 3D", 48, 143, 276, 23, rgb(226, 241, 252), true);
+        text(dc, "Wykrywanie zmian geometrii", 50, 178, 296, 12,
+             rgb(143, 174, 196), false);
+        text(dc, "Bryły · położenie · rewizje", 50, 203, 278, 12,
+             rgb(112, 147, 171), false);
+        stroke(dc, 49, 230, 156, 230, rgb(38, 165, 203), 2);
 
-        // Moving CAD section plane: scans both bodies and reconnects.
-        let scanner = if animated {
-            221 + (cycle * 219.0).round() as i32
-        } else { 330 };
-        stroke(dc, scanner-5, 136, scanner-5, 215,
-               rgb(29, 73, 81), 1);
-        stroke(dc, scanner, 132, scanner, 219,
-               rgb(91, 211, 193), 2);
-        stroke(dc, scanner+5, 136, scanner+5, 215,
-               rgb(29, 73, 81), 1);
-        let pulse = if animated {
-            0.5+0.5*(elapsed*4.2).sin()
-        } else { 0.65 };
-        let glow = (26.0 + pulse*45.0) as u32;
-        rect(dc, 322, 209, 16, 3, rgb(glow, 141, 142));
-        text(dc, "PORÓWNYWANIE GEOMETRII", 231, 230, 240, 10,
-             rgb(127, 168, 183), false);
-
+        // Fully vector, illuminated mechanical CAD assembly instead of two cubes.
+        // Metallic bed with raised thickness and a different world-revision layer.
+        poly(dc, &[(358,218),(460,166),(626,202),(526,264)], rgb(103, 125, 145));
+        poly(dc, &[(358,218),(526,264),(526,284),(358,241)], rgb(31, 53, 75));
+        poly(dc, &[(526,264),(626,202),(626,226),(526,284)], rgb(24, 48, 70));
+        poly(dc, &[(378,217),(458,177),(602,207),(523,253)], rgb(27, 51, 70));
+        stroke(dc, 358, 218, 526, 264, rgb(192, 218, 233), 2);
+        stroke(dc, 526, 264, 626, 202, rgb(161, 195, 217), 2);
+        // Rear machine shaft and stepped motor housing.
+        poly(dc, &[(516,131),(596,150),(598,206),(516,186)], rgb(62, 83, 102));
+        poly(dc, &[(598,150),(615,159),(616,214),(598,206)], rgb(23, 44, 65));
+        poly(dc, &[(516,131),(537,119),(614,137),(596,150)], rgb(139, 158, 175));
+        poly(dc, &[(543,117),(553,104),(591,112),(578,123)], rgb(167, 183, 194));
+        stroke(dc, 516, 132, 596, 150, rgb(214, 233, 242), 2);
+        stroke(dc, 516, 186, 598, 206, rgb(115, 166, 188), 2);
+        // Angular ribs and supporting bearing yoke.
+        poly(dc, &[(409,215),(439,133),(462,140),(494,225),(472,227),(450,173),(433,225)],
+             rgb(99, 119, 136));
+        poly(dc, &[(440,133),(456,118),(478,129),(462,140)], rgb(194, 212, 222));
+        poly(dc, &[(483,221),(526,145),(543,152),(528,233)], rgb(66, 89, 107));
+        poly(dc, &[(526,145),(541,138),(558,145),(543,152)], rgb(193, 210, 219));
+        stroke(dc, 410, 215, 439, 133, rgb(201, 220, 231), 2);
+        stroke(dc, 483, 221, 526, 145, rgb(191, 212, 225), 2);
+        // Rectangular front bearing, rotated plates and concentric precision rings.
+        poly(dc, &[(432,148),(467,132),(495,147),(459,168)], rgb(183, 199, 208));
+        poly(dc, &[(459,168),(495,147),(495,211),(459,229)], rgb(49, 72, 91));
+        poly(dc, &[(421,146),(459,168),(459,228),(421,206)], rgb(123, 140, 154));
+        oval(dc, 431, 180, 32, 41, rgb(78, 101, 119), rgb(219, 231, 237), 4);
+        oval(dc, 428, 180, 27, 34, rgb(142, 160, 175), rgb(217, 236, 248), 2);
+        oval(dc, 428, 180, 19, 25, rgb(16, 30, 46), rgb(81, 118, 143), 4);
+        oval(dc, 428, 180, 12, 16, rgb(7, 18, 30), rgb(20, 38, 58), 3);
+        // Distinctive revision highlight; blue machined support and orange addition.
+        poly(dc, &[(491,234),(527,174),(544,187),(559,244)], rgb(24, 118, 189));
+        poly(dc, &[(527,174),(539,169),(556,181),(544,187)], rgb(91, 197, 248));
+        poly(dc, &[(544,187),(556,181),(571,238),(559,244)], rgb(16, 66, 115));
+        stroke(dc, 492, 234, 527, 174, rgb(116, 214, 250), 2);
+        poly(dc, &[(565,228),(590,217),(613,223),(587,237)], rgb(255, 177, 67));
+        poly(dc, &[(565,228),(587,237),(587,251),(565,243)], rgb(151, 75, 25));
+        poly(dc, &[(587,237),(613,223),(613,236),(587,251)], rgb(175, 93, 29));
+        stroke(dc, 565, 228, 587, 237, rgb(255, 227, 145), 2);
+        poly(dc, &[(555,139),(581,129),(605,137),(579,149)], rgb(249, 163, 48));
+        stroke(dc, 555, 139, 579, 149, rgb(255, 228, 147), 2);
+        // Fasteners and optical edge detail.
+        for (x,y) in [(395,226),(522,250),(594,213),(483,222),(544,134)] {
+            oval(dc,x,y,6,3,rgb(185, 207, 221),rgb(27, 53, 72),1);
+            stroke(dc,x-3,y,x+3,y,rgb(34, 56, 72),1);
+        }
+        // Independent CAD-revision overlay and moving section plane.
+        let scan = if animated { 386 + ((cycle*225.0).round() as i32) } else { 511 };
+        for o in [-9,-4,4,9] {
+            stroke(dc,scan+o,110,scan+o,248,rgb(18, 71, 85),1);
+        }
+        stroke(dc,scan,103,scan,252,rgb(91, 229, 242),2);
+        for (a,b) in [((356,220),(529,266)),((529,266),(627,206)),
+                      ((518,132),(596,151)),((438,135),(460,171)),
+                      ((492,234),(528,174)),((567,229),(612,224))] {
+            // Cyan ghost of the verified revision, not a fake geometry verdict.
+            if scan >= a.0 && scan >= b.0 {
+                stroke(dc,a.0+spread/4,a.1,b.0+spread/4,b.1,rgb(35, 206, 226),1);
+            }
+        }
+        let pulse = if animated { 0.5+0.5*(elapsed*4.2).sin() } else { 0.65 };
+        let gl = (60.0+pulse*110.0) as u32;
+        stroke(dc, 520, 249, 612, 244, rgb(23,gl,171),1);
         let state = STATE.get().unwrap();
         let p = state.status.lock().unwrap().clone();
         text(dc, &p.text, 30, 269, 535, 15, rgb(203, 217, 231), true);
