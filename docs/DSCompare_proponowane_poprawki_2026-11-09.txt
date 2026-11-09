@@ -1,0 +1,119 @@
+DS COMPARE — PROPONOWANE POPRAWKI
+Data: 9 listopada 2026
+
+STATUS
+To opis prac, które proponuję wykonać. Nie jest to informacja, że opisane
+niżej poprawki zostały już wdrożone. Dotychczasowe testy syntetyczne nie
+potwierdziły działania programu na rzeczywistych plikach użytkownika.
+
+1. ODTWORZYĆ PROBLEM NA RZECZYWISTEJ PARZE STEP
+Zebrać oryginał i jego przesuniętą kopię oraz, jeśli dostępne, odpowiedniki
+zapisane przez ZW3D. Porównać osobno: reeksport bez ruchu, sam ruch oraz
+ruch połączony ze zmianą rewizji. Sprawdzić jednostki, liczbę rzeczywistych
+brył, strukturę wystąpień i transformacje złożeń po imporcie. Zachować te
+pliki jako lokalny przypadek regresyjny, bez publikowania geometrii.
+
+2. SPRAWDZIĆ BŁĘDNY WEKTOR Z
+Według zgłoszenia ruch nowego modelu wynosi (+130,+280,+524) mm.
+Jeżeli jest to wektor zapisany w tym samym układzie współrzędnych co STEP,
+wyrównanie B do A powinno wynosić (-130,-280,-524) mm. Program proponował
+(-130,-280,-410) mm: rozbieżność w Z wynosi 114 mm.
+Nie wpisywać oczekiwanego Z na sztywno. Ustalić, czy hipoteza wynikała
+z niewłaściwych wystąpień, podobnych powierzchni na innej wysokości,
+ruchu podzłożenia lub innej interpretacji układu współrzędnych.
+
+3. WZMOCNIĆ WYBÓR WSPÓLNEGO POŁOŻENIA
+Kandydatów wyszukiwać od największych unikatowych detali na podstawie
+objętości, pola i głównych momentów bezwładności względem środka masy.
+Te wartości są wskazówkami, a nie dowodem identyczności. Potwierdzać
+geometrię niezależnie od nazw i zapisu topologii, a następnie grupować
+wektory przesunięcia. Wektor wyznaczać z potwierdzonych zgodnych par,
+bez wpływu części przemieszczonych lokalnie.
+
+Dla dowodów z powierzchni liczyć niezależne detale i ich rozmieszczenie,
+a nie tylko liczbę ścian. 48 powierzchni w 9 detalach nie oznacza
+48 niezależnych kotwic. Sprawdzać konkurencyjne skojarzenia powtarzalnych
+fragmentów oraz zgodność wektora na innych częściach modelu.
+Powierzchnie nie mogą nadawać całym bryłom statusu SAME.
+
+4. ODDZIELIĆ RUCH CAŁEGO MODELU OD RUCHU CZĘŚCI
+Równa geometria i równa liczba wystąpień nie dowodzą zgodności położenia.
+Sześć z ośmiu części może potwierdzać wspólny wektor, a dwie pozostałe
+mogą mieć własny ruch. Po zatwierdzeniu wyrównania oceniać je osobno:
+SAME dla zgodnej geometrii i położenia, MOVED dla potwierdzonej geometrii
+w innym położeniu, CHANGED dla potwierdzonej zmiany materiału,
+a wynik niepotwierdzony pozostawić do sprawdzenia.
+Przy samych lokalnych ruchach nie przesuwać całego złożenia.
+
+5. NAPRAWIĆ AWARIĘ INVALID MATERIAL VOLUME
+Zrzut pokazuje wyjątek z material_deltas.volume wywołanej przez
+step_reexport_tolerance._verified_difference_empty. Jest to sprawdzanie
+reszt A\\B i B\\A. Komunikat oznacza ujemną lub niefinitywną objętość
+wynikową; nie wskazuje jeszcze, która sytuacja wystąpiła.
+
+Przechwycić wyjątek w procesie natywnym, zapisać uporządkowany wynik
+nieukończonego sprawdzenia i przekazać go procesowi nadrzędnemu.
+Zapobiec oknu nieobsłużonego wyjątku PyInstaller. Sprawdzić, czy proces
+po takiej awarii wymaga bezpiecznego restartu.
+
+Zapisać indeksy pary, kierunek różnicy, surową wartość objętości,
+ważność i orientację bryły oraz etap operacji OCCT. Na rzeczywistych
+plikach ustalić, czy przyczyną jest wynik Cut, orientacja, tolerancja
+czy niestabilność obliczeń. Nie stosować automatycznie abs(volume),
+nie zamieniać błędu na zero i nie uznawać pary za zgodną po wyjątku.
+
+6. UODPORNIĆ PORÓWNANIE NA REEKSPORT ZW3D
+Rozróżnić zmianę zapisu ścian, krawędzi i parametryzacji od rzeczywistej
+zmiany materiału. Sprawdzić granice i obrysy powierzchni oraz możliwość
+użycia poprawnych różnic brył przy innym podziale ścian. Przy nieważnych
+wynikach Boolean korzystać tylko z niezależnie potwierdzonych dowodów.
+Nie zwiększać globalnie tolerancji i nie przyjmować zgodności na podstawie
+samych objętości, momentów, siatki lub wymiarów.
+
+7. ZACHOWAĆ POPRAWNE WZNAWIANIE I DIAGNOSTYKĘ
+Zweryfikować na plikach użytkownika poprawki wznawiania z 0.6.11:
+nieukończone hipotezy pozostają do ponowienia, ukończone nie są bez
+potrzeby powtarzane, a stare blokady konkurencyjnych hipotez są usuwane
+wyłącznie po zakończonej weryfikacji. Pozytywne dowody można przenosić
+tylko dla tych samych wejść, tolerancji i dokładnie tej samej transformacji.
+
+W oknie i pliku diagnostycznym pokazywać wektor, potwierdzone detale,
+nieukończone pary i konkretną przyczynę. Rozdzielić: brak kandydatów,
+brak zgodności, timeout, błąd obliczeń i rzeczywiście konkurencyjne układy.
+Zachować diagnostykę również po anulowaniu analizy.
+
+8. ZACHOWAĆ REGUŁY COMMON I OPTYMALIZACJE
+Powtarzalne detale dopuszczać do Common zgodnie z pełnymi ilościami
+w obu rewizjach i zgodną rodziną nazwy po oddzielonym dopisku rewizji,
+np. czesc1_afm0 / czesc1_afm2. Sama nazwa i ilość nie zastępują Common/Cut.
+Nie stosować Common do części, której potwierdzono jedynie ruch.
+Zachować ograniczenie obliczeń populacji do potrzebnych rodzin,
+licząc ich wystąpienia w całych rewizjach, również już dopasowane.
+Nie usuwać potrzebnych kontroli geometrii w celu skrócenia czasu.
+
+9. TESTY ODBIORCZE PRZED KOLEJNĄ WERSJĄ
+- Ten sam plik: SAME dla wszystkich części, bez zbędnego wyrównania.
+- Rzeczywista kopia przesunięta o (+130,+280,+524): wykrycie odwrotnego
+  wektora, zatwierdzenie i SAME dla niezmienionej geometrii.
+- Reeksport przez ZW3D bez ruchu: brak fałszywego globalnego przesunięcia.
+- Reeksport i przesunięcie: poprawny wektor mimo innego zapisu geometrii.
+- Przesunięcie plus rewizja: poprawny wektor i niezależne zmiany materiału.
+- Sześć zgodnych kotwic plus dwa ruchy lokalne: SAME 6 / MOVED 2.
+- Powtarzalne elementy na różnych wysokościach: odrzucenie błędnego Z.
+- Invalid material volume: brak okna awarii, brak fałszywego SAME,
+  zachowany dokładny błąd i pozostałe niezależnie potwierdzone wyniki.
+- Powtórzyć testy w skompilowanym silniku i pełnym OneEXE na Windows.
+
+LINKI — NAJNOWSZA POTWIERDZONA W TYM SPRAWDZENIU WERSJA: 0.6.12
+Repozytorium:
+https://github.com/damianink-png/test
+Źródła wydania 0.6.12:
+https://github.com/damianink-png/test/tree/64b90b6640d45357f7bca0919fb8c0780db3c850
+OneEXE 0.6.12, artefakt GitHub Actions:
+https://github.com/damianink-png/test/actions/runs/42273753253/artifacts/13533395559
+Udana kompilacja i testy wydania:
+https://github.com/damianink-png/test/actions/runs/42273753253
+
+Wersja 0.6.12 nie zawiera proponowanej tu nowej naprawy wyjątku
+Invalid material volume ani poprawki wyboru Z potwierdzonej na plikach
+użytkownika. Powyższy dokument jest planem dalszych prac.
