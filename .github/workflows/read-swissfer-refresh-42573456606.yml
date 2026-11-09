@@ -1,0 +1,20 @@
+name: Read SwissTransfer verification refresh result
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/read-swissfer-refresh-42573456606.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Read status without exposing credentials
+        run: |
+          set -euo pipefail
+          mkdir -p diag
+          gh run download 42573456606 --repo "$GITHUB_REPOSITORY" --name swissfer-fresh-code-request-log --dir diag
+          sed -n '1,70p' diag/request.log
