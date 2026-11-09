@@ -204,7 +204,7 @@ def test_one_native_timeout_cannot_poison_150_repeated_occurrences(monkeypatch):
     assert len(tries)==2
 
 
-def test_three_failed_native_probes_remain_unverified_not_same(monkeypatch):
+def test_completed_native_nonmatches_cannot_certify_repeated_occurrences(monkeypatch):
     from collections import Counter
     from dsac29.geometry_registry import GeometryRegistry
     a,b=_repeated_150()
@@ -217,9 +217,28 @@ def test_three_failed_native_probes_remain_unverified_not_same(monkeypatch):
     monkeypatch.setattr(comparator,'guarded_world_reexport',unverified)
     result=comparator.compare(a,b,revision_only=True,exact_serialization=False)
     assert not any(r.status in ('SAME','RENAMED') for r in result)
-    assert any(r.status=='UNCERTAIN' for r in result)
-    assert len(calls)>3, 'Unproven geometry must not poison the whole repeated family'
+    # A completed native False is a negative outcome, not a timeout.
+    # It must never certify SAME; status UNCERTAIN is reserved for actual
+    # unfinished/failing CAD calls, not mandatory for a finished False.
+    assert len(calls)>3, 'Completed nonmatches must not poison the whole repeated family'
     assert len(calls)<=300, 'All hypotheses must remain bounded by the source occurrences'
+
+
+def test_four_native_failures_abort_without_publishing_unverified_same(monkeypatch):
+    """Real native failures (unlike completed False) fail closed."""
+    import pytest
+    from dsac29.geometry_registry import GeometryRegistry
+    a,b=_repeated_150()
+    monkeypatch.setattr(GeometryRegistry,'same_definition',lambda *args:False)
+    tries=[]
+    def crashed_worker(*args,**kwargs):
+        tries.append(1)
+        raise native_guard.NativeGeometryFailure('synthetic OCC worker timeout')
+    monkeypatch.setattr(comparator,'guarded_world_equivalent',crashed_worker)
+    monkeypatch.setattr(comparator,'guarded_world_reexport',crashed_worker)
+    with pytest.raises(native_guard.NativeGeometryFailure,match='4 nieukończonych'):
+        comparator.compare(a,b,revision_only=True,exact_serialization=False)
+    assert len(tries)==4, 'Native failure policy must be bounded'
 
 
 def test_failed_local_positions_cannot_poison_147_true_matches(monkeypatch):
