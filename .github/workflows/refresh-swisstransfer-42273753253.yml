@@ -1,0 +1,51 @@
+name: Refresh SwissTransfer sender code for DSCompare 0.6.12
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/refresh-swisstransfer-42273753253.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      XDG_CONFIG_HOME: /tmp/swissfer-refresh
+    steps:
+      - name: Build Swissfer
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout -q --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+      - name: Request fresh email confirmation without importing expired state
+        run: |
+          set -uo pipefail
+          mkdir -p "$XDG_CONFIG_HOME/swissfer" payload
+          echo "DSCompare 0.6.12 new sender verification session."
+          printf '%s' 'Start SwissTransfer sender verification' > payload/request.txt
+          timeout 120s swissfer/target/release/swissfer payload/request.txt \
+            --email damianink@gmail.com --duration 30 \
+            --message 'Sender re-verification for DSCompare 0.6.12' </dev/null > request.log 2>&1
+          status=$?
+          cat request.log
+          echo "CLI status: $status. New code request may require email confirmation."
+      - name: Save pending sender session for next run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-validation-state
+          path: /tmp/swissfer-refresh/swissfer/email-validations.json
+          retention-days: 2
+          if-no-files-found: warn
+      - name: Save request diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-fresh-code-request-log
+          path: request.log
+          retention-days: 2
+          if-no-files-found: warn
