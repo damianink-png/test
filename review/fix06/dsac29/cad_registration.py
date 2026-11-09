@@ -246,7 +246,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                     total=sum(max(0.,p.volume) for p in a)
                     ratio=volume/max(total,1e-12)
                     weak=bool(recovered_sample) or (population>=40 and (votes<8 or (votes<ceil(.5*population) and ratio<.15)))
-                    if weak and (sampled or len(certified)!=votes):
+                    if weak and not recovered_sample and (sampled or len(certified)!=votes):
                         close_or_defer(pose,cache);continue
                     winners.append({'status':'registered','method':'cad_global_consensus_trimmed_refinement',
                         'translation_B_to_A_mm':pose.translation.tolist(),'rotation_B_to_A':pose.rotation.tolist(),

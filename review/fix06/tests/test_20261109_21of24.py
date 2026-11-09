@@ -55,3 +55,8 @@ def test_original_90_percent_threshold_is_unchanged(monkeypatch):
     accepted,weak,_=cad_registration._sampled_frame_decision(
         48,44,92,[(i,i) for i in range(44)],a,.01,24,24,0,100)
     assert accepted and not weak
+
+def test_conditional_consensus_is_not_discarded_by_legacy_weak_sample_veto():
+    import inspect
+    code=inspect.getsource(cad_registration.propose)
+    assert 'if weak and not recovered_sample and (sampled or len(certified)!=votes):' in code
