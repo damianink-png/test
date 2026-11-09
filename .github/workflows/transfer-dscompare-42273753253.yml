@@ -1,0 +1,121 @@
+name: SwissTransfer DSCompare 0.6.12 from 42273753253
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/transfer-dscompare-42273753253.yml'
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'attempt or finish with sender email code'
+        type: choice
+        required: true
+        options: [attempt, finish]
+      prepare_run_id:
+        description: 'For finish: previous attempt run ID'
+        required: false
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  transfer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      XDG_CONFIG_HOME: /tmp/swissfer-config
+    steps:
+      - name: Build pinned Swissfer client
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout -q --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+      - name: Restore pending sender for email code confirmation
+        if: ${{ inputs.stage == 'finish' }}
+        shell: bash
+        env:
+          PREPARE_RUN_ID: ${{ inputs.prepare_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$PREPARE_RUN_ID" =~ ^[0-9]+$ ]]
+          mkdir -p saved "$XDG_CONFIG_HOME/swissfer"
+          gh run download "$PREPARE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name swissfer-validation-state --dir saved
+          cp saved/email-validations.json "$XDG_CONFIG_HOME/swissfer/email-validations.json"
+      - name: Package exact 0.6.12 OneEXE
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload outgoing
+          gh run download 42273753253 --repo "$GITHUB_REPOSITORY" --name DSCompare-0.6.12-Portable-OneEXE --dir payload
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_STORED
+          exe=Path('payload/DSCompare.exe')
+          assert exe.is_file() and exe.stat().st_size > 100_000_000
+          dest=Path('outgoing/DSCompare-0.6.12-OneEXE-42273753253.zip')
+          with ZipFile(dest,'w',compression=ZIP_STORED) as zipf:
+              zipf.write(exe,arcname='DSCompare.exe')
+          with ZipFile(dest) as zipf:
+              assert zipf.namelist()==['DSCompare.exe']
+              assert zipf.getinfo('DSCompare.exe').file_size==exe.stat().st_size
+          print('ZIP bytes:',dest.stat().st_size)
+          PY
+      - name: Upload ZIP to SwissTransfer, or request email verification
+        id: upload
+        continue-on-error: true
+        shell: bash
+        timeout-minutes: 18
+        env:
+          STAGE: ${{ inputs.stage }}
+          VERIFY_CODE: ${{ secrets.SWISSFER_VERIFY_CODE }}
+        run: |
+          set -uo pipefail
+          if [ "$STAGE" = "finish" ]; then
+            if ! [[ "$VERIFY_CODE" =~ ^[A-Za-z0-9]{6}$ ]]; then
+              echo 'Add the six-character code to Actions secret SWISSFER_VERIFY_CODE' >&2
+              exit 1
+            fi
+            echo "::add-mask::$VERIFY_CODE"
+            printf '%s\n' "$VERIFY_CODE" | timeout 900s swissfer/target/release/swissfer \
+              outgoing/DSCompare-0.6.12-OneEXE-42273753253.zip \
+              --email damianink@gmail.com --duration 30 \
+              --message 'DSCompare 0.6.12 OneEXE build 42273753253' > upload.log 2>&1
+          else
+            timeout 900s swissfer/target/release/swissfer \
+              outgoing/DSCompare-0.6.12-OneEXE-42273753253.zip \
+              --email damianink@gmail.com --duration 30 \
+              --message 'DSCompare 0.6.12 OneEXE build 42273753253' </dev/null > upload.log 2>&1
+          fi
+          status=$?
+          cat upload.log
+          link=$(grep -Eo 'https://(www\.)?swisstransfer\.com/dl/[a-zA-Z0-9-]+' upload.log | tail -n 1 || true)
+          if [ "$status" -eq 0 ] && [ -n "$link" ]; then
+            echo "SwissTransfer download: $link" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "Upload failed or email verification required. Exit: $status" >> "$GITHUB_STEP_SUMMARY"
+          echo "If a new code was emailed, set SWISSFER_VERIFY_CODE and use workflow_dispatch stage=finish with prepare_run_id equal to this run ID." >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+      - name: Retain verification state for finishing
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-validation-state
+          path: /tmp/swissfer-config/swissfer/email-validations.json
+          retention-days: 2
+          if-no-files-found: warn
+      - name: Retain upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swisstransfer-42273753253-diagnostics
+          path: upload.log
+          retention-days: 3
+          if-no-files-found: warn
+      - name: Fail if upload not confirmed
+        if: ${{ always() && steps.upload.outcome == 'failure' }}
+        shell: bash
+        run: exit 1
