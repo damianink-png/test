@@ -1,0 +1,20 @@
+name: Diagnose 0.6.12 SwissTransfer finish log
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diagnose-finish-42572936319.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check Swissfer result safely
+        run: |
+          set -euo pipefail
+          mkdir -p diag
+          gh run download 42572936319 --repo "$GITHUB_REPOSITORY" --name dscompare-42273753253-verification-log --dir diag
+          sed -n '1,50p' diag/upload.log
