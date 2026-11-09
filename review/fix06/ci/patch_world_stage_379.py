@@ -49,6 +49,14 @@ compile(s,str(native),'exec')
 native.write_text(s,encoding='utf-8')
 
 s=compare.read_text(encoding='utf-8')
+# Earlier exported STEP models with 80-599 parts used the strict 0.01 mm
+# centroid prefilter; independently re-exported ZW3D 2019 solids can move
+# their *integrated* center even if the actual CAD faces have not moved.
+# Candidate lookup at 0.5 mm is NOT evidence of equality.
+s=once(s,
+"broad_world_lookup=len(a)>=600 or registered_lookup or step_reexport_tolerance",
+"broad_world_lookup=(max(len(a),len(b))>=80 or registered_lookup or step_reexport_tolerance or exact_serialization)",
+"same-world reexport candidate radius")
 s=once(s,
 "from .native_guard import NativeGeometryFailure,guarded_world_reexport,guarded_registered_world",
 "from .native_guard import NativeGeometryFailure,guarded_world_reexport,guarded_registered_world,guarded_world_equivalent",
@@ -59,9 +67,20 @@ s=once(s,
     # Preserve unknown native outcomes for identical definition pairs; never
     # restart the same hung OCCT operation on every duplicated occurrence.
     unknown_world_groups=set()
+    # Do not retry the same completed FALSE world result for each copy of
+    # identical native definitions with the same relative CAD placement.
+    # This is a negative memo only; native errors are never cached as FALSE.
+    world_negative_anchors={}
     native_world_timeouts=0
     def bounded_reexport(left,right,tol):
-        return guarded_world_reexport(left,right,tol,timeout_s=25)
+        # One native worker first checks oriented faces and trims, then may
+        # verify TWO empty solid differences if ZW3D changed face topology.
+        # Native Cut is opt-in for the same named part and never substitutes
+        # a numeric signature for a real B-Rep proof.
+        same_name=bool(_normalized_name(left.name) and
+            _normalized_name(left.name)==_normalized_name(right.name))
+        return guarded_world_reexport(left,right,tol,timeout_s=25,
+            allow_solid_set_proof=same_name)
     def bounded_registered(left,right,tol):
         return guarded_registered_world(left,right,tol,timeout_s=25)
     def bounded_world(left,right,tol):
@@ -69,7 +88,12 @@ s=once(s,
 ""","world fallback guards")
 s=once(s,
 "                else:\n                    if checks >= max_checks: raise RuntimeError(f'Limit testów B-Rep ({max_checks}) — analiza niekompletna')",
-"""                elif (gs,gt) in unknown_world_groups:
+"""                elif ((gs,gt) in world_negative_anchors and
+                      _relative_location_is_same(s,a[world_negative_anchors[(gs,gt)][0]],
+                                                 b[j],b[world_negative_anchors[(gs,gt)][1]],
+                                                 tolerance)):
+                    same=False;memo_hits+=1
+                elif (gs,gt) in unknown_world_groups:
                     failed_a.add(i);failed_b.add(j);failed_pairs.add((i,j))
                     trace.mark('world_matching','SKIP_UNVERIFIED_GROUP',a_id=i,b_id=j)
                     continue
@@ -132,6 +156,8 @@ s=once(s,
 """                if same:
                     geometry_context.remember_equivalence(s,b[j],tolerance)""",
 """                trace.mark('world_matching_pair','END',a_id=i,b_id=j,match=bool(same))
+                if not same:
+                    world_negative_anchors.setdefault((gs,gt),(i,j))
                 if same:
                     geometry_context.remember_equivalence(s,b[j],tolerance)""","world pair completed")
 compile(s,str(compare),'exec')
