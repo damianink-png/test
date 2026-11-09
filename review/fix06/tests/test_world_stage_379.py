@@ -21,8 +21,7 @@ def test_medium_revision_native_world_proof_does_not_run_unbounded(monkeypatch):
     far_b=[_part(200_000+i*30,'new-'+str(i)) for i in range(79)]
     assert len(far_a)+1==80
     calls=[]
-    monkeypatch.setattr(comparator,'bounded_world',None,raising=False) if False else None
-    monkeypatch.setattr(native_guard,'guarded_world_equivalent',
+    monkeypatch.setattr(comparator,'guarded_world_equivalent',
                         lambda a,b,t,**kw:(calls.append(kw.get('timeout_s')) or True))
     from dsac29.geometry_registry import GeometryRegistry
     monkeypatch.setattr(GeometryRegistry,'same_definition',lambda *a:False)
@@ -41,7 +40,7 @@ def test_unknown_native_world_is_never_same_and_does_not_blow_up_other_parts(mon
     monkeypatch.setattr(GeometryRegistry,'same_definition',lambda *a:False)
     def fail(*a,**kwargs):
         raise native_guard.NativeGeometryFailure('synthetic native timeout')
-    monkeypatch.setattr(native_guard,'guarded_world_equivalent',fail)
+    monkeypatch.setattr(comparator,'guarded_world_equivalent',fail)
     out=comparator.compare([original]+far_a,[revised]+far_b,revision_only=True,
                            exact_serialization=False)
     assert any(r.a_index==0 and r.status=='UNCERTAIN' for r in out)
