@@ -6,8 +6,8 @@ import re
 from pathlib import Path
 from OCP.STEPCAFControl import STEPCAFControl_Reader, STEPCAFControl_Writer
 from OCP.TDocStd import TDocStd_Document
-from OCP.TCollection import TCollection_ExtendedString
-from OCP.TDF import TDF_LabelSequence, TDF_Label
+from OCP.TCollection import TCollection_ExtendedString, TCollection_AsciiString
+from OCP.TDF import TDF_LabelSequence, TDF_Label, TDF_Tool
 from OCP.TDataStd import TDataStd_Name
 from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ColorType
 from OCP.TopoDS import TopoDS_Shape
@@ -141,8 +141,15 @@ def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=Non
     from .geometry import DescriptionCache
     description_cache=DescriptionCache()
     out=[]
-    stats={"solids":0,"faces_outside_solids":0,"solid_limit":max_solids,"reversed_solid_orientations":0}
-    def add_shape(shape,name,hierarchy,name_origin):
+    stats={"solids":0,"faces_outside_solids":0,"solid_limit":max_solids,
+           "reversed_solid_orientations":0,"xcaf_reference_occurrences":0}
+    definition_populations={}
+    source_key=str(p.resolve())
+    def label_entry(label):
+        entry=TCollection_AsciiString()
+        TDF_Tool.Entry_s(label,entry)
+        return entry.ToCString()
+    def add_shape(shape,name,hierarchy,name_origin,definition_label):
         outside=TopExp_Explorer(shape,TopAbs_FACE,TopAbs_SOLID)
         while outside.More():stats['faces_outside_solids']+=1;outside.Next()
         solids=list(_solids(shape))
@@ -159,11 +166,20 @@ def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=Non
                 stats['reversed_solid_orientations']+=1
                 if progress:progress('Skorygowano orientację zamkniętej bryły: '+hierarchy+'/'+name2)
             info.name_origin=name_origin
+            # Real STEP/XCAF component references to this SAME definition
+            # are a stronger identity than a regenerated TopoDS wrapper.
+            # Scope the key to this file and solid inside the referenced
+            # definition. Do not merge unrelated definitions by name.
+            info.step_definition_key=(source_key,definition_label,k)
+            definition_populations[info.step_definition_key]=(
+                definition_populations.get(info.step_definition_key,0)+1)
             out.append(info)
             if progress and len(out)%10==0: progress(f'{p.name}: wczytano {len(out)} brył')
     def walk(lab: TDF_Label, parent_loc: TopLoc_Location, hierarchy:str, depth:int):
         if depth>32: raise ValueError('Zbyt głębokie podzłożenie (>32 poziomów)')
         is_ref=tool.IsReference_s(lab)
+        if is_ref:
+            stats['xcaf_reference_occurrences']+=1
         actual=TDF_Label()
         if is_ref and tool.GetReferredShape_s(lab,actual):
             target=actual
@@ -188,11 +204,19 @@ def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=Non
             if sh.IsNull():return
             # Apply parent transform to shape if necessary. A shape may have its own location.
             if not loc.IsIdentity(): sh=sh.Moved(loc)
-            add_shape(sh,label_name,fullname,name_origin)
+            add_shape(sh,label_name,fullname,name_origin,label_entry(target))
     for i in range(1,roots.Length()+1): walk(roots.Value(i),TopLoc_Location(),'',0)
     if not out: raise ValueError('W pliku STEP nie znaleziono zadnej bryly zamknietej (SOLID).')
     stats['solids']=len(out)
-    if diagnostics is not None:diagnostics.update(stats)
+    stats['xcaf_definition_count']=len(definition_populations)
+    stats['xcaf_largest_repeat']=max(definition_populations.values(),default=0)
+    stats['xcaf_repeated_families']=sum(n>1 for n in definition_populations.values())
+    if diagnostics is not None:
+        diagnostics.update(stats)
+    if progress and stats['xcaf_largest_repeat']>=3:
+        progress(f'STRUKTURA STEP: {stats["xcaf_definition_count"]} definicji XCAF; '
+                 f'największa rodzina {stats["xcaf_largest_repeat"]} wystąpień, '
+                 f'powtarzanych rodzin {stats["xcaf_repeated_families"]}.')
     if progress:
         progress(f'{p.name}: gotowe {len(out)} brył; powierzchni poza bryłami: {stats["faces_outside_solids"]}')
         if stats['faces_outside_solids']:progress('UWAGA: powierzchnie poza bryłami SOLID nie są porównywane ani uwzględniane w masie.')
