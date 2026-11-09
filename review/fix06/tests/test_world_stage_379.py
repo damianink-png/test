@@ -2,11 +2,24 @@
 import inspect
 import json
 import numpy as np
+import pytest
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.gp import gp_Pnt
 from dsac29 import compare as comparator, native_guard, cli
 from dsac29.geometry import describe
 from dsac29.brep_transport import write_brep
+
+
+@pytest.fixture(autouse=True)
+def _isolate_stage_one_from_rigid_matching(monkeypatch):
+    """These tests verify the same-position native B-Rep stage only.
+
+    One deliberately unproven STEP copy must not trigger thousands of
+    unrelated rigid Booleans over synthetic 80-150-element box assemblies.
+    Full rigid geometry has independent dedicated regression suites.
+    """
+    monkeypatch.setattr(comparator,'equivalent_rigid',
+                        lambda *args,**kwargs:(False,None,None))
 
 
 def _part(x,name):
