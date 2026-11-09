@@ -1,0 +1,55 @@
+name: New SwissTransfer email verification for DSCompare 0.6.12
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/new-swissfer-code-42273753253.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  request:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      XDG_CONFIG_HOME: /tmp/swissfer-new-code
+    steps:
+      - name: Build uploader
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout -q --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+      - name: Generate fresh sender confirmation
+        id: request
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          mkdir -p "$XDG_CONFIG_HOME/swissfer" input
+          printf 'DSCompare 0.6.12 sender validation' > input/verification-request.txt
+          timeout 90s swissfer/target/release/swissfer input/verification-request.txt \
+            --email damianink@gmail.com --duration 30 \
+            --message 'Refresh sender verification for DSCompare 0.6.12' </dev/null > request.log 2>&1
+          status=$?
+          cat request.log
+          echo "Verification request status $status" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+      - name: Retain pending sender session
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-validation-state
+          path: /tmp/swissfer-new-code/swissfer/email-validations.json
+          retention-days: 2
+          if-no-files-found: warn
+      - name: Keep non-secret request logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-verify-request-diagnostics
+          path: request.log
+          retention-days: 2
+          if-no-files-found: warn
