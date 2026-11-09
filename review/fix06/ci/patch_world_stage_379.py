@@ -97,10 +97,16 @@ s=once(s,
                                 'equivalent_world_isolated' if max(len(a),len(b))>=80 else 'equivalent_world',
                                 i,j,(bounded_world if max(len(a),len(b))>=80 else equivalent_world),
                                 s,b[j],tolerance)""","medium isolated world equivalence")
-s=once(s,
-"""                    except NativeGeometryFailure:
+old_native_errors="""                    except NativeGeometryFailure:
                         raise
-                    except Exception as exc:""",
+                    except Exception as exc:"""
+if s.count(old_native_errors)!=2:
+    raise RuntimeError('Expected both stage-1 and rigid error handlers')
+# Patch only the first occurrence: stage 2 keeps its existing error policy.
+native_stage1_anchor=old_native_errors
+s=s.replace(native_stage1_anchor, '___STAGE1_UNVERIFIED___',1)
+s=once(s,
+"___STAGE1_UNVERIFIED___",
 """                    except NativeGeometryFailure as exc:
                         # Timeout/crash is neither SAME nor a definitive
                         # mismatch. Keep this occurrence UNCERTAIN and continue
