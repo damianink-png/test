@@ -21,6 +21,8 @@ class FrameProofCache:
   self.deadline=None;self.pair_timeout=None;self.lookup_points=None
   self._binding=None
   self.hits=0;self.proof_calls=0
+  self.completed_negative_pairs=set()
+  self.negative_cache_hits=0
 
  def bind(self,a,b,tolerance):
   if self._binding is None:
@@ -164,12 +166,23 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
   if proof_cache is not None and pair in proof_cache.results:
    proof_cache.hits+=1
    return proof_cache.results[pair]
+  if proof_cache is not None and pair in proof_cache.completed_negative_pairs:
+   # A completed but non-proving native result is unchanged on the same
+   # immutable pose. It can NEVER become an equality certificate and is
+   # NEVER transferred to another candidate translation/rotation.
+   proof_cache.negative_cache_hits+=1
+   return False
   if proof_cache is not None:proof_cache.proof_calls+=1
   same=bool(prove_uncached(i,j))
   # False can mean an inconclusive analytic proof, so retry it in the full
   # pass. Only completed positive proofs are transferable between passes.
-  if proof_cache is not None and same and pair not in unverified:
-   proof_cache.results[pair]=same
+  if proof_cache is not None and pair not in unverified:
+   if same:
+    proof_cache.results[pair]=True
+   elif pair not in proof_cache.failed_pairs:
+    # Only a finished native/analytic test. Timeout/exception remains
+    # retryable in a future search pass, never cached as negative evidence.
+    proof_cache.completed_negative_pairs.add(pair)
   return same
  if not a or not b:return dict(count=0,ratio=0.,proofs=0,checked=0,pairs=[])
  tol=max(tolerance,1.e-6);radius=search_radius(tol);cell_size=max(radius*2,.002)
