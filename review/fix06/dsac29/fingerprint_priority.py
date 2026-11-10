@@ -70,10 +70,10 @@ class FingerprintPriority:
             if cached_shape is not None and shape.IsPartner(cached_shape):
                 self.surface_reuses+=1
                 return self._surface_cache[key]
-        if self.surface_analyses>=self.surface_budget:
-            return None
         # Verify IsPartner after a native-hash lookup; hash collisions do
         # not authorize reusing a face descriptor from another definition.
+        # Check existing definitions BEFORE consuming the bounded analysis
+        # budget, so reverting an edited shape reuses its original descriptor.
         try:
             h=hash(shape.TShape())
         except (AttributeError,RuntimeError,TypeError,ValueError):
@@ -84,6 +84,8 @@ class FingerprintPriority:
                 self._surface_shapes[key]=shape
                 self.surface_reuses+=1
                 return value
+        if self.surface_analyses>=self.surface_budget:
+            return None
         self.surface_analyses+=1
         value=None
         try:
