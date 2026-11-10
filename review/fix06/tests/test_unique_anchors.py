@@ -34,7 +34,8 @@ def test_spatially_diverse_anchor_order_never_loses_a_candidate():
     result=prioritize_unique_anchors(parts,pairs)
     assert result[0]==(0,0)
     assert set(result)==set(pairs)
-    assert result[1] in ((3,3),(4,4))
+    assert result[1]==(1,1)
+    assert result[2] in ((3,3),(4,4))
 
 
 def test_largest_bilateral_unique_body_first_despite_order_names_and_repeats():
