@@ -20,7 +20,7 @@ raw = source.read_bytes()
 # Windows Git checkout may use CRLF; Git blob digest is over canonical LF.
 # Preserve the exact original bytes semantically rather than weakening the
 # provenance check for the approved HTML/image.
-raw = raw.replace(b"\\r\\n", b"\\n")
+raw = raw.replace(bytes([13, 10]), bytes([10]))
 blob_header=b"blob "+str(len(raw)).encode("ascii")+bytes([0])
 actual=hashlib.sha1(blob_header+raw).hexdigest()
 if actual != APPROVED_GIT_BLOB:
