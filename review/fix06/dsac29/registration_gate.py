@@ -166,11 +166,10 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
      unverified.add((i,j));failed_groups.setdefault(key,[]).append((i,j))
      trace.mark('registration_proof','UNVERIFIED',a_id=i,b_id=j,
                  error=str(exc),unverified_count=len(unverified))
-     # A hundred repeated copies still represent one failed native family.
-     if len(failed_groups)>max(4,int(min(len(a),len(b))*.01)):
-      raise native_guard.NativeGeometryFailure(
-       'Zbyt wiele niezależnych nieukończonych definicji B-Rep podczas wyrownania '
-       f'({len(failed_groups)}). Nie mozna bezpiecznie ustalic przesuniecia.') from exc
+     # Do not abort a candidate frame after an arbitrary number of
+     # INDEPENDENT broken B-Reps. The bounded sample and frame deadline
+     # already cap work. Unknowns stay unknown, and later definitions
+     # may still establish valid native geometry certificates.
      return False
    else:
     same=trace.brep_call('verify_reexport',i,j,

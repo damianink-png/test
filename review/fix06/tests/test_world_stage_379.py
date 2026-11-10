@@ -277,3 +277,38 @@ def test_failed_local_positions_cannot_poison_147_true_matches(monkeypatch):
                (r.a_index not in (0,1,2) and r.b_index not in (0,1,2))
                for r in result)
     assert len(calls)<=8,'147 unchanged instances should reuse native positive anchor'
+
+
+def test_six_broken_native_families_do_not_skip_seventh_independent_proof(monkeypatch):
+    """No whole-assembly fail budget may poison an unrelated CAD definition."""
+    from dsac29.geometry_registry import GeometryRegistry
+    from dsac29 import occurrence_identity
+    monkeypatch.setattr(GeometryRegistry,'same_definition',lambda *args:False)
+    monkeypatch.setattr(occurrence_identity,'prepare_occurrence_identities',
+                        lambda *args,**kw: {'selected':0,'proven':0,'skipped':0,'elapsed_s':0.})
+    old=[];new=[]
+    for i in range(7):
+        # Each pair is a different source geometry; none may inherit an
+        # earlier failed proof or be mistaken for the same repeat family.
+        dims=(8.+i,9.,10.)
+        old.append(describe(BRepPrimAPI_MakeBox(gp_Pnt(50.*i,0,0),*dims).Shape(),
+                            f'OLD_{i}',f'old_{i}'))
+        new.append(describe(BRepPrimAPI_MakeBox(gp_Pnt(50.*i,0,0),*dims).Shape(),
+                            f'NEW_{i}',f'new_{i}'))
+    for i in range(73):
+        old.append(_part(10000+i*50,f'OLD_FAR_{i}'))
+        new.append(_part(100000+i*50,f'NEW_FAR_{i}'))
+    calls=[]
+    def native(left,right,tolerance,**kw):
+        calls.append((left.name,right.name))
+        if len(calls)<=6:
+            raise native_guard.NativeGeometryFailure('independent OCC error')
+        return True
+    monkeypatch.setattr(comparator,'guarded_world_equivalent',native)
+    monkeypatch.setattr(comparator,'guarded_world_reexport',native)
+    result=comparator.compare(old,new,revision_only=True,exact_serialization=False)
+    assert len(calls)>=7, calls
+    assert any(r.a_index==6 and r.b_index==6 and
+               r.status in ('SAME','RENAMED') for r in result),result
+    assert not any(r.a_index in range(6) and
+                   r.status in ('SAME','RENAMED') for r in result)

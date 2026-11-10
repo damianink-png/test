@@ -108,6 +108,11 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
         # Admit only that unambiguous residual name family to a real native
         # Common/Cut comparison; a name alone never certifies CHANGED.
         self._residual_singletons=set()
+        # eligible() is called twice during Common preparation, often with
+        # overlapping operand sets. Topological bounds are immutable within
+        # one comparison, so compute them at most once per occurrence.
+        self._bbox_cache_a={}
+        self._bbox_cache_b={}
 
     def allows(self,i,j):
         if i not in self.scope_a or j not in self.scope_b:return False
@@ -143,7 +148,7 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
         self._residual_spatial_ambiguous=0
         from .geometry import _precise_world_bounds
         import numpy as np
-        bbox_a={};bbox_b={}
+        bbox_a,bbox_b=self._bbox_cache_a,self._bbox_cache_b
         def world_bbox(part,index,cache):
             if index not in cache:
                 box=np.asarray(_precise_world_bounds(part.shape),dtype=float)

@@ -14,14 +14,14 @@ def setup_state(a,b):
     return state
 
 
-def test_extended_search_recovers_named_shift_missed_by_signature_buckets(monkeypatch):
+def test_extended_search_recovers_shift_without_legacy_signature_hook(monkeypatch):
+    # CAD landmarks, not the deleted module-global numeric signature hook,
+    # must recognize a genuine global relocation.
     a,b=parts(),parts(shift=1000)
-    ids={id(p) for p in a}
-    monkeypatch.setattr(reg,'signature',lambda p:'old-export' if id(p) in ids else 'new-export')
     records=[Record(i,None,'REMOVED','') for i in range(8)]+[Record(None,j,'ADDED','') for j in range(8)]
     state=setup_state(a,b)
     initial=reg.propose(a,b,records,.01,search_state=state)
-    assert initial['status']=='registered'  # Native CAD landmarks survive signature drift
+    assert initial['status']=='registered'  # Real native CAD landmark/placement proof
     state=setup_state(a,b)
     monkeypatch.setattr(alignment,'align_assembly',lambda *a,**kw:pytest.fail('legacy registration invoked'))
     proposal=continue_registration(a,b,.01,state)

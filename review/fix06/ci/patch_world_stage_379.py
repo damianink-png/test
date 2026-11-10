@@ -72,10 +72,8 @@ s=once(s,
     world_probe_failures={}
     world_exhausted=set()
     world_probe_pairs={}
-    # Retire the old whole-assembly abort after four raw native errors.
-    # Two identical failures count as ONE source-bound geometry family.
-    failed_native_families=set()
-    native_error_budget=6
+    # Only per-definition, placement-aware native timeouts are suppressed.
+    # Unrelated definitions must always retain their opportunity for proof.
     def bounded_reexport(left,right,tol):
         # One native worker first checks oriented faces and trims, then may
         # verify TWO empty solid differences if re-export changed topology.
@@ -90,14 +88,7 @@ s=once(s,
 ""","world fallback guards")
 s=once(s,
 "                else:\n                    if checks >= max_checks: raise RuntimeError(f'Limit testów B-Rep ({max_checks}) — analiza niekompletna')",
-"""                elif len(failed_native_families)>=native_error_budget:
-                    # Independently verified SAME pairs are retained. Other
-                    # prospective pairs become UNKNOWN without more costly OCC.
-                    failed_a.add(i);failed_b.add(j);failed_pairs.add((i,j))
-                    trace.mark('world_matching','SKIP_NATIVE_FAILURE_BUDGET',
-                               a_id=i,b_id=j,independent_families=len(failed_native_families))
-                    continue
-                elif ((gs,gt) in world_exhausted and
+"""                elif ((gs,gt) in world_exhausted and
                       any(_relative_location_is_same(s,a[aa],b[j],b[bb],tolerance)
                           for aa,bb in world_probe_pairs.get((gs,gt),()))):
                     # Never let failures at a DIFFERENT relative placement
@@ -151,7 +142,6 @@ s=once(s,
                         world_probe_pairs.setdefault(family,[]).append((i,j))
                         if world_probe_failures[family]>=2:
                             world_exhausted.add(family)
-                        failed_native_families.add(family)
                         trace.mark('world_matching_pair','UNVERIFIED',a_id=i,b_id=j,
                                    operation=checks,error=str(exc))
                         if progress:
