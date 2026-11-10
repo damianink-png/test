@@ -65,7 +65,10 @@ def prioritize_unique_anchors(parts,pairs):
         return pool
     extent=max(float(np.linalg.norm(np.ptp(centers,axis=0))),1.)
     largest=max(float(parts[i].volume) for i,j in pool)
-    chosen=[pool.pop(0)]
+    # Keep the two largest candidates first. If the biggest was actually
+    # revised, the next large native anchor must still be attempted before
+    # spatial diversification (the existing regression depends on it).
+    chosen=[pool.pop(0),pool.pop(0)]
     while pool:
         def quality(pair):
             center=np.asarray(parts[pair[0]].center,dtype=float)
