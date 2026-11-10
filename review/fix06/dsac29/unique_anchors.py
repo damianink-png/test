@@ -5,6 +5,7 @@ admit candidates only; neither descriptors nor names certify any geometry.
 Ambiguous descriptor cohorts are deliberately left to the general search.
 """
 from bisect import bisect_left,bisect_right
+from itertools import islice,chain
 from time import monotonic
 import numpy as np
 from . import cad_pose_search as search
@@ -20,7 +21,7 @@ def descriptor_match(a,b):
                        np.maximum(av,bv)*[.01,.01,.025,.025,.025])))
 
 
-def unique_pairs(a,b,cancelled=None,*,deadline=None,clock=monotonic):
+def unique_pairs(a,b,cancelled=None,*,deadline=None,clock=monotonic,fingerprint=None):
     def index(parts):
         ids=sorted(range(len(parts)),key=lambda i:parts[i].volume)
         return ids,[float(parts[i].volume) for i in ids]
@@ -33,7 +34,9 @@ def unique_pairs(a,b,cancelled=None,*,deadline=None,clock=monotonic):
                 search.check_cancel(cancelled)
                 if deadline is not None and clock()>=deadline:return []
             i=ids[k]
-            if descriptor_match(p,parts[i]):
+            if (fingerprint.candidate_compatible(p,parts[i])
+                    if fingerprint is not None
+                    else descriptor_match(p,parts[i])):
                 out.append(i)
                 if len(out)>1:break
         return out
@@ -44,6 +47,36 @@ def unique_pairs(a,b,cancelled=None,*,deadline=None,clock=monotonic):
         if len(js)!=1:continue
         j=js[0]
         if cohort(b[j],a,ia,va)==[i]:yield i,j
+
+
+
+def prioritize_unique_anchors(parts,pairs):
+    """Diversify native anchor attempts without removing any candidate.
+
+    Keep largest first. Prefer independent spatial landmarks next; an
+    in-place repeat or a local move cannot establish a global transform.
+    All candidate results still need an original B-Rep native certificate.
+    """
+    pool=list(pairs)
+    if len(pool)<3:
+        return pool
+    centers=np.asarray([parts[i].center for i,j in pool],dtype=float)
+    if not np.isfinite(centers).all():
+        return pool
+    extent=max(float(np.linalg.norm(np.ptp(centers,axis=0))),1.)
+    largest=max(float(parts[i].volume) for i,j in pool)
+    chosen=[pool.pop(0)]
+    while pool:
+        def quality(pair):
+            center=np.asarray(parts[pair[0]].center,dtype=float)
+            dist=min(float(np.linalg.norm(center-np.asarray(
+                parts[x[0]].center,dtype=float))) for x in chosen)/extent
+            volume=max(0.,float(parts[pair[0]].volume)/max(largest,1.))
+            return dist+.20*volume
+        best=max(pool,key=quality)
+        chosen.append(best)
+        pool.remove(best)
+    return chosen
 
 
 def proven_translations(a,b,tolerance,state,deadline,*,extended=False,progress=None,cancelled=None,clock=monotonic):
@@ -57,11 +90,20 @@ def proven_translations(a,b,tolerance,state,deadline,*,extended=False,progress=N
     from .cad_registration import place_for_proof
     from . import trace_r22 as trace
     if not hasattr(state,'unique_anchor_cache'):state.unique_anchor_cache={}
-    diagnostics={'candidates':0,'native_checks':0,'proven':0,'unknown':0,'anchors':[]}
+    from .fingerprint_priority import FingerprintPriority
+    fingerprints=FingerprintPriority.shared(state)
+    diagnostics={'candidates':0,'native_checks':0,'proven':0,'unknown':0,'anchors':[],
+                 'anchor_pool':0,'anchor_strategy':'diversity_plus_volume'}
     state.unique_anchor_diagnostics=diagnostics
     end=min(deadline,clock()+(24 if extended else 12));out=[]
     if progress:progress('Wyrównanie: szukam największych unikatowych detali według objętości i centralnych momentów bezwładności…')
-    for i,j in unique_pairs(a,b,cancelled,deadline=end,clock=clock):
+    # Prefetch only a small window; resume the ORIGINAL iterator afterward.
+    # No candidate is lost because of the reordering optimization.
+    candidate_stream=unique_pairs(a,b,cancelled,deadline=end,clock=clock,
+                                  fingerprint=fingerprints)
+    pool=list(islice(candidate_stream,24 if extended else 16))
+    diagnostics['anchor_pool']=len(pool)
+    for i,j in chain(prioritize_unique_anchors(a,pool),candidate_stream):
         if clock()>=end or diagnostics['candidates']>=(16 if extended else 8):break
         diagnostics['candidates']+=1
         if progress:progress(f'Unikatowy detal: A[{i}] ↔ B[{j}], objętość {a[i].volume:.6g} mm³; zgodne objętość, pole i główne momenty. Sprawdzam geometrię B-Rep (od największego).')
