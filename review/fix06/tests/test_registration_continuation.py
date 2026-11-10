@@ -146,3 +146,61 @@ def test_native_timeout_is_not_restarted_in_same_pose_sample_and_full_pass(monke
     full=frame_support(a,b,.01,verify_all=True,proof_cache=cache)
     assert full['count']==79 and calls.count(id(a[0]))==1
     assert (0,0) not in cache.results and cache.skipped_timeouts>=1
+
+
+
+def test_promising_initial_native_frame_is_extended_before_user_prompt(monkeypatch):
+    from types import SimpleNamespace
+    from dsac29 import registration_search
+    states=SimpleNamespace(expanded=False,failures=[dict(
+        proven_pairs=[(i,i) for i in range(21)],
+        pairs=[(i,i) for i in range(24)],
+        count_upper_bound=243,offset=[-130.,-280.,-410.])])
+    calls=[]
+    def finish(a,b,tol,state,progress,cancelled):
+        calls.append((len(a),len(b),tol))
+        state.expanded=True
+        return dict(status='registered',
+                    translation_B_to_A_mm=[-130.,-280.,-410.],
+                    checked_sample_count=48,verified_sample_count=40,
+                    requires_confirmation=True)
+    monkeypatch.setattr(registration_search,'continue_registration',finish)
+    proposal=dict(status='unresolved',reason='Native timeout')
+    result=cli._continue_strong_incomplete_frame(
+        [None]*380,[None]*554,.01,states,proposal)
+    assert len(calls)==1
+    assert states.expanded
+    assert result['status']=='registered'
+    assert result['requires_confirmation']
+
+
+def test_weak_native_frame_never_auto_relaxes_proof_requirements(monkeypatch):
+    from types import SimpleNamespace
+    from dsac29 import registration_search
+    states=SimpleNamespace(expanded=False,failures=[dict(
+        proven_pairs=[(i,i) for i in range(3)],
+        pairs=[(i,i) for i in range(24)],
+        count_upper_bound=243,offset=[-130.,-280.,-410.])])
+    monkeypatch.setattr(registration_search,'continue_registration',
+                        lambda *a,**kw:pytest.fail('Weak pose must not auto-continue'))
+    proposal=dict(status='unresolved',reason='Insufficient independent B-Rep')
+    result=cli._continue_strong_incomplete_frame(
+        [None]*380,[None]*554,.01,states,proposal)
+    assert result is proposal and not states.expanded
+
+
+def test_auto_extended_unresolved_pose_disables_redundant_search_button(monkeypatch):
+    from types import SimpleNamespace
+    from dsac29 import registration_search
+    states=SimpleNamespace(expanded=False,failures=[dict(
+        proven_pairs=[(i,i) for i in range(20)],
+        pairs=[(i,i) for i in range(24)],
+        count_upper_bound=243,offset=[-130.,-280.,-410.])])
+    def finished(*args,**kwargs):
+        states.expanded=True
+        return dict(status='unresolved',reason='Native timeout after 24 s')
+    monkeypatch.setattr(registration_search,'continue_registration',finished)
+    result=cli._continue_strong_incomplete_frame(
+        [None]*380,[None]*554,.01,states,dict(status='unresolved'))
+    assert result['status']=='unresolved' and result['search_failed']
+    assert 'została już wykonana' in result['reason']

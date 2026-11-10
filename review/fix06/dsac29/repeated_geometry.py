@@ -97,6 +97,8 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
         self.repeated_b={j for j,n in enumerate(self.sizes_b) if n>1}
         # Quantities use the entire model, including SAME/MOVED occurrences.
         # Both the geometric family and named family must keep their counts.
+        self._parts_a=a
+        self._parts_b=b
         self.tokens_a=[(n,k,totals_a[k]) if n>1 and k else None
                        for n,k in zip(self.sizes_a,self.keys_a)]
         self.tokens_b=[(n,k,totals_b[k]) if n>1 and k else None
@@ -126,21 +128,59 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
         bb={j for j in new_ids if
             (j not in self.repeated_b and unique_a) or
             (self.tokens_b[j] is not None and self.tokens_b[j] in tokens_a)}
-        # Keep the historical equal-population rule for entire ambiguous
-        # cohorts. A single residual old and new occurrence of the SAME
-        # engineering family is different: there is no 8x7 ambiguous
-        # assignment left to guess, but the native Common/Cut must STILL
-        # verify a substantial material overlap and conservation.
+        # A mixed revision can contain e.g. 10 old and 8 new copies:
+        # after the stationary pairs are consumed, some residual copies
+        # still have a UNIQUE physical position and a genuine material change.
+        # Only admit a mutually UNIQUE overlap in the SAME engineering-name
+        # family, before the actual native Common/Cut proof. Never infer
+        # CHANGED from this bbox/name hint alone.
         by_old=defaultdict(list);by_new=defaultdict(list)
         for i in sorted(old_ids):
             if self.keys_a[i]:by_old[self.keys_a[i]].append(i)
         for j in sorted(new_ids):
             if self.keys_b[j]:by_new[self.keys_b[j]].append(j)
+        self._residual_spatial_checks=0
+        self._residual_spatial_ambiguous=0
+        from .geometry import _precise_world_bounds
+        import numpy as np
+        bbox_a={};bbox_b={}
+        def world_bbox(part,index,cache):
+            if index not in cache:
+                box=np.asarray(_precise_world_bounds(part.shape),dtype=float)
+                cache[index]=box if box.shape==(6,) and np.isfinite(box).all() else None
+            return cache[index]
         for name,ids in by_old.items():
             others=by_new.get(name,())
-            if len(ids)==len(others)==1:
-                i,j=ids[0],others[0]
-                if i in self.repeated_a or j in self.repeated_b:
-                    self._residual_singletons.add((i,j))
-                    aa.add(i);bb.add(j)
+            if not others or not (any(i in self.repeated_a for i in ids)
+                                  or any(j in self.repeated_b for j in others)):
+                continue
+            # 30k nearby-name candidates is already far too ambiguous to
+            # justify a new Cartesian Boolean search.
+            if len(ids)*len(others)>30000:
+                self._residual_spatial_ambiguous+=len(ids)+len(others)
+                continue
+            deg_a=defaultdict(list);deg_b=defaultdict(list)
+            for i in ids:
+                x=world_bbox(self._parts_a[i],i,bbox_a)
+                if x is None:continue
+                vol_x=float(np.prod(np.maximum(0.,x[3:]-x[:3])))
+                if vol_x<=0:continue
+                for j in others:
+                    y=world_bbox(self._parts_b[j],j,bbox_b)
+                    if y is None:continue
+                    vol_y=float(np.prod(np.maximum(0.,y[3:]-y[:3])))
+                    if vol_y<=0:continue
+                    common=float(np.prod(np.maximum(
+                        0.,np.minimum(x[3:],y[3:])-np.maximum(x[:3],y[:3]))))
+                    self._residual_spatial_checks+=1
+                    if common<.25*min(vol_x,vol_y):continue
+                    deg_a[i].append(j);deg_b[j].append(i)
+            for i,js in deg_a.items():
+                if len(js)!=1:continue
+                j=js[0]
+                if len(deg_b[j])!=1:continue
+                self._residual_singletons.add((i,j))
+                aa.add(i);bb.add(j)
+            self._residual_spatial_ambiguous+=sum(
+                len(js)>1 for js in deg_a.values())
         return aa,bb

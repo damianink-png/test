@@ -29,6 +29,41 @@ def confirm_original_after_failed_search(alignment_approval,reason,progress=None
     return 'original'
 
 
+def _continue_strong_incomplete_frame(a,b,tolerance,state,proposal,progress=None,cancelled=None):
+    """Automatically finish a promising EXACT pose before showing a question.
+
+    The fast native pass can exhaust its 12-second checks after 21/24 real
+    positive B-Rep proofs. Asking to "search harder" repeats the SAME
+    transform. Resume the existing immutable-pose proof cache once, using
+    the extended native budget, and only then present a decision if needed.
+    Never accept a pose from partial evidence; never retry a different model.
+    """
+    if (proposal is None or proposal.get('status')!='unresolved'
+            or state.expanded or min(len(a),len(b))<80):
+        return proposal
+    candidates=[f for f in state.failures
+                if f.get('pairs') and len(f.get('proven_pairs',()))>=12
+                and int(f.get('count_upper_bound',0))>=max(24,int(.30*min(len(a),len(b))))]
+    if not candidates:
+        return proposal
+    candidate=max(candidates,key=lambda f:(len(f.get('proven_pairs',())),
+                                           int(f.get('count_upper_bound',0))))
+    if progress:
+        progress(f'Wyrównanie: szybki etap potwierdził '
+                 f'{len(candidate["proven_pairs"])} par B-Rep dla B→A '
+                 f'{candidate["offset"]} mm. Automatycznie kończę weryfikację '
+                 'TEGO SAMEGO położenia; nie pytam ponownie o wyszukiwanie.')
+    from .registration_search import continue_registration
+    result=continue_registration(a,b,tolerance,state,progress,cancelled)
+    if result.get('status')=='unresolved':
+        # Expanded once; do not show a "search harder" button that can no
+        # longer run, or imply that returning the same vector is new proof.
+        result['search_failed']=True
+        result['reason']=(str(result.get('reason','Nie potwierdzono wyrównania.'))+
+                          ' Rozszerzona weryfikacja tej samej hipotezy została już wykonana.')
+    return result
+
+
 def _use_confirmed_frame(parts,proposal,relocate):
     """Only an actually changed world frame requires a B-Rep relocation."""
     if proposal.get('status')=='already_aligned':
@@ -256,6 +291,15 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                                'Przy mocno zmienionych rewizjach istnieje możliwość niewykrytego przesunięcia.')
                     if progress:progress('UWAGA: '+alignment['reason'])
         else:
+            # A partially confirmed native frame should finish ONE extended
+            # verification automatically, not demand a redundant "Szukaj
+            # dokładniej" click followed by the very same vector.
+            if alignment_approval is not None:
+                proposal=_continue_strong_incomplete_frame(
+                    a,b,tolerance,registration_search,proposal,progress,cancelled)
+                if proposal is not None:
+                    proposal.setdefault('search_diagnostics',
+                                        registration_search.summary())
             decision=None
             automatic=False
             if proposal.get('status')=='already_aligned':

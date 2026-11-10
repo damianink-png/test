@@ -75,24 +75,25 @@ def test_equal_eight_copies_with_revision_names_receive_verified_common(old_name
     assert all('Common' in r.confidence for r in result)
 
 
-@pytest.mark.parametrize('count,name',[(7,'czesc1_afm2'),(8,'czesc2_xyz2')])
-def test_afm_revisions_still_require_equal_populations_and_same_base(monkeypatch,count,name):
-    old=named(10,8,'czesc1_afm0');new=named(11,count,name)
-    def forbidden(*args,**kwargs):raise AssertionError('Blocked AFM family reached Common')
-    monkeypatch.setattr('dsac29.native_guard.guarded_common',forbidden)
+def test_unequal_population_afm_family_keeps_unique_position_material_changes():
+    old=named(10,8,'czesc1_afm0')
+    new=named(11,7,'czesc1_afm2')
     result,regions,stat=merge_material_revisions(old,new,leftovers(old,new))
-    assert Counter(r.status for r in result)=={'REMOVED':8,'ADDED':count}
-    assert not regions and stat['boolean_checks']==0
+    assert Counter(r.status for r in result)=={'CHANGED':7,'REMOVED':1}
+    assert len(regions)==7
+    assert stat['boolean_checks']>=1
 
 
-@pytest.mark.parametrize('count,name',[(7,'DRAWING_123_REV_B'),(8,'OTHER_123_REV_B')])
-def test_unequal_count_or_unrelated_name_never_runs_common(monkeypatch,count,name):
-    old=named(10,8,'DRAWING_123_REV_A')
-    new=named(11,count,name)
-    def forbidden(*args,**kw):raise AssertionError('Common on a blocked repeated pair')
+@pytest.mark.parametrize('old_name,new_name',[
+    ('czesc1_afm0','czesc2_xyz2'),
+    ('DRAWING_123_REV_A','OTHER_123_REV_B'),
+])
+def test_unrelated_repeated_families_never_reach_common(monkeypatch,old_name,new_name):
+    old=named(10,8,old_name);new=named(11,7,new_name)
+    def forbidden(*args,**kw):raise AssertionError('Wrong family reached Common')
     monkeypatch.setattr('dsac29.native_guard.guarded_common',forbidden)
     result,regions,stat=merge_material_revisions(old,new,leftovers(old,new))
-    assert Counter(r.status for r in result)=={'REMOVED':8,'ADDED':count}
+    assert Counter(r.status for r in result)=={'REMOVED':8,'ADDED':7}
     assert not regions and stat['boolean_checks']==0
 
 
@@ -105,10 +106,10 @@ def test_counts_include_already_matched_occurrences():
     assert policy.eligible({7},{7})==({7},{7})
     # One free old / one free new must not hide a full-model 8 versus 7.
     policy=RepeatedMaterialPolicy(old,new[:7])
-    # The unique residual after confirmed stationary matches is allowed
-    # to reach real Common/Cut even though whole-family quantities differ.
-    assert policy.eligible({7},{6})==({7},{6})
-    assert policy.allows(7,6)
+    # Unlike a removed occurrence at A[7], A[6] and B[6] occupy the
+    # SAME world region and may be a true one-to-one material revision.
+    assert policy.eligible({6},{6})==({6},{6})
+    assert policy.allows(6,6)
 
 
 def test_equal_total_part_count_cannot_hide_wrong_named_family_counts():
@@ -117,7 +118,11 @@ def test_equal_total_part_count_cannot_hide_wrong_named_family_counts():
     # Separate STEP imports may use distinct native definitions of the same
     # shape; grouping still must not make these distinct names interchangeable.
     policy=RepeatedMaterialPolicy(old,new)
-    assert not any(policy.allows(i,j) for i in range(8) for j in range(8))
+    admitted_a,admitted_b=policy.eligible(set(range(8)),set(range(8)))
+    assert admitted_a==set(range(7))
+    assert admitted_b==set(range(7))
+    assert all(policy.allows(i,i) for i in range(7))
+    assert not any(policy.allows(i,7) for i in range(8))
 
 
 def test_pair_level_gate_blocks_wrong_family_even_if_both_are_eligible():
@@ -149,12 +154,23 @@ def test_renamed_survivor_does_not_block_equal_named_revision_population():
     assert stat['removed_repeated_occurrences_excluded']==0
 
 
-def test_unequal_populations_with_many_unmatched_repetitions_remain_blocked():
-    old=named(10,8,'DRAWING_123_REV_A')
-    new=named(11,7,'DRAWING_123_REV_B')
+def test_unequal_populations_with_many_unmatched_ambiguous_repetitions_remain_blocked():
+    from dataclasses import replace
+    old=[named(10,1,'DRAWING_123_REV_A')[0]]*8
+    new=[named(11,1,'DRAWING_123_REV_B')[0]]*7
     policy=RepeatedMaterialPolicy(old,new,old_ids=set(range(8)),new_ids=set(range(7)))
     assert policy.eligible(set(range(8)),set(range(7)))==(set(),set())
     assert not policy.allows(0,0)
+
+
+def test_unequal_populations_many_unique_spatial_pairs_are_not_censored():
+    old=named(10,8,'DRAWING_123_REV_A')
+    new=named(11,7,'DRAWING_123_REV_B')
+    policy=RepeatedMaterialPolicy(old,new,old_ids=set(range(8)),new_ids=set(range(7)))
+    assert policy.eligible(set(range(8)),set(range(7)))==(
+        set(range(7)),set(range(7)))
+    assert all(policy.allows(i,i) for i in range(7))
+    assert not policy.allows(7,6)
 
 
 def test_unequal_populations_unique_residual_real_material_change():
@@ -162,6 +178,6 @@ def test_unequal_populations_unique_residual_real_material_change():
     new=named(11,7,'DRAWING_123_REV_B')
     # Seven stationary/verified matches could leave exactly one potential
     # changed pair; full counts alone must not censor its Common operation.
-    policy=RepeatedMaterialPolicy(old,new,old_ids={7},new_ids={6})
-    assert policy.eligible({7},{6})==({7},{6})
-    assert policy.allows(7,6)
+    policy=RepeatedMaterialPolicy(old,new,old_ids={6},new_ids={6})
+    assert policy.eligible({6},{6})==({6},{6})
+    assert policy.allows(6,6)
