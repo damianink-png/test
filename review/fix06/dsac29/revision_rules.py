@@ -1,8 +1,9 @@
 """Conservative revision classification with cached part populations.
 
-A relocated occurrence is MOVED only when the geometrically identical named
-part has the same number of occurrences in both revisions. Unknown/changed
-correspondences become separate old and new occurrences.
+A relocated occurrence is MOVED only when the geometrically identical part
+has equal proven occurrence counts in both revisions. Even a rigidly proven
+match is not a unique local MOVED identity if its repeated family has changed
+quantity. Exact stationary proofs are always retained as SAME.
 """
 from collections import defaultdict
 from time import perf_counter
@@ -121,13 +122,32 @@ def classify_revisions(old, new, records, tolerance=0.01, progress=None, geometr
             try:population_ok=proven and same_population(old[i],new[j])
             except Exception as exc:
                 output.append(Record(i,j,'UNCERTAIN','Błąd weryfikacji liczby wystąpień: '+str(exc),confidence='Wymaga sprawdzenia'));continue
-            # A completed rigid B-Rep proof of THIS particular A/B occurrence
-            # survives a change of quantities in the family. The old policy
-            # discarded even independently verified MOVED pairs when one copy
-            # was removed or added elsewhere in the assembly. Unknown/heuristic
-            # correspondences do NOT receive this exception.
-            independently_moved=(r.status=='MOVED' and proven)
-            if population_ok or independently_moved:
+            # A rigid B-Rep match does not uniquely identify WHICH copy moved
+            # if its repeated geometry population changed in the revision.
+            # Restore the older conservative policy requested for revisions:
+            # an unequal family can be SAME at an independently proven original
+            # position, but never automatically MOVED.
+            if r.status=='MOVED' and proven and not population_ok:
+                from .geometry import _precise_world_bounds
+                from .compare import _location_matrix
+                left,right=old[i],new[j]
+                bounds_a=np.asarray(_precise_world_bounds(left.shape),dtype=float)
+                bounds_b=np.asarray(_precise_world_bounds(right.shape),dtype=float)
+                exact_stationary=bool(
+                    np.isfinite(bounds_a).all() and np.isfinite(bounds_b).all()
+                    and np.max(np.abs(bounds_a-bounds_b))<=max(1e-8,min(.01,float(tolerance)))
+                    and np.allclose(_location_matrix(left),_location_matrix(right),
+                                    rtol=0,atol=max(1e-8,min(.01,float(tolerance))*.25)))
+                if exact_stationary:
+                    output.append(Record(i,j,'SAME',
+                        'B-Rep zgodna i pozycja niezmieniona mimo innej liczby kopii',
+                        confidence='B-Rep; to samo położenie'))
+                else:
+                    note='W rodzinie zmieniła się liczba wystąpień: nie przypisuję ruchu do niejednoznacznej kopii'
+                    output.extend((Record(i,None,'REMOVED',note,confidence='Rozdzielone wystąpienia'),
+                                   Record(None,j,'ADDED',note,confidence='Rozdzielone wystąpienia')))
+                continue
+            if population_ok:
                 from .compare import _location_matrix
                 left,right=old[i],new[j]
                 # Compare actual world geometry envelopes FIRST. For baked
@@ -173,15 +193,11 @@ def classify_revisions(old, new, records, tolerance=0.01, progress=None, geometr
                         'nie potwierdzono rzeczywistego ruchu',
                         confidence='Wymaga niezależnego dowodu'))
                     continue
-                note=('Pełny B-Rep; ruch po zmianie liczby wystąpień w rodzinie'
-                      if independently_moved and not population_ok else
-                      'Równa geometria i liczba wystąpień; inne położenie lub obrót')
+                note='Równa geometria i liczba wystąpień; inne położenie lub obrót'
                 output.append(Record(i,j,'MOVED',note,
                     r.distance_mm,r.delta_x,r.delta_y,r.delta_z,0.0,r.rotation_deg,
-                    ('B-Rep; tożsamość wystąpienia może być niejednoznaczna'
-                     if independently_moved and not population_ok else
-                     ('B-Rep; niejednoznaczna tożsamość wystąpienia — sprawdź parę'
-                      if r.status=='UNCERTAIN' else 'B-Rep; tożsamość wystąpienia wg pozycji'))))
+                    ('B-Rep; niejednoznaczna tożsamość wystąpienia — sprawdź parę'
+                     if r.status=='UNCERTAIN' else 'B-Rep; tożsamość wystąpienia wg pozycji')))
                 continue
         # Geometric modifications or ambiguous matches are NOT MOVED.
         # They are represented as removed old + added new, not fake pairs.

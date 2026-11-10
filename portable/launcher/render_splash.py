@@ -11,12 +11,15 @@ import sys
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
-APPROVED_SHA256 = "415767d3e70c2c62565dd49497f4ee23a6132aa562864f72c87dd4f6e74de40c"
+# Git object SHA of the exact committed library prototype. We pin the
+# committed bytes (including normalized line endings), not a prior copy.
+APPROVED_GIT_BLOB = "8672bfea98580f6fc4fcd429f9900cdfa6684a78"
 source = Path(sys.argv[1])
 output = Path(sys.argv[2])
 raw = source.read_bytes()
-if hashlib.sha256(raw).hexdigest() != APPROVED_SHA256:
-    raise SystemExit("Approved splash HTML differs from the original Library artifact")
+blob_header=b"blob "+str(len(raw)).encode("ascii")+b"\\0"
+if hashlib.sha1(blob_header+raw).hexdigest() != APPROVED_GIT_BLOB:
+    raise SystemExit("Approved splash HTML differs from pinned Git blob")
 if b'data:image/webp;base64,' not in raw:
     raise SystemExit("Missing original CAD hero artwork")
 with sync_playwright() as playwright:

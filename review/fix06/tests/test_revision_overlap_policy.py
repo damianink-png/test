@@ -598,3 +598,36 @@ def test_both_native_timeouts_do_not_repeat_unchanged_pair(monkeypatch):
     assert stat['retry_failure_attempted']==0
     assert stat['failed_pairs'][0]['code']=='REPEATED_NATIVE_TIMEOUT'
     assert stat['incomplete'] and {r.status for r in out}=={'UNCERTAIN'}
+
+
+
+def test_two_terminal_native_failures_skip_expensive_third_probe(monkeypatch):
+    """A source-bound negative native result must stay UNCERTAIN, not be retried 3 times."""
+    from dsac29.native_guard import NativeGeometryFailure
+    a=[part(0,10,'REV_A')]
+    b=[part(0,11,'REV_B')]
+    records=[Record(0,None,'REMOVED',''),Record(None,0,'ADDED','')]
+    calls={'common':0,'regions':0,'exclusion':0}
+    def common(*args,**kwargs):
+        calls['common']+=1
+        raise NativeGeometryFailure(
+            'Odizolowany OCC Common zakończył się błędem 70 RuntimeError: '
+            'OCCT Boolean returned invalid or null topology')
+    def regions(*args,**kwargs):
+        calls['regions']+=1
+        raise NativeGeometryFailure(
+            'MATERIAL_BOOLEAN_UNVERIFIED: RuntimeError: '
+            'OCCT Boolean returned invalid or null topology')
+    def exclusion(*args,**kwargs):
+        calls['exclusion']+=1
+        raise AssertionError('Do not repeat deterministic invalid native topology')
+    monkeypatch.setattr('dsac29.native_guard.guarded_common',common)
+    monkeypatch.setattr(revision_overlap,'calculate',regions)
+    monkeypatch.setattr('dsac29.common_exclusion.guarded_exclusion',exclusion)
+    result,_,stat=revision_overlap.merge_material_revisions(
+        a,b,records,review_approval=lambda _:'review')
+    assert calls=={'common':1,'regions':1,'exclusion':0}
+    assert stat['exclusion_skipped_terminal_failures']==1
+    assert stat['retry_skipped_unproductive']==1
+    assert stat['retry_failure_attempted']==0
+    assert {r.status for r in result}=={'UNCERTAIN'}

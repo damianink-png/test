@@ -149,7 +149,7 @@ def test_unchecked_competitive_translation_cannot_certify_unique_pose(monkeypatc
     assert sum(kw.get('verify_all',False) for kw in calls)==12
 
 
-def test_mixed_repeated_family_keeps_independently_proven_move_when_copy_removed():
+def test_mixed_repeated_family_does_not_claim_ambiguous_move_when_copy_removed():
     old=parts(count=3)
     new=parts(count=2)
     new[1]=_relocate(new[1],np.eye(3),np.array([0.,0.,40.]))
@@ -159,7 +159,7 @@ def test_mixed_repeated_family_keeps_independently_proven_move_when_copy_removed
              Record(2,None,'REMOVED','not in B')]
     classified=classify_revisions(old,new,records,geometry_first=True)
     assert Counter(r.status for r in classified)=={
-        'SAME':1,'MOVED':1,'REMOVED':1}
+        'SAME':1,'REMOVED':2,'ADDED':1}
     assert len({r.a_index for r in classified if r.a_index is not None})==3
     assert len({r.b_index for r in classified if r.b_index is not None})==2
 

@@ -482,6 +482,31 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                         stat['alternative_region_failures']+=1
                         failure=NativeGeometryFailure(str(failure)+'; alternatywna operacja także nie potwierdziła materiału: '+str(alternative_exc))
                         failure.failed_pair={'a_index':i,'b_index':j}
+                        # When TWO independent native algorithms report the
+                        # SAME deterministic invalid topology, a third heavy
+                        # Boolean/exclusion retry cannot establish a positive
+                        # material verdict. Likewise two consecutive timeouts
+                        # must not launch another 45-90 s process. Fail closed:
+                        # retain this pair as UNCERTAIN and continue the rest.
+                        primary_msg=str(exc)
+                        alternative_msg=str(alternative_exc)
+                        topology='OCCT Boolean returned invalid or null topology'
+                        double_topology=(topology in primary_msg and
+                                         (topology in alternative_msg or
+                                          'MATERIAL_BOOLEAN_UNVERIFIED:' in alternative_msg))
+                        double_timeout=('Timeout odizolowanej operacji Common' in primary_msg and
+                                        ('timed out' in alternative_msg or
+                                         'limit 120 s' in alternative_msg))
+                        if double_topology or double_timeout:
+                            code=('REPEATED_NATIVE_TIMEOUT' if double_timeout
+                                  else 'DETERMINISTIC_NATIVE_FAILURE')
+                            stat['exclusion_skipped_terminal_failures']=stat.get(
+                                'exclusion_skipped_terminal_failures',0)+1
+                            trace.mark('revision_common_exclusion','SKIP_TERMINAL_NATIVE_FAILURE',
+                                       a_index=i,b_index=j,reason=code)
+                            if not recover_failures:raise failure from exc
+                            mark_failure(i,j,failure,code=code)
+                            continue
                         # Two independently checked translated partitions may
                         # EXCLUDE a changed-revision candidate. Their displaced
                         # geometry is never accepted as a positive comparison.
@@ -577,7 +602,8 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
         retry_started=perf_counter()
         # Do not repeat known deterministic failures; preserve all as
         # UNCERTAIN unless an independently proven alternative dominates.
-        unproductive={'INVALID_INPUT_TOLERANCE','REPEATED_NATIVE_TIMEOUT'}
+        unproductive={'INVALID_INPUT_TOLERANCE','REPEATED_NATIVE_TIMEOUT',
+                      'DETERMINISTIC_NATIVE_FAILURE'}
         stat['retry_skipped_unproductive']=sum(
             f['code'] in unproductive for f in failures)
         for failure in failures:
