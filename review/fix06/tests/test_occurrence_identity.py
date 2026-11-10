@@ -132,3 +132,57 @@ def test_same_volume_distinct_shape_cannot_be_certified_by_descriptors():
     prepare_occurrence_identities(old,new)
     context=GeometryRegistry()
     assert context.definition(old[3])!=context.definition(new[3])
+
+
+def test_xcaf_repeated_references_are_serialized_once_despite_separate_native_wrappers(monkeypatch):
+    # In some STEP transfers, IsPartner() is false for wrappers referring
+    # to the same document definition. XCAF identity stays authoritative
+    # only INSIDE the same source and for the same solid index.
+    from dsac29 import occurrence_identity
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    count=[]
+    original=occurrence_identity._canonical
+    def measure(*args,**kwargs):
+        count.append(1)
+        return original(*args,**kwargs)
+    monkeypatch.setattr(occurrence_identity,'_canonical',measure)
+    a=[]
+    for i in range(60):
+        shape=BRepPrimAPI_MakeBox(7.,11.,13.).Shape()
+        tr=gp_Trsf()
+        tr.SetTranslation(gp_Vec(float(20*i),0.,0.))
+        part=describe(shape.Moved(TopLoc_Location(tr)),'same','A/'+str(i))
+        part.step_definition_key=('source-A.step','0:1:1:45',1)
+        a.append(part)
+    assert not a[0].shape.IsPartner(a[1].shape)
+    stats=prepare_occurrence_identities(a,[])
+    assert stats['selected']==60 and stats['proven']==60
+    assert len(count)==1, 'Same source XCAF target must serialize once'
+    assert stats['xcaf_reuse']==59
+    assert len({p._dscompare_normalized_digest for p in a})==1
+    assert not np.allclose(comparator._location_matrix(a[0]),
+                           comparator._location_matrix(a[1]))
+
+
+def test_xcaf_source_cache_never_crosses_files_or_different_subsolids(monkeypatch):
+    from dsac29 import occurrence_identity
+    n=[]
+    original=occurrence_identity._canonical
+    def count(*args,**kwargs):
+        n.append(1)
+        return original(*args,**kwargs)
+    monkeypatch.setattr(occurrence_identity,'_canonical',count)
+    p=[]
+    for j in range(5):
+        for filename,number,dx in [('source-A.step',1,0.),('source-B.step',1,100.),
+                                   ('source-A.step',2,300.)]:
+            shape=BRepPrimAPI_MakeBox(7.+(number-1),11.,13.).Shape()
+            tr=gp_Trsf();tr.SetTranslation(gp_Vec(float(dx+20*j),0.,0.))
+            a=describe(shape.Moved(TopLoc_Location(tr)),'part','file/'+str(j))
+            a.step_definition_key=(filename,'0:1:1:45',number)
+            p.append(a)
+    stats=prepare_occurrence_identities(p,[])
+    assert stats['selected']==15 and stats['proven']==15
+    assert len(n)==3
+    assert stats['xcaf_reuse']==12
+    assert p[0]._dscompare_normalized_digest!=p[2]._dscompare_normalized_digest

@@ -76,8 +76,14 @@ def prepare_occurrence_identities(a,b,*,progress=None,limit=3500,face_cap=400):
         return {'selected':len(selected),'proven':0,'skipped':len(selected),'elapsed_s':0.0}
     started=perf_counter()
     native_cache={}
+    # XCAF references to the SAME source-file definition and subsolid
+    # have identical local B-Rep. Serialize the definition exactly once,
+    # even when OCC built separate native wrappers for each occurrence.
+    # The key is file+XCAF target label+solid index; never reuse cross-file.
+    xcaf_cache={}
     completed=0
     native_hits=0
+    xcaf_hits=0
     with TemporaryDirectory(prefix='dscompare_occur_') as temp:
         directory=Path(temp)
         for i in selected:
@@ -85,37 +91,47 @@ def prepare_occurrence_identities(a,b,*,progress=None,limit=3500,face_cap=400):
             if getattr(part,'_dscompare_normalized_digest',None) is not None:
                 completed+=1
                 continue
-            key=hash(part.shape.TShape())
-            result=None
-            for representative,value in native_cache.get(key,()):
-                if part.shape.IsPartner(representative.shape):
-                    result=value
-                    native_hits+=1
-                    break
-            if result is None:
-                ex=TopExp_Explorer(part.shape.Located(TopLoc_Location()),TopAbs_FACE)
-                faces=0
-                while ex.More() and faces<=face_cap:
-                    faces+=1
-                    ex.Next()
-                if faces>face_cap:
-                    continue
-                try:
-                    result=_canonical(part,directory)
-                except Exception:
-                    continue
+            source_key=getattr(part,'step_definition_key',None)
+            source_key=tuple(source_key) if source_key is not None else None
+            result=xcaf_cache.get(source_key) if source_key is not None else None
+            if result is not None:
+                xcaf_hits+=1
+            else:
+                key=hash(part.shape.TShape())
+                for representative,value in native_cache.get(key,()):
+                    if part.shape.IsPartner(representative.shape):
+                        result=value
+                        native_hits+=1
+                        break
                 if result is None:
-                    continue
-                native_cache.setdefault(key,[]).append((part,result))
+                    ex=TopExp_Explorer(part.shape.Located(TopLoc_Location()),TopAbs_FACE)
+                    faces=0
+                    while ex.More() and faces<=face_cap:
+                        faces+=1
+                        ex.Next()
+                    if faces>face_cap:
+                        continue
+                    try:
+                        result=_canonical(part,directory)
+                    except Exception:
+                        continue
+                    if result is None:
+                        continue
+                    native_cache.setdefault(key,[]).append((part,result))
+                if source_key is not None:
+                    # Same XCAF definition inside one STEP has precisely
+                    # the same local coordinates once TopLoc is removed.
+                    # Placement is still verified separately per occurrence.
+                    xcaf_cache[source_key]=result
             part._dscompare_normalized_digest=result[0]
             part._dscompare_local_origin=result[1]
             completed+=1
     elapsed=perf_counter()-started
     stats={'selected':len(selected),'proven':completed,
            'skipped':len(selected)-completed,'native_reuse':native_hits,
-           'elapsed_s':round(elapsed,3)}
+           'xcaf_reuse':xcaf_hits,'elapsed_s':round(elapsed,3)}
     if progress:
         progress(f'Powtórzenia STEP: pełne lokalne B-Rep {completed}/{len(selected)}; '
-                 f'trafienia pamięci {native_hits}; {elapsed:.1f} s. '
+                 f'trafienia pamięci XCAF {xcaf_hits}, natywne {native_hits}; {elapsed:.1f} s. '
                  'Niezgodne skróty kieruję do natywnego dowodu geometrii.')
     return stats
