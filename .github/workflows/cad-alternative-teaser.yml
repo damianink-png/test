@@ -1,0 +1,36 @@
+name: Experimental real TEASER++ robust registration Linux
+on:
+  push:
+    branches: ['experiment/registration-fingerprint-mesh-20261110']
+    paths:
+      - 'experiments/cad_alternatives/teaser_benchmark.py'
+      - '.github/workflows/cad-alternative-teaser.yml'
+  workflow_dispatch:
+jobs:
+  teaser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build upstream TEASER++ Python bindings
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libeigen3-dev libboost-all-dev cmake
+          python -m pip install --upgrade pip numpy scipy
+          git clone --depth 1 https://github.com/MIT-SPARK/TEASER-plusplus.git external-teaser
+          cd external-teaser
+          python -m pip install . --verbose
+      - name: Compare certified solver against Kabsch RANSAC
+        shell: bash
+        run: |
+          python experiments/cad_alternatives/teaser_benchmark.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: teaser-python-certified-regression-results
+          path: evidence/
+          if-no-files-found: warn
