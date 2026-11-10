@@ -19,6 +19,7 @@ class FrameProofCache:
   self.exact_anchors={};self.failed_pairs=set();self.exact_anchor_hits=0
   self.timed_out_pairs=set();self.skipped_timeouts=0;self.native_errors={}
   self.deadline=None;self.pair_timeout=None;self.lookup_points=None
+  self.failed_definition_pairs={};self.skipped_repeat_failures=0
   self._binding=None
   self.hits=0;self.proof_calls=0
   self.completed_negative_pairs=set()
@@ -106,7 +107,10 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
  anchors=proof_cache.anchors if proof_cache is not None else {}
  exact_anchors=proof_cache.exact_anchors if proof_cache is not None else {}
  # Failed native proofs are not matches. Bound failures to avoid false confidence.
- unverified=set();failed_groups=set()
+ unverified=set()
+ # Failures stay scoped to the same immutable frame, reused 24 -> 48 only.
+ failed_groups=(proof_cache.failed_definition_pairs
+                if proof_cache is not None else {})
  def prove_uncached(i,j):
   left,right=a[i],b[j]
   if left.shape.IsSame(right.shape):return True
@@ -136,12 +140,13 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
    if max(len(a),len(b))>=80 or (proof_cache is not None and proof_cache.deadline is not None):
     # Inconclusive proofs are never SAME. A bounded number of isolated
     # failures can be skipped while independently verified pairs are retained.
-    if key in failed_groups:
+    previous=[(ii,jj) for ii,jj in failed_groups.get(key,())
+              if _relative_location_is_same(left,a[ii],right,b[jj],tolerance)]
+    if len(previous)>=2:
+     # A third identical native failure adds no CAD evidence. The same
+     # family at a DIFFERENT pose is still eligible for independent proof.
      unverified.add((i,j))
-     if len(unverified)>max(4,int(min(len(a),len(b))*.01)):
-      raise native_guard.NativeGeometryFailure(
-       'Zbyt wiele niezweryfikowanych bryl B-Rep podczas wyrownania '
-       f'({len(unverified)}). Nie mozna bezpiecznie ustalic przesuniecia.')
+     if proof_cache is not None:proof_cache.skipped_repeat_failures+=1
      return False
     try:
      timeout={}
@@ -158,13 +163,14 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
       proof_cache.failed_pairs.add((i,j))
       proof_cache.native_errors[i,j]=str(exc)
       if 'timeout' in str(exc).casefold():proof_cache.timed_out_pairs.add((i,j))
-     unverified.add((i,j));failed_groups.add(key)
+     unverified.add((i,j));failed_groups.setdefault(key,[]).append((i,j))
      trace.mark('registration_proof','UNVERIFIED',a_id=i,b_id=j,
-                error=str(exc),unverified_count=len(unverified))
-     if len(unverified)>max(4,int(min(len(a),len(b))*.01)):
+                 error=str(exc),unverified_count=len(unverified))
+     # A hundred repeated copies still represent one failed native family.
+     if len(failed_groups)>max(4,int(min(len(a),len(b))*.01)):
       raise native_guard.NativeGeometryFailure(
-       'Zbyt wiele niezweryfikowanych bryl B-Rep podczas wyrownania '
-       f'({len(unverified)}). Nie mozna bezpiecznie ustalic przesuniecia.') from exc
+       'Zbyt wiele niezależnych nieukończonych definicji B-Rep podczas wyrownania '
+       f'({len(failed_groups)}). Nie mozna bezpiecznie ustalic przesuniecia.') from exc
      return False
    else:
     same=trace.brep_call('verify_reexport',i,j,

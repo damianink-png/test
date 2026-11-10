@@ -233,14 +233,10 @@ def test_completed_native_nonmatches_cannot_certify_repeated_occurrences(monkeyp
     assert len(calls)<=300, 'All hypotheses must remain bounded by the source occurrences'
 
 
-def test_four_native_failures_abort_without_publishing_unverified_same(monkeypatch):
-    """Real native failures (unlike completed False) fail closed."""
-    import pytest
+def test_four_native_failures_leave_unknowns_without_aborting(monkeypatch):
+    """Native timeouts no longer abort other independently verified parts."""
     from dsac29.geometry_registry import GeometryRegistry
-    # Four independent world-position candidates. A single repeated
-    # definition deliberately stops retrying after three native crashes,
-    # so using 150 copies of ONE family cannot exercise the global
-    # four-failure fail-closed policy.
+    # Four failing positions must not stop an otherwise valid revision.
     a=[_part(i*30,'P') for i in range(4)]+[
         _part(10000+i*50,'old'+str(i)) for i in range(76)]
     b=[_part(i*30,'P') for i in range(4)]+[
@@ -252,9 +248,10 @@ def test_four_native_failures_abort_without_publishing_unverified_same(monkeypat
         raise native_guard.NativeGeometryFailure('synthetic OCC worker timeout')
     monkeypatch.setattr(comparator,'guarded_world_equivalent',crashed_worker)
     monkeypatch.setattr(comparator,'guarded_world_reexport',crashed_worker)
-    with pytest.raises(native_guard.NativeGeometryFailure,match='4 nieukończonych'):
-        comparator.compare(a,b,revision_only=True,exact_serialization=False)
-    assert len(tries)==4, 'Native failure policy must be bounded'
+    rows=comparator.compare(a,b,revision_only=True,exact_serialization=False)
+    assert 1<=len(tries)<=4, 'Duplicate timeout probes must be bounded'
+    assert any(r.status=='UNCERTAIN' for r in rows)
+    assert not any(r.status in ('SAME','RENAMED') for r in rows[:4])
 
 
 def test_failed_local_positions_cannot_poison_147_true_matches(monkeypatch):

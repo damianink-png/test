@@ -56,3 +56,17 @@ def test_unshifted_1482_of_1597_stays_in_world_frame(monkeypatch):
     assert not deferred_alignment._periodic_global_offset_possible(
         a,b,.01,1597,free_a=set(range(1482,1597)),
         free_b=set(range(1482,1597)),baseline=1482)
+
+
+
+def test_stationary_1597_part_majority_avoids_global_pose_search(monkeypatch):
+    from dsac29 import cad_pose_search,unique_anchors
+    a=fake_parts([i*30 for i in range(1597)])
+    b=fake_parts([i*30 for i in range(1482)]+[100000+i*30 for i in range(115)])
+    def forbidden(*args,**kwargs):
+        raise AssertionError('Stationary median must avoid expensive pose generation')
+    monkeypatch.setattr(cad_pose_search,'hypotheses',forbidden)
+    monkeypatch.setattr(unique_anchors,'unique_pairs',forbidden)
+    assert not deferred_alignment._periodic_global_offset_possible(
+        a,b,.01,1597,free_a=set(range(1482,1597)),
+        free_b=set(range(1482,1597)),baseline=1482)
