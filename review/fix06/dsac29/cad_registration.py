@@ -23,7 +23,10 @@ def _preserve_native_definition_evidence(original, moved):
     source_key=getattr(original,'step_definition_key',None)
     if source_key is not None:
         moved.step_definition_key=source_key
-    if moved.shape.IsPartner(original.shape):
+    old_shape=getattr(original,'shape',None)
+    new_shape=getattr(moved,'shape',None)
+    if (old_shape is not None and new_shape is not None
+            and new_shape.IsPartner(old_shape)):
         for attr in ('_dscompare_normalized_digest','_dscompare_local_origin'):
             value=getattr(original,attr,None)
             if value is not None:

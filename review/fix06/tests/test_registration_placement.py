@@ -136,3 +136,11 @@ def test_final_registered_frame_keeps_xcaf_source_family_for_repeat_cache():
         assert shifted._dscompare_normalized_digest==original._dscompare_normalized_digest
     else:
         assert getattr(shifted,'_dscompare_normalized_digest',None) is None
+
+
+
+def test_metadata_preservation_does_not_require_topods_for_mock_relocation():
+    """The public frame wrapper also supports minimal relocation doubles."""
+    source=object()
+    moved=object()
+    assert registration._preserve_native_definition_evidence(source,moved) is moved
