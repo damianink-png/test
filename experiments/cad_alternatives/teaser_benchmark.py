@@ -39,7 +39,9 @@ for it in range(240):
     inliers=delta<.5
     if best is None or inliers.sum()>best.sum():best=inliers
 rr,tt=kabsch(old[best],new[best])
-baseline={'seconds':round(time.perf_counter()-start,5),'inliers':int(best.sum()),**measure(rr,tt)}
+# Kabsch produces a ROW-vector rotation old @ rr -> new. TEASER++
+# produces a COLUMN-vector rotation R @ old -> new; compare rr.T to R.
+baseline={'seconds':round(time.perf_counter()-start,5),'inliers':int(best.sum()),**measure(rr.T,tt)}
 
 params=teaser.RobustRegistrationSolverParams(
     cbar2=1,
