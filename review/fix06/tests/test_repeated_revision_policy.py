@@ -147,3 +147,38 @@ def test_unchecked_competitive_translation_cannot_certify_unique_pose(monkeypatc
     # The unified registration engine has a 12-hypothesis native budget.
     # A bounded, unfinished search must not announce a unique placement.
     assert sum(kw.get('verify_all',False) for kw in calls)==12
+
+
+def test_mixed_repeated_family_keeps_independently_proven_move_when_copy_removed():
+    old=parts(count=3)
+    new=parts(count=2)
+    new[1]=_relocate(new[1],np.eye(3),np.array([0.,0.,40.]))
+    records=[Record(0,0,'SAME','native confirmed'),
+             Record(1,1,'MOVED','full rigid B-Rep',distance_mm=40.,delta_x=0.,
+                    delta_y=0.,delta_z=40.,rotation_deg=0.),
+             Record(2,None,'REMOVED','not in B')]
+    classified=classify_revisions(old,new,records,geometry_first=True)
+    assert Counter(r.status for r in classified)=={
+        'SAME':1,'MOVED':1,'REMOVED':1}
+    assert len({r.a_index for r in classified if r.a_index is not None})==3
+    assert len({r.b_index for r in classified if r.b_index is not None})==2
+
+
+def test_false_moved_for_exact_stationary_brep_is_reclassified_as_same():
+    old=parts(count=1)
+    rows=[Record(0,0,'MOVED','wrong upstream move',distance_mm=0.,
+                 delta_x=0.,delta_y=0.,delta_z=0.,rotation_deg=0.)]
+    result=classify_revisions(old,old,rows,geometry_first=True)
+    assert Counter(r.status for r in result)=={'SAME':1}
+
+
+def test_baked_coordinates_without_toploc_are_not_falsely_stationary():
+    # Both STEP copies have an identity TopLoc transform, but vertices differ.
+    old=parts(count=1,baked=True)
+    new=parts(count=1,baked=True,shift=300)
+    assert old[0].shape.Location().IsIdentity()
+    assert new[0].shape.Location().IsIdentity()
+    rows=[Record(0,0,'MOVED','completed rigid proof',
+                 distance_mm=300.,delta_x=300.,delta_y=0.,delta_z=0.,rotation_deg=0.)]
+    result=classify_revisions(old,new,rows,geometry_first=True)
+    assert Counter(r.status for r in result)=={'MOVED':1}

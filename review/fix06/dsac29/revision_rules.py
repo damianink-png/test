@@ -6,6 +6,7 @@ correspondences become separate old and new occurrences.
 """
 from collections import defaultdict
 from time import perf_counter
+import numpy as np
 from .compare import Record
 from .names import canonical, genuine_rename
 from .geometry import candidate, equivalent_rigid
@@ -120,11 +121,62 @@ def classify_revisions(old, new, records, tolerance=0.01, progress=None, geometr
             try:population_ok=proven and same_population(old[i],new[j])
             except Exception as exc:
                 output.append(Record(i,j,'UNCERTAIN','Błąd weryfikacji liczby wystąpień: '+str(exc),confidence='Wymaga sprawdzenia'));continue
-            if population_ok:
-                output.append(Record(i,j,'MOVED',
-                    'Równa geometria i liczba wystąpień; inne położenie lub obrót',
+            # A completed rigid B-Rep proof of THIS particular A/B occurrence
+            # survives a change of quantities in the family. The old policy
+            # discarded even independently verified MOVED pairs when one copy
+            # was removed or added elsewhere in the assembly. Unknown/heuristic
+            # correspondences do NOT receive this exception.
+            independently_moved=(r.status=='MOVED' and proven)
+            if population_ok or independently_moved:
+                from .compare import _location_matrix
+                left,right=old[i],new[j]
+                # Compare actual world geometry envelopes FIRST. For baked
+                # STEP coordinates, two different shapes can both have an
+                # identity TopLoc, yet be hundreds of millimeters apart.
+                from .geometry import _precise_world_bounds
+                bounds_a=np.asarray(_precise_world_bounds(left.shape),dtype=float)
+                bounds_b=np.asarray(_precise_world_bounds(right.shape),dtype=float)
+                near_world=bool(np.all(np.isfinite(bounds_a)) and
+                    np.all(np.isfinite(bounds_b)) and
+                    np.max(np.abs(bounds_a-bounds_b))<=max(.01,float(tolerance)*4))
+                same_placement=bool(near_world and np.allclose(
+                    _location_matrix(left),_location_matrix(right),
+                    rtol=0,atol=max(1e-8,min(float(tolerance),0.01)*.25)))
+                if same_placement:
+                    output.append(Record(i,j,'SAME',
+                        'Tożsama geometria i położenie: skorygowano pozorny ruch',
+                        confidence='B-Rep, to samo położenie i obwiednia'))
+                    continue
+                if near_world:
+                    from .native_guard import guarded_registered_world,NativeGeometryFailure
+                    try:
+                        if guarded_registered_world(left,right,tolerance,
+                                                    timeout_s=15,allow_boolean=False):
+                            output.append(Record(i,j,'SAME',
+                                'Zweryfikowano identyczny materiał w oryginalnej pozycji',
+                                confidence='Pełny B-Rep w świecie'))
+                            continue
+                    except NativeGeometryFailure as exc:
+                        output.append(Record(i,j,'UNCERTAIN',
+                            'Nie ukończono weryfikacji pozornego ruchu B-Rep: '+str(exc),
+                            confidence='Niepotwierdzona lokalizacja'))
+                        continue
+                    # An inconclusive fast world test is not positive proof
+                    # of a move. It might be a different STEP face partition.
+                    output.append(Record(i,j,'UNCERTAIN',
+                        'Ta sama obwiednia w świecie, lecz różny zapis B-Rep; '
+                        'nie potwierdzono rzeczywistego ruchu',
+                        confidence='Wymaga niezależnego dowodu'))
+                    continue
+                note=('Pełny B-Rep; ruch po zmianie liczby wystąpień w rodzinie'
+                      if independently_moved and not population_ok else
+                      'Równa geometria i liczba wystąpień; inne położenie lub obrót')
+                output.append(Record(i,j,'MOVED',note,
                     r.distance_mm,r.delta_x,r.delta_y,r.delta_z,0.0,r.rotation_deg,
-                    ('B-Rep; niejednoznaczna tożsamość wystąpienia — sprawdź parę' if r.status=='UNCERTAIN' else 'B-Rep; tożsamość wystąpienia wg pozycji')))
+                    ('B-Rep; tożsamość wystąpienia może być niejednoznaczna'
+                     if independently_moved and not population_ok else
+                     ('B-Rep; niejednoznaczna tożsamość wystąpienia — sprawdź parę'
+                      if r.status=='UNCERTAIN' else 'B-Rep; tożsamość wystąpienia wg pozycji'))))
                 continue
         # Geometric modifications or ambiguous matches are NOT MOVED.
         # They are represented as removed old + added new, not fake pairs.

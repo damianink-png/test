@@ -105,8 +105,10 @@ def test_counts_include_already_matched_occurrences():
     assert policy.eligible({7},{7})==({7},{7})
     # One free old / one free new must not hide a full-model 8 versus 7.
     policy=RepeatedMaterialPolicy(old,new[:7])
-    assert not policy.allows(7,6)
-    assert policy.eligible({7},{6})==(set(),set())
+    # The unique residual after confirmed stationary matches is allowed
+    # to reach real Common/Cut even though whole-family quantities differ.
+    assert policy.eligible({7},{6})==({7},{6})
+    assert policy.allows(7,6)
 
 
 def test_equal_total_part_count_cannot_hide_wrong_named_family_counts():
@@ -145,3 +147,21 @@ def test_renamed_survivor_does_not_block_equal_named_revision_population():
     assert Counter(r.status for r in result)=={'SAME':1,'CHANGED':1,'ADDED':1}
     assert len(regions)==1 and stat['repeated_old_admitted']==1
     assert stat['removed_repeated_occurrences_excluded']==0
+
+
+def test_unequal_populations_with_many_unmatched_repetitions_remain_blocked():
+    old=named(10,8,'DRAWING_123_REV_A')
+    new=named(11,7,'DRAWING_123_REV_B')
+    policy=RepeatedMaterialPolicy(old,new,old_ids=set(range(8)),new_ids=set(range(7)))
+    assert policy.eligible(set(range(8)),set(range(7)))==(set(),set())
+    assert not policy.allows(0,0)
+
+
+def test_unequal_populations_unique_residual_real_material_change():
+    old=named(10,8,'DRAWING_123_REV_A')
+    new=named(11,7,'DRAWING_123_REV_B')
+    # Seven stationary/verified matches could leave exactly one potential
+    # changed pair; full counts alone must not censor its Common operation.
+    policy=RepeatedMaterialPolicy(old,new,old_ids={7},new_ids={6})
+    assert policy.eligible({7},{6})==({7},{6})
+    assert policy.allows(7,6)

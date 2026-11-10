@@ -101,11 +101,17 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
                        for n,k in zip(self.sizes_a,self.keys_a)]
         self.tokens_b=[(n,k,totals_b[k]) if n>1 and k else None
                        for n,k in zip(self.sizes_b,self.keys_b)]
+        # Unequal whole-family quantities may still leave ONE old and ONE new
+        # candidate after all verified stationary occurrences are consumed.
+        # Admit only that unambiguous residual name family to a real native
+        # Common/Cut comparison; a name alone never certifies CHANGED.
+        self._residual_singletons=set()
 
     def allows(self,i,j):
         if i not in self.scope_a or j not in self.scope_b:return False
         if i not in self.repeated_a and j not in self.repeated_b:return True
-        return self.tokens_a[i] is not None and self.tokens_a[i]==self.tokens_b[j]
+        return ((self.tokens_a[i] is not None and self.tokens_a[i]==self.tokens_b[j])
+                or (i,j) in self._residual_singletons)
 
     def eligible(self,old_ids,new_ids):
         if not set(old_ids).issubset(self.scope_a) or not set(new_ids).issubset(self.scope_b):
@@ -120,4 +126,21 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
         bb={j for j in new_ids if
             (j not in self.repeated_b and unique_a) or
             (self.tokens_b[j] is not None and self.tokens_b[j] in tokens_a)}
+        # Keep the historical equal-population rule for entire ambiguous
+        # cohorts. A single residual old and new occurrence of the SAME
+        # engineering family is different: there is no 8x7 ambiguous
+        # assignment left to guess, but the native Common/Cut must STILL
+        # verify a substantial material overlap and conservation.
+        by_old=defaultdict(list);by_new=defaultdict(list)
+        for i in sorted(old_ids):
+            if self.keys_a[i]:by_old[self.keys_a[i]].append(i)
+        for j in sorted(new_ids):
+            if self.keys_b[j]:by_new[self.keys_b[j]].append(j)
+        for name,ids in by_old.items():
+            others=by_new.get(name,())
+            if len(ids)==len(others)==1:
+                i,j=ids[0],others[0]
+                if i in self.repeated_a or j in self.repeated_b:
+                    self._residual_singletons.add((i,j))
+                    aa.add(i);bb.add(j)
         return aa,bb
