@@ -330,13 +330,18 @@ def authentic_bent(mode):
     count=40
     pitch=max(320.,2.*max(max(bounds(s)[3:]-bounds(s)[:3]) for s in distinct))
     old=[];new=[]
+    removed_ids={9,37}
+    changed_ids=[i for i in range(count)
+                 if i%len(distinct)==0 and i not in removed_ids][:2]
+    assert len(changed_ids)==2
+    DATA['expected_modified_indices']=changed_ids
     for i in range(count):
         point=(float((i%8)*pitch),float((i//8)*pitch),float((i%3)*21))
         source=distinct[i%len(distinct)]
         old.append(shifted(source,point))
-        if mode=='bent_repeat' and i in (5,25):
+        if mode=='bent_repeat' and i in removed_ids:
             continue
-        changed=variant if i in ((5,) if mode=='bent_single' else (5,24)) else source
+        changed=variant if i in (changed_ids[:1] if mode=='bent_single' else changed_ids) else source
         if mode=='bent_single':
             # Exactly one local revision in 40 repeated curved bodies.
             pass
