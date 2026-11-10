@@ -1,0 +1,65 @@
+name: DS Compare native bent STEP with repeats and revision material
+on:
+  push:
+    branches: ['fix/dscompare-0613-material-z-20261109']
+    paths:
+      - '.github/workflows/real-bent-step-stress.yml'
+      - 'review/fix06/ci/real_step_current_engine.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-bent:
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [bent_single, bent_repeat, bent_shift]
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      DSCOMPARE_TRACE_BREP: '1'
+      QT_QPA_PLATFORM: offscreen
+      PYTHONPATH: portable-src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare identical CAD engine as production OneEXE
+        shell: pwsh
+        run: |
+          Invoke-WebRequest 'https://raw.githubusercontent.com/damianink-png/test/22b9e73746e8721e146b10d3e3656df67e77956c/DSCompare_RC9_KOMPLET_ZRODLA.zip' -OutFile baseline.zip
+          python portable/prepare_source.py baseline.zip portable-src
+          if($LASTEXITCODE -ne 0){throw 'Baseline setup failed'}
+          python portable/assemble_engine.py portable-src
+          if($LASTEXITCODE -ne 0){throw 'Current CAD source assembly failed'}
+      - name: Install real CAD runtime and run regression
+        shell: pwsh
+        working-directory: portable-src
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if($LASTEXITCODE -ne 0){throw 'CAD runtime dependencies failed'}
+          python -m pip install pytest
+          python -m pytest -q tests/test_fingerprint_priority.py tests/test_unique_anchors.py
+          if($LASTEXITCODE -ne 0){throw 'Fingerprint regression failed'}
+      - name: Compare original aerospace sheet-metal STEP with revisions
+        shell: pwsh
+        run: |
+          python -u review/fix06/ci/real_step_current_engine.py ${{ matrix.case }}
+          if($LASTEXITCODE -ne 0){throw 'Real bent STEP comparison failed'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-bent-${{ matrix.case }}-diagnostics
+          path: |
+            evidence/real_step/TEST_RESULT.json
+            evidence/real_step/bent_*/CZASY_ANALIZY.json
+            evidence/real_step/bent_*/PODSUMOWANIE.json
+            evidence/real_step/bent_*/WYROWNANIE_DIAGNOSTYKA.json
+            evidence/real_step/bent_*/DIAGNOSTYKA_DOPASOWANIA.json
+            evidence/real_step/bent_*/*DIAGNOSTYKA*.jsonl
+          if-no-files-found: warn
+          retention-days: 21

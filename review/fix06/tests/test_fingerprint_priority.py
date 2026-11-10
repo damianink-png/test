@@ -70,6 +70,23 @@ def test_different_number_of_faces_is_not_a_false_negative():
     assert fp.distance(a,b,with_surface=True)<1.e-6
 
 
+
+def test_native_shape_mutated_under_same_step_definition_key_invalidates_surface_cache():
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+    a=describe(BRepPrimAPI_MakeCylinder(3.,80.).Shape(),'old','A')
+    b=describe(BRepPrimAPI_MakeCylinder(4.,80.).Shape(),'new','B')
+    a.step_definition_key=('source_path','ocaf_label',1)
+    b.step_definition_key=a.step_definition_key
+    priority=FingerprintPriority()
+    aa=priority.surface(a)
+    bb=priority.surface(b)
+    assert aa is not None and bb is not None
+    assert aa!=bb
+    assert priority.surface_analyses==2
+    assert priority.surface(a)==aa
+    assert priority.surface_analyses==2
+
+
 def test_world_equal_location_prioritizes_correct_fingerprint():
     ref=model()
     wrong=model(area=200.,eigen=(6.,25.,31.))

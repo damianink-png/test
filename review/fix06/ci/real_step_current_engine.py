@@ -213,13 +213,184 @@ def full():
         return details
     record('two_authentic_Trident_revision_STEP_files',compare_real_revision)
 
+
+def authentic_bent(mode):
+    """Use unchanged public aerospace sheet-metal STEP geometry as operands."""
+    from io import BytesIO
+    from collections import Counter
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopoDS import TopoDS
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepTools import BRepTools
+    from OCP.gp import gp_Trsf,gp_Vec,gp_Pnt
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    from OCP.GProp import GProp_GProps
+    from OCP.BRepGProp import BRepGProp
+    from dsac29.cli import process
+    from dsac29.step_io import load_step
+
+    url=('https://zenodo.org/records/7799961/files/'
+         'AFR%20source%20code%2C%20STEP%20files%20and%20solved%20examples.zip?download=1')
+    archive=fetch(url,ROOT/'aerospace_bent_source.zip')
+    assert hashlib.md5(archive.read_bytes()).hexdigest()==(
+        'd6ef1bd2bc197c36d74bb706915ae11f'),'External data changed'
+    inputs=[]
+    with zipfile.ZipFile(archive) as outer:
+        for entry in outer.infolist():
+            if entry.file_size>60_000_000:continue
+            items=[]
+            if entry.filename.lower().endswith(('.step','.stp')):
+                items=[(entry.filename,outer.read(entry))]
+            elif entry.filename.lower().endswith('.zip'):
+                try:
+                    with zipfile.ZipFile(BytesIO(outer.read(entry))) as inner:
+                        items=[(s.filename,inner.read(s)) for s in inner.infolist()
+                               if s.filename.lower().endswith(('.step','.stp'))
+                               and 200<s.file_size<60_000_000]
+                except (zipfile.BadZipFile,RuntimeError):
+                    continue
+            for original,content in items:
+                if len(content)<200:continue
+                name=Path(original.replace('\\','/')).name
+                dest=ROOT/'aerospace_input'/f'{len(inputs):02d}_{name}'
+                dest.parent.mkdir(parents=True,exist_ok=True)
+                dest.write_bytes(content)
+                inputs.append(dest)
+                DATA['inputs'].append({'url':url,'source_name':original,
+                                       'sha256':hashlib.sha256(content).hexdigest(),
+                                       'bytes':len(content)})
+    assert inputs,'Research dataset contains no extractable STEP files'
+    items=[]
+    for path in inputs:
+        try:
+            for part in load_step(str(path),progress=None):
+                types=Counter()
+                ex=TopExp_Explorer(part.shape,TopAbs_FACE)
+                while ex.More():
+                    adapt=BRepAdaptor_Surface(TopoDS.Face_s(ex.Current()))
+                    types[str(adapt.GetType()).split('.')[-1].replace('GeomAbs_','')]+=1
+                    ex.Next()
+                    if sum(types.values())>350:break
+                curved=sum(types[t] for t in ('Cylinder','Cone','Torus','Sphere'))
+                if curved:
+                    items.append((curved,part,path.name,dict(types)))
+        except (ValueError,RuntimeError) as exc:
+            DATA.setdefault('unreadable_step_inputs',[]).append((path.name,str(exc)))
+    assert items,'No imported analytic curved sheet-metal solid in research STEP data'
+    items.sort(key=lambda e:(-e[0],-e[1].volume))
+    distinct=[];seen=set()
+    for curved,part,path,types in items:
+        if path in seen:continue
+        seen.add(path);distinct.append(part.shape)
+        DATA.setdefault('curved_source_models',[]).append(
+            {'file':path,'face_types':types,'volume_mm3':part.volume})
+        if len(distinct)>=6:break
+    save()
+    def bounds(shape):
+        b=Bnd_Box()
+        BRepBndLib.AddOptimal_s(shape,b,False,False)
+        return np.asarray(b.Get(),float)
+    def volume(shape):
+        g=GProp_GProps()
+        BRepGProp.VolumeProperties_s(shape,g)
+        return float(g.Mass())
+    def shifted(shape,xyz):
+        t=gp_Trsf();t.SetTranslation(gp_Vec(*map(float,xyz)))
+        return shape.Moved(TopLoc_Location(t))
+    def notch(shape):
+        before=volume(shape)
+        extent=np.linalg.norm(bounds(shape)[3:]-bounds(shape)[:3])
+        r=max(2.,min(10.,.03*extent))
+        ex=TopExp_Explorer(shape,TopAbs_FACE)
+        for _ in range(30):
+            if not ex.More():break
+            face=TopoDS.Face_s(ex.Current());ex.Next()
+            try:
+                u0,u1,v0,v1=BRepTools.UVBounds_s(face)
+                if not np.isfinite((u0,u1,v0,v1)).all():continue
+                p=BRepAdaptor_Surface(face).Value((u0+u1)/2,(v0+v1)/2)
+                cutter=BRepPrimAPI_MakeSphere(gp_Pnt(p.X(),p.Y(),p.Z()),r).Shape()
+                op=BRepAlgoAPI_Cut(shape,cutter)
+                op.Build()
+                if not op.IsDone():continue
+                changed=op.Shape()
+                fraction=(before-volume(changed))/before
+                if 1.e-5<fraction<.20:
+                    DATA['notch_removed_fraction']=fraction
+                    return changed
+            except (ValueError,RuntimeError,TypeError):
+                continue
+        raise AssertionError('Could not remove measurable material from real bent CAD solid')
+    variant=notch(distinct[0])
+    count=40
+    pitch=max(320.,2.*max(max(bounds(s)[3:]-bounds(s)[:3]) for s in distinct))
+    old=[];new=[]
+    for i in range(count):
+        point=(float((i%8)*pitch),float((i//8)*pitch),float((i%3)*21))
+        source=distinct[i%len(distinct)]
+        old.append(shifted(source,point))
+        if mode=='bent_repeat' and i in (5,25):
+            continue
+        changed=variant if i in ((5,) if mode=='bent_single' else (5,24)) else source
+        if mode=='bent_single':
+            # Exactly one local revision in 40 repeated curved bodies.
+            pass
+        elif mode=='bent_repeat' and i in (13,27):
+            point=(point[0]+pitch*.15,point[1],point[2])
+        if mode=='bent_shift':
+            point=(point[0]+130.,point[1]-280.,point[2]-410.)
+        new.append(shifted(changed,point))
+    if mode=='bent_repeat':
+        for i in (50,51):
+            pos=(float(i%8*pitch+pitch*.31),float(i//8*pitch),21.)
+            new.append(shifted(distinct[(i+1)%len(distinct)],pos))
+    old_path=write_step(ROOT/f'{mode}_old.step',old)
+    new_path=write_step(ROOT/f'{mode}_new.step',new)
+    def check():
+        folder,rows,error=process(str(old_path),str(new_path),
+           str(ROOT/mode),tolerance=.01,auto_align=mode=='bent_shift',
+           force_unrelated=True,step=False,diff_step=False,preview3d=False,
+           revision_style=True,full_bom=False,bom_csv=False,
+           material_approval=lambda _:'review',
+           alignment_approval=lambda _:'align',
+           progress=lambda msg:print('BENT_STEP',str(msg),flush=True))
+        statuses=dict(Counter(r.status for r in rows))
+        summ=json.loads((folder/'PODSUMOWANIE.json').read_text(encoding='utf8'))
+        times=json.loads((folder/'CZASY_ANALIZY.json').read_text(encoding='utf8'))
+        detail={'statuses':statuses,'solids_A':summ.get('solids_A'),
+                'solids_B':summ.get('solids_B'),
+                'alignment':summ.get('alignment'),'timings':times,
+                'error':str(error) if error else None}
+        DATA['bent_full_comparison']=detail
+        save()
+        assert not error,detail
+        assert detail['solids_A']==count and detail['solids_B']==count,detail
+        assert not statuses.get('UNCERTAIN',0),detail
+        assert statuses.get('SAME',0)+statuses.get('RENAMED',0)>=29,detail
+        assert statuses.get('SAME',0)+statuses.get('RENAMED',0)<count,(
+            'Material changes have been silently accepted as SAME',detail)
+        if mode=='bent_shift':
+            assert summ.get('alignment',{}).get('applied') is True,detail
+        return {'statuses':statuses,'geometry_changed_occurrences':
+                1 if mode=='bent_single' else 2,
+                'elapsed_s':times.get('total_s'),
+                'curved_source_count':len(distinct)}
+    record(f'authentic_sheet_bent_{mode}_40_repeated_bodies',check)
+
+
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument('mode',choices=('quick','full'))
+    p.add_argument('mode',choices=('quick','full','bent_single','bent_repeat','bent_shift'))
     args=p.parse_args()
     try:
         if args.mode=='quick':quick()
-        else:full()
+        elif args.mode=='full':full()
+        else:authentic_bent(args.mode)
         DATA['verdict']='PASS'
     except BaseException:
         DATA['verdict']='FAIL'
