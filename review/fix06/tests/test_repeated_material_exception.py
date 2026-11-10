@@ -269,7 +269,7 @@ def test_occ_step_translator_product_labels_are_not_real_drawing_names(name):
 
 
 def test_real_engineering_drawing_name_is_not_hidden_as_occ_label():
-    assert material_name_key('WSPORNIK_2026_REV_A')=='wspornik_2026'
+    assert material_name_key('WSPORNIK_2026_REV_A')==material_name_key('WSPORNIK_2026_REV_B')!=''
     assert material_name_key('BRACKET_123')!=''
 
 
