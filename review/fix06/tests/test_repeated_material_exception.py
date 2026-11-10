@@ -258,3 +258,18 @@ def test_ambiguous_generated_residual_pair_remains_unmatched():
     assert stat['generated_name_survivor_pairs_admitted']==0
 
 
+
+@pytest.mark.parametrize('name',[
+    'Open CASCADE STEP translator 7.9 1',
+    'Open CASCADE STEP translator 7.9 2',
+    'open cascade step translator 7.9.3 27',
+])
+def test_occ_step_translator_product_labels_are_not_real_drawing_names(name):
+    assert material_name_key(name)==''
+
+
+def test_real_engineering_drawing_name_is_not_hidden_as_occ_label():
+    assert material_name_key('WSPORNIK_2026_REV_A')=='wspornik_2026'
+    assert material_name_key('BRACKET_123')!=''
+
+
