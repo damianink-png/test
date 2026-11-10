@@ -11,6 +11,25 @@ from .alignment import _relocate
 from .registration_gate import FrameProofCache
 
 
+def _preserve_native_definition_evidence(original, moved):
+    """Preserve only evidence still valid for the transformed TopoDS shape.
+
+    A fresh dataclasses.replace does not copy dynamic XCAF metadata. The
+    source-scoped XCAF definition is invariant under whole-frame motion.
+    The translation-normalized digest and its local origin stay valid only
+    when OCC preserves the original TShape (IsPartner). No derived Boolean
+    verdict is transferred between frames.
+    """
+    source_key=getattr(original,'step_definition_key',None)
+    if source_key is not None:
+        moved.step_definition_key=source_key
+    if moved.shape.IsPartner(original.shape):
+        for attr in ('_dscompare_normalized_digest','_dscompare_local_origin'):
+            value=getattr(original,attr,None)
+            if value is not None:
+                setattr(moved,attr,value)
+    return moved
+
 def place_for_proof(part,rotation,translation):
     """Place original B-Rep without reintegrating every candidate solid.
 
@@ -33,11 +52,13 @@ def place_for_proof(part,rotation,translation):
         # Do not recompute OCCT VolumeProperties/SurfaceProperties on every
         # body for every rival shift hypothesis. Native proofs use the
         # transformed TopoDS shape; these descriptors remain search-only.
-        return replace(part,shape=transform(part.shape,r,t),
-                       center=part.center+t)
-    return replace(part,shape=transform(part.shape,r,t),center=r@part.center+t,
-                   inertia=r@part.inertia@r.T,axes=r@part.axes,
-                   bbox=tuple(float(v) for v in np.abs(r)@np.asarray(part.bbox)))
+        return _preserve_native_definition_evidence(
+            part,replace(part,shape=transform(part.shape,r,t),
+                         center=part.center+t))
+    return _preserve_native_definition_evidence(
+        part,replace(part,shape=transform(part.shape,r,t),center=r@part.center+t,
+                     inertia=r@part.inertia@r.T,axes=r@part.axes,
+                     bbox=tuple(float(v) for v in np.abs(r)@np.asarray(part.bbox))))
 
 
 

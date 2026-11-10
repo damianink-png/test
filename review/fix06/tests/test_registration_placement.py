@@ -59,3 +59,80 @@ def test_continuation_count_includes_rotations_as_well_as_translations():
     state.free_a=frozenset(range(8));state.free_b=frozenset(range(8));messages=[]
     continue_registration(a,b,.01,state,progress=messages.append)
     assert any('pomijam 2 wcześniej' in message for message in messages)
+
+
+def test_placed_hypothesis_retains_source_definition_and_strict_digest_only_when_same_tshape():
+    from dsac29.compare import _location_matrix
+    a,_,_,_,_=case(n=1,rotated=False)
+    original=a[0]
+    original.step_definition_key=('zw3d-source.step','0:1:1:5',1)
+    original._dscompare_normalized_digest=b'x'*32
+    original._dscompare_local_origin=(3.,4.,5.)
+    t=np.array([-130.,-280.,-410.])
+    moved=registration.place_for_proof(original,np.eye(3),t)
+    assert moved.step_definition_key==original.step_definition_key
+    if moved.shape.IsPartner(original.shape):
+        assert moved._dscompare_normalized_digest==original._dscompare_normalized_digest
+        assert np.allclose(np.asarray(_location_matrix(moved))[:,3]-
+                           np.asarray(_location_matrix(original))[:,3],t)
+    else:
+        assert getattr(moved,'_dscompare_normalized_digest',None) is None
+    # A direct TopLoc placement MUST keep the original native TShape and
+    # allow safe transfer of a full local B-Rep certificate.
+    from dataclasses import replace
+    from OCP.TopLoc import TopLoc_Location
+    partner=replace(original,shape=original.shape.Moved(TopLoc_Location()))
+    assert partner.shape.IsPartner(original.shape)
+    partner=registration._preserve_native_definition_evidence(original,partner)
+    assert partner._dscompare_normalized_digest==original._dscompare_normalized_digest
+
+
+def test_rotated_hypothesis_must_not_inherit_invalid_local_brep_digest():
+    a,_,_,_,_=case(n=1,rotated=False)
+    part=a[0]
+    part.step_definition_key=('source.step','0:1:2',1)
+    part._dscompare_normalized_digest=b'z'*32
+    part._dscompare_local_origin=(9.,5.,3.)
+    moved=registration.place_for_proof(part,rotation(),np.array([15.,-8.,4.]))
+    assert moved.step_definition_key==part.step_definition_key
+    if moved.shape.IsPartner(part.shape):
+        assert moved._dscompare_normalized_digest==part._dscompare_normalized_digest
+    else:
+        assert getattr(moved,'_dscompare_normalized_digest',None) is None
+
+
+def test_alignment_candidate_order_uses_existing_strict_digest_only_as_priority():
+    from types import SimpleNamespace
+    from dsac29.registration_gate import _prioritize_previously_proven_definition
+    aa=[SimpleNamespace(_dscompare_normalized_digest=b'A'*32),
+        SimpleNamespace(_dscompare_normalized_digest=b'B'*32)]
+    target=SimpleNamespace(_dscompare_normalized_digest=b'B'*32)
+    # The correct definition can be slightly farther owing to re-export
+    # placement rounding. The *native* world B-Rep still has final authority.
+    assert _prioritize_previously_proven_definition(
+        [(.00001,0),(.00003,1),(.00002,1)],aa,target)==[1,0]
+    # Without strict complete digests, preserve distance ordering.
+    target=SimpleNamespace()
+    assert _prioritize_previously_proven_definition(
+        [(.00001,0),(.00003,1)],aa,target)==[0,1]
+
+
+
+def test_final_registered_frame_keeps_xcaf_source_family_for_repeat_cache():
+    from dsac29.cli import _use_confirmed_frame
+    a,_,_,_,_=case(n=2,rotated=False)
+    original=a[0]
+    original.step_definition_key=('export-B-ap214.step','0:1:1:66',1)
+    original._dscompare_normalized_digest=b'a'*32
+    original._dscompare_local_origin=(3.,4.,5.)
+    proposal=dict(status='registered',
+                  rotation_B_to_A=np.eye(3).tolist(),
+                  translation_B_to_A_mm=[-130.,-280.,-410.])
+    shifted=_use_confirmed_frame([original],proposal,alignment._relocate)[0]
+    assert shifted.step_definition_key==original.step_definition_key
+    assert np.allclose(shifted.center-original.center,
+                       np.array([-130.,-280.,-410.]))
+    if shifted.shape.IsPartner(original.shape):
+        assert shifted._dscompare_normalized_digest==original._dscompare_normalized_digest
+    else:
+        assert getattr(shifted,'_dscompare_normalized_digest',None) is None

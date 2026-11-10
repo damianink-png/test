@@ -72,6 +72,24 @@ def _select_diverse_proof_pairs(pairs, parts, limit):
  return [pairs[k] for k in selected]
 
 
+
+def _prioritize_previously_proven_definition(choices,a,part):
+ """Order candidate assignments by already known complete local B-Rep.
+
+ This is purely a correspondence hint, NEVER a geometry proof. Candidates
+ are still world-position-gated and independently checked in prove_uncached.
+ Different digests do not imply different geometry (STEP face repartition).
+ """
+ best={}
+ for distance,i in choices:
+  if i not in best or distance<best[i]:best[i]=distance
+ right=getattr(part,'_dscompare_normalized_digest',None)
+ def key(i):
+  left=getattr(a[i],'_dscompare_normalized_digest',None)
+  exact=left is not None and right is not None and left==right
+  return (0 if exact else 1,best[i],i)
+ return sorted(best,key=key)
+
 def frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancelled=None,proof_cache=None):
  from .native_session import world_session
  with world_session(max(len(a),len(b))>=80 or (proof_cache is not None and proof_cache.deadline is not None)):
@@ -214,7 +232,7 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
      distance=float(np.linalg.norm(a[i].center-point))
      if distance<=radius and world_candidate(a[i],part,tol):choices.append((distance,i))
   if choices:
-   seen=set();options[j]=[i for _,i in sorted(set(choices)) if not (i in seen or seen.add(i))]
+   options[j]=_prioritize_previously_proven_definition(choices,a,part)
  # Iterative maximum-cardinality assignment; B-Rep proof before edge use.
  owner={};reverse={};checked_pairs={}
  for n,start in enumerate(sorted(options,key=lambda j:(len(options[j]),j))):

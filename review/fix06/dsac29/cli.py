@@ -36,7 +36,9 @@ def _use_confirmed_frame(parts,proposal,relocate):
     import numpy as np
     rotation=np.asarray(proposal.get('rotation_B_to_A',np.eye(3)),dtype=float)
     translation=np.asarray(proposal.get('translation_B_to_A_mm',[0,0,0]),dtype=float)
-    return [relocate(part,rotation,translation) for part in parts]
+    from .cad_registration import _preserve_native_definition_evidence
+    return [_preserve_native_definition_evidence(part,relocate(part,rotation,translation))
+            for part in parts]
 
 
 def _reused_world_pairs(existing,stage1_records,proposal):
