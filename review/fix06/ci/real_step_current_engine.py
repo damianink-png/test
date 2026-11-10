@@ -377,8 +377,12 @@ def authentic_bent(mode):
         assert detail['solids_A']==count and detail['solids_B']==count,detail
         assert not statuses.get('UNCERTAIN',0),detail
         assert statuses.get('SAME',0)+statuses.get('RENAMED',0)>=29,detail
-        assert statuses.get('SAME',0)+statuses.get('RENAMED',0)<count,(
-            'Material changes have been silently accepted as SAME',detail)
+        # A green benchmark MUST actually recognize every deliberately
+        # modified original sheet-metal solid as CHANGED, not silently
+        # accept ADDED+REMOVED as a successful material revision.
+        assert statuses.get('CHANGED',0)==(
+            1 if mode=='bent_single' else 2),(
+            'A genuine changed STEP body was not matched by Common/Cut',detail)
         if mode=='bent_shift':
             assert summ.get('alignment',{}).get('applied') is True,detail
         return {'statuses':statuses,'geometry_changed_occurrences':
