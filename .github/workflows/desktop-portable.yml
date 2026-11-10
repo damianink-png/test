@@ -149,6 +149,15 @@ jobs:
           python portable/package.py payload delivery/portable/app work
           if($LASTEXITCODE -ne 0){throw 'Payload creation failed'}
           Copy-Item work/manifest.json evidence/manifest.json
+      - name: Render approved HTML startup as embedded native artwork
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m pip install Pillow==11.3.0 --quiet
+          if($LASTEXITCODE -ne 0){throw 'Startup artwork image dependency failed'}
+          python portable/launcher/render_splash.py portable/launcher/assets/DSCompare_Splash_Prototyp.html portable/launcher/assets/splash-frame.bmp
+          if($LASTEXITCODE -ne 0){throw 'Approved startup artwork rendering failed'}
+          if(!(Test-Path portable/launcher/assets/splash-frame.bmp)){throw 'Native startup artwork missing'}
       - name: Test and build native animated launchers
         shell: pwsh
         run: |

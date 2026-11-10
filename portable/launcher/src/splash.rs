@@ -182,6 +182,24 @@ mod win {
         DeleteObject(pen);
         DeleteObject(brush);
     }
+
+    const ARTWORK_BMP: &[u8] =
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/splash-frame.bmp"));
+    unsafe fn draw_approved_background(dc: HDC) {
+        // A validated 1120x620, bottom-up, 24-bit uncompressed BMP.
+        // Source dimensions and provenance are checked by render_splash.py.
+        let offset = u32::from_le_bytes(ARTWORK_BMP[10..14].try_into().unwrap()) as usize;
+        let mut bmi: BITMAPINFO = std::mem::zeroed();
+        bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+        bmi.bmiHeader.biWidth = 1120;
+        bmi.bmiHeader.biHeight = 620;
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 24;
+        bmi.bmiHeader.biCompression = BI_RGB;
+        StretchDIBits(dc, 0, 0, 1120, 620, 0, 0, 1120, 620,
+            ARTWORK_BMP[offset..].as_ptr() as *const _,
+            &bmi, DIB_RGB_COLORS, SRCCOPY);
+    }
     unsafe fn paint(hwnd: HWND) {
         let mut ps: PAINTSTRUCT = std::mem::zeroed();
         let target = BeginPaint(hwnd, &mut ps);
@@ -193,125 +211,48 @@ mod win {
         let bmp = CreateCompatibleBitmap(target, w, h);
         let old = SelectObject(dc, bmp);
         SetMapMode(dc, MM_ANISOTROPIC);
-        SetWindowExtEx(dc, 660, 360, null_mut());
+        SetWindowExtEx(dc, 1120, 620, null_mut());
         SetViewportExtEx(dc, w, h, null_mut());
-        // Quiet dark geometry-workspace palette: readable at 100-200% DPI.
-        rect(dc, 0, 0, 660, 360, rgb(10, 16, 26));
-        rect(dc, 0, 0, 660, 3, rgb(25, 151, 142));
+
+        // The exact approved 10 November 2026 HTML prototype is rendered
+        // offline during the Windows build. This bitmap is embedded in BOTH
+        // portable launchers and requires no browser, network or external file
+        // while the single EXE unpacks its payload.
+        draw_approved_background(dc);
         let elapsed = START.get().unwrap().elapsed().as_secs_f64();
         let mut motion = 1i32;
         SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0,
             &mut motion as *mut _ as *mut _, 0);
         let animated = motion != 0;
-        let elapsed = if animated { elapsed } else { 3.0 };
-        let cycle = (elapsed / 2.4).fract();
-        let approach = (elapsed / 1.0).min(1.0);
-        let ease = 1.0 - (1.0-approach).powi(3);
-        let spread = (34.0 * (1.0-ease)) as i32;
-        text(dc, "DS Compare", 28, 18, 500, 30, rgb(242, 249, 255), true);
-        text(dc, "PORÓWNYWANIE REWIZJI CAD", 30, 59, 500, 12, rgb(148, 176, 199), false);
-        rect(dc, 28, 90, 603, 164, rgb(11, 26, 42));
-        panel(dc, 28, 90, 603, 164, rgb(32, 66, 87));
-        // Diagonal technical grid under the model, much quieter than a checkerboard.
-        for x in (40..632).step_by(34) {
-            stroke(dc, x, 94, x, 250, rgb(18, 42, 61), 1);
+        // Native animated scan: a material-to-wireframe visual metaphor,
+        // not a geometry verification claim or a fabricated progress value.
+        let phase = if animated {
+            0.5 - 0.5 * (elapsed * std::f64::consts::TAU / 6.2).cos()
+        } else { 0.6 };
+        let scan = 455 + (phase * 604.0) as i32;
+        for (offset, green) in [(-20, 63), (-11, 84), (-5, 125), (4, 70), (12, 45)] {
+            stroke(dc, scan+offset, 32, scan+offset, 553, rgb(12,green,110), 1);
         }
-        for y in (104..250).step_by(34) {
-            stroke(dc, 40, y, 619, y, rgb(18, 42, 61), 1);
-        }
-        text(dc, "CAD / STEP", 48, 113, 270, 12, rgb(94, 203, 229), true);
-        text(dc, "ANALIZA 3D", 48, 143, 276, 23, rgb(226, 241, 252), true);
-        text(dc, "Wykrywanie zmian geometrii", 50, 178, 296, 12,
-             rgb(143, 174, 196), false);
-        text(dc, "Bryły · położenie · rewizje", 50, 203, 278, 12,
-             rgb(112, 147, 171), false);
-        stroke(dc, 49, 230, 156, 230, rgb(38, 165, 203), 2);
-
-        // Fully vector, illuminated mechanical CAD assembly instead of two cubes.
-        // Metallic bed with raised thickness and a different world-revision layer.
-        poly(dc, &[(358,218),(460,166),(626,202),(526,264)], rgb(103, 125, 145));
-        poly(dc, &[(358,218),(526,264),(526,284),(358,241)], rgb(31, 53, 75));
-        poly(dc, &[(526,264),(626,202),(626,226),(526,284)], rgb(24, 48, 70));
-        poly(dc, &[(378,217),(458,177),(602,207),(523,253)], rgb(27, 51, 70));
-        stroke(dc, 358, 218, 526, 264, rgb(192, 218, 233), 2);
-        stroke(dc, 526, 264, 626, 202, rgb(161, 195, 217), 2);
-        // Rear machine shaft and stepped motor housing.
-        poly(dc, &[(516,131),(596,150),(598,206),(516,186)], rgb(62, 83, 102));
-        poly(dc, &[(598,150),(615,159),(616,214),(598,206)], rgb(23, 44, 65));
-        poly(dc, &[(516,131),(537,119),(614,137),(596,150)], rgb(139, 158, 175));
-        poly(dc, &[(543,117),(553,104),(591,112),(578,123)], rgb(167, 183, 194));
-        stroke(dc, 516, 132, 596, 150, rgb(214, 233, 242), 2);
-        stroke(dc, 516, 186, 598, 206, rgb(115, 166, 188), 2);
-        // Angular ribs and supporting bearing yoke.
-        poly(dc, &[(409,215),(439,133),(462,140),(494,225),(472,227),(450,173),(433,225)],
-             rgb(99, 119, 136));
-        poly(dc, &[(440,133),(456,118),(478,129),(462,140)], rgb(194, 212, 222));
-        poly(dc, &[(483,221),(526,145),(543,152),(528,233)], rgb(66, 89, 107));
-        poly(dc, &[(526,145),(541,138),(558,145),(543,152)], rgb(193, 210, 219));
-        stroke(dc, 410, 215, 439, 133, rgb(201, 220, 231), 2);
-        stroke(dc, 483, 221, 526, 145, rgb(191, 212, 225), 2);
-        // Rectangular front bearing, rotated plates and concentric precision rings.
-        poly(dc, &[(432,148),(467,132),(495,147),(459,168)], rgb(183, 199, 208));
-        poly(dc, &[(459,168),(495,147),(495,211),(459,229)], rgb(49, 72, 91));
-        poly(dc, &[(421,146),(459,168),(459,228),(421,206)], rgb(123, 140, 154));
-        oval(dc, 431, 180, 32, 41, rgb(78, 101, 119), rgb(219, 231, 237), 4);
-        oval(dc, 428, 180, 27, 34, rgb(142, 160, 175), rgb(217, 236, 248), 2);
-        oval(dc, 428, 180, 19, 25, rgb(16, 30, 46), rgb(81, 118, 143), 4);
-        oval(dc, 428, 180, 12, 16, rgb(7, 18, 30), rgb(20, 38, 58), 3);
-        // Distinctive revision highlight; blue machined support and orange addition.
-        poly(dc, &[(491,234),(527,174),(544,187),(559,244)], rgb(24, 118, 189));
-        poly(dc, &[(527,174),(539,169),(556,181),(544,187)], rgb(91, 197, 248));
-        poly(dc, &[(544,187),(556,181),(571,238),(559,244)], rgb(16, 66, 115));
-        stroke(dc, 492, 234, 527, 174, rgb(116, 214, 250), 2);
-        poly(dc, &[(565,228),(590,217),(613,223),(587,237)], rgb(255, 177, 67));
-        poly(dc, &[(565,228),(587,237),(587,251),(565,243)], rgb(151, 75, 25));
-        poly(dc, &[(587,237),(613,223),(613,236),(587,251)], rgb(175, 93, 29));
-        stroke(dc, 565, 228, 587, 237, rgb(255, 227, 145), 2);
-        poly(dc, &[(555,139),(581,129),(605,137),(579,149)], rgb(249, 163, 48));
-        stroke(dc, 555, 139, 579, 149, rgb(255, 228, 147), 2);
-        // Fasteners and optical edge detail.
-        for (x,y) in [(395,226),(522,250),(594,213),(483,222),(544,134)] {
-            oval(dc,x,y,6,3,rgb(185, 207, 221),rgb(27, 53, 72),1);
-            stroke(dc,x-3,y,x+3,y,rgb(34, 56, 72),1);
-        }
-        // Independent CAD-revision overlay and moving section plane.
-        let scan = if animated { 386 + ((cycle*225.0).round() as i32) } else { 511 };
-        for o in [-9,-4,4,9] {
-            stroke(dc,scan+o,110,scan+o,248,rgb(18, 71, 85),1);
-        }
-        stroke(dc,scan,103,scan,252,rgb(91, 229, 242),2);
-        for (a,b) in [((356,220),(529,266)),((529,266),(627,206)),
-                      ((518,132),(596,151)),((438,135),(460,171)),
-                      ((492,234),(528,174)),((567,229),(612,224))] {
-            // Cyan ghost of the verified revision, not a fake geometry verdict.
-            if scan >= a.0 && scan >= b.0 {
-                stroke(dc,a.0+spread/4,a.1,b.0+spread/4,b.1,rgb(35, 206, 226),1);
+        stroke(dc, scan, 23, scan, 556, rgb(119, 232, 244), 2);
+        let state = STATE.get().unwrap();
+        let progress = state.status.lock().unwrap().clone();
+        text(dc, &progress.text, 68, 536, 485, 16, rgb(224, 242, 252), true);
+        // Actual known progress is determinate; otherwise animate a
+        // scanner without inventing any completion percentage.
+        rect(dc, 67, 571, 453, 3, rgb(48, 75, 91));
+        if let Some(percent) = progress.percent {
+            rect(dc, 67, 571, 453 * percent.min(100) as i32 / 100,
+                 3, rgb(58, 216, 231));
+        } else {
+            let position = if animated {
+                ((elapsed / 2.6).fract() * 553.0) as i32 - 100
+            } else { 170 };
+            let left = (67 + position).max(67);
+            let right = (67 + position + 100).min(520);
+            if right > left {
+                rect(dc, left, 571, right-left, 3, rgb(90, 231, 244));
             }
         }
-        let pulse = if animated { 0.5+0.5*(elapsed*4.2).sin() } else { 0.65 };
-        let gl = (60.0+pulse*110.0) as u32;
-        stroke(dc, 520, 249, 612, 244, rgb(23,gl,171),1);
-        let state = STATE.get().unwrap();
-        let p = state.status.lock().unwrap().clone();
-        text(dc, &p.text, 30, 269, 535, 15, rgb(203, 217, 231), true);
-        text(dc, "Przygotowywanie bezpiecznego środowiska CAD", 31, 294, 530, 11,
-             rgb(122, 148, 171), false);
-
-        // Monotonic percentage when known, otherwise an honest scanner.
-        rect(dc, 30, 319, 600, 5, rgb(35, 51, 69));
-        if let Some(n) = p.percent {
-            let n = n.min(100);
-            rect(dc, 30, 319, (600*n/100) as i32, 5, rgb(59, 200, 173));
-            text(dc, &format!("{n}%"), 579, 271, 55, 13,
-                 rgb(113, 223, 194), true);
-        } else {
-            let position = if animated { (cycle*425.0).round() as i32 } else { 212 };
-            rect(dc, 30+position, 319, 174, 5, rgb(59, 200, 173));
-        }
-        text(dc, "LOKALNIE  ·  TWOJE DANE POZOSTAJĄ NA KOMPUTERZE", 30, 336,
-             465, 10, rgb(102, 126, 149), false);
-        text(dc, concat!("v", env!("CARGO_PKG_VERSION")), 555, 335, 90, 11,
-             rgb(102, 126, 149), false);
         SetMapMode(dc, MM_TEXT);
         BitBlt(target, 0, 0, w, h, dc, 0, 0, SRCCOPY);
         SelectObject(dc, old);
@@ -365,7 +306,14 @@ mod win {
             };
             RegisterClassW(&wc);
             let factor = GetDpiForSystem() as f64 / 96.;
-            let (width, height) = ((660. * factor) as i32, (360. * factor) as i32);
+            // Preserve the approved 1120:620 aspect ratio while fitting small
+            // displays and enlarged Windows DPI without off-screen cropping.
+            let avail_w = GetSystemMetrics(SM_CXSCREEN).max(1) as f64;
+            let avail_h = GetSystemMetrics(SM_CYSCREEN).max(1) as f64;
+            let scale = factor.min(avail_w * 0.90 / 900.0)
+                              .min(avail_h * 0.86 / (900.0 * 620.0 / 1120.0));
+            let width = (900.0 * scale).round() as i32;
+            let height = (width as f64 * 620.0 / 1120.0).round() as i32;
             let x = (GetSystemMetrics(SM_CXSCREEN) - width) / 2;
             let y = (GetSystemMetrics(SM_CYSCREEN) - height) / 2;
             let hwnd = CreateWindowExW(
