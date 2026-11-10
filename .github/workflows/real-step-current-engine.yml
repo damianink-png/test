@@ -1,0 +1,104 @@
+name: DS Compare real public STEP comparison — current engine
+on:
+  push:
+    branches: ['fix/dscompare-0613-material-z-20261109']
+    paths:
+      - 'review/fix06/ci/real_step_current_engine.py'
+      - '.github/workflows/real-step-current-engine.yml'
+      - 'review/fix06/dsac29/fingerprint_priority.py'
+      - 'review/fix06/dsac29/unique_anchors.py'
+      - 'review/fix06/dsac29/revision_overlap.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-parts-and-shift:
+    runs-on: windows-2022
+    timeout-minutes: 50
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      DSCOMPARE_TRACE_BREP: '1'
+      QT_QPA_PLATFORM: 'offscreen'
+      PYTHONPATH: 'portable-src'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Assemble exact production Python CAD engine
+        shell: pwsh
+        run: |
+          Invoke-WebRequest 'https://raw.githubusercontent.com/damianink-png/test/22b9e73746e8721e146b10d3e3656df67e77956c/DSCompare_RC9_KOMPLET_ZRODLA.zip' -OutFile baseline.zip
+          python portable/prepare_source.py baseline.zip portable-src
+          if($LASTEXITCODE -ne 0){throw 'Baseline failed'}
+          python portable/assemble_engine.py portable-src
+          if($LASTEXITCODE -ne 0){throw 'Current production overlay failed'}
+      - name: Install tested Open CASCADE runtime
+        shell: pwsh
+        working-directory: portable-src
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if($LASTEXITCODE -ne 0){throw 'OCC install failed'}
+      - name: Compare original public STEP, changed STEP, and shifted real parts
+        shell: pwsh
+        run: |
+          python -u review/fix06/ci/real_step_current_engine.py quick
+          if($LASTEXITCODE -ne 0){throw 'Real public STEP validation failed'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-public-STEP-quick-current-engine
+          path: |
+            evidence/real_step/*.json
+            evidence/real_step/shifted_assembly/CZASY_ANALIZY.json
+            evidence/real_step/shifted_assembly/PODSUMOWANIE.json
+            evidence/real_step/shifted_assembly/WYROWNANIE_DIAGNOSTYKA.json
+          if-no-files-found: warn
+  authentic-trident-two-revisions:
+    runs-on: windows-2022
+    timeout-minutes: 100
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      DSCOMPARE_TRACE_BREP: '1'
+      QT_QPA_PLATFORM: 'offscreen'
+      PYTHONPATH: 'portable-src'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Assemble same source code as GUI and single EXE
+        shell: pwsh
+        run: |
+          Invoke-WebRequest 'https://raw.githubusercontent.com/damianink-png/test/22b9e73746e8721e146b10d3e3656df67e77956c/DSCompare_RC9_KOMPLET_ZRODLA.zip' -OutFile baseline.zip
+          python portable/prepare_source.py baseline.zip portable-src
+          if($LASTEXITCODE -ne 0){throw 'Baseline failed'}
+          python portable/assemble_engine.py portable-src
+          if($LASTEXITCODE -ne 0){throw 'CAD overlay failed'}
+      - name: Install OCC runtime
+        shell: pwsh
+        working-directory: portable-src
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if($LASTEXITCODE -ne 0){throw 'CAD runtime install failed'}
+      - name: Compare two untouched official Trident assembly revisions
+        shell: pwsh
+        run: |
+          python -u review/fix06/ci/real_step_current_engine.py full
+          if($LASTEXITCODE -ne 0){throw 'Strict full Trident revision comparison failed'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-public-Trident-full-current-engine
+          path: |
+            evidence/real_step/*.json
+            evidence/real_step/trident_real_revision/CZASY_ANALIZY.json
+            evidence/real_step/trident_real_revision/PODSUMOWANIE.json
+            evidence/real_step/trident_real_revision/WYROWNANIE_DIAGNOSTYKA.json
+            evidence/real_step/trident_real_revision/DIAGNOSTYKA_DOPASOWANIA.json
+          if-no-files-found: warn
+          retention-days: 14
