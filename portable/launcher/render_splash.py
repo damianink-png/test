@@ -17,7 +17,7 @@ APPROVED_GIT_BLOB = "8672bfea98580f6fc4fcd429f9900cdfa6684a78"
 source = Path(sys.argv[1])
 output = Path(sys.argv[2])
 raw = source.read_bytes()
-blob_header=b"blob "+str(len(raw)).encode("ascii")+b"\\0"
+blob_header=b"blob "+str(len(raw)).encode("ascii")+bytes([0])
 if hashlib.sha1(blob_header+raw).hexdigest() != APPROVED_GIT_BLOB:
     raise SystemExit("Approved splash HTML differs from pinned Git blob")
 if b'data:image/webp;base64,' not in raw:
