@@ -1,0 +1,35 @@
+name: Experimental Open3D global CAD registration
+on:
+  push:
+    branches: ['experiment/registration-fingerprint-mesh-20261110']
+    paths:
+      - 'experiments/cad_alternatives/**'
+      - '.github/workflows/cad-alternative-open3d.yml'
+  workflow_dispatch:
+jobs:
+  benchmark:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual Open3D Windows runtime
+        shell: pwsh
+        run: |
+          python -m pip install open3d==0.19.0 numpy scipy
+          if($LASTEXITCODE -ne 0){throw 'Open3D dependency install failure'}
+      - name: Run ICP, Open3D FGR and Open3D RANSAC
+        shell: pwsh
+        env:
+          OMP_NUM_THREADS: '4'
+        run: |
+          python experiments/cad_alternatives/open3d_benchmark.py
+          if($LASTEXITCODE -ne 0){throw 'Open3D benchmark failed'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: open3d-fgr-ransac-results
+          path: evidence/
+          if-no-files-found: warn
