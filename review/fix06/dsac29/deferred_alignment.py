@@ -4,6 +4,7 @@ Descriptors propose candidates only. Every accepted placement needs full B-Rep
 support. Bounded sampling can miss a transform; it never proves no displacement.
 """
 from math import ceil
+from collections import Counter
 import numpy as np
 from .registration_gate import frame_support
 
@@ -52,6 +53,51 @@ def _periodic_global_offset_possible(a,b,tolerance,population,free_a=(),free_b=(
     return False
 
 
+def _stationary_unique_frame(a,b,matched,tolerance):
+    """Cheap no-shift gate using ALREADY verified native world matches.
+
+    A re-exported STEP can have a large number of changed/topologically
+    repartitioned solids, even when most stationary material stays in place.
+    Reuse verified SAME records rather than launching a speculative global
+    translation. Require strong volume, count, unique-geometry and spatial
+    coverage; the all-repeated periodic-pitch case stays on the legacy
+    candidate-veto path because it has no unique geometric anchors.
+    """
+    n=min(len(a),len(b))
+    if n<8 or len(matched)<ceil(.35*n):
+        return False
+    from .geometry import signature
+    if not all(hasattr(p,'volume') and hasattr(p,'center') for p in a+b):
+        return False
+    vol=sum(max(0.,float(p.volume)) for p in a)
+    if not np.isfinite(vol) or vol<=0:
+        return False
+    verified=[r for r in matched if r.status in ('SAME','RENAMED')
+              and r.a_index is not None and r.b_index is not None]
+    matched_volume=sum(max(0.,float(a[r.a_index].volume)) for r in verified)
+    if matched_volume < .60*vol:
+        return False
+    # Only unique *geometry* in BOTH revisions counts as a world anchor.
+    # Different names or copies of one bolt cannot satisfy this condition.
+    sa=[signature(p) for p in a]
+    sb=[signature(p) for p in b]
+    count_a=Counter(sa);count_b=Counter(sb)
+    anchors=[]
+    kinds=set()
+    for row in verified:
+        i,j=row.a_index,row.b_index
+        if (count_a[sa[i]]==1 and count_b[sb[j]]==1
+                and sa[i] not in kinds):
+            anchors.append(np.asarray(a[i].center,dtype=float))
+            kinds.add(sa[i])
+    if len(anchors)<3:
+        return False
+    points=np.asarray(anchors)
+    if not np.isfinite(points).all():
+        return False
+    return np.linalg.matrix_rank(points-points.mean(axis=0),
+                                 tol=max(.001,float(tolerance)))>=2
+
 def propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress=None,cancelled=None,*,search_state=None):
     """Check a whole-frame shift BEFORE costly rigid per-part comparisons.
 
@@ -64,6 +110,12 @@ def propose_from_stage1(a,b,matched,free_a,free_b,tolerance,progress=None,cancel
     if not population or not free_a or not free_b:return None
     # Exact equality of both occurrence lists means no global relocation.
     if baseline==population:return None
+    if _stationary_unique_frame(a,b,matched,tolerance):
+        if progress:
+            progress(f'Etap 1: {baseline}/{population} brył SAME w miejscu; '
+                     'niezależne unikatowe kotwice i większość objętości '
+                     'potwierdzają oryginalny układ CAD. Pomijam wyrównanie.')
+        return None
     if (baseline/population>=.90 and
         not _periodic_global_offset_possible(a,b,tolerance,population,free_a,free_b,baseline)):
         if progress:progress(f'Etap 1: {baseline}/{population} brył zgodnych w miejscu; pomijam wyrównanie.')

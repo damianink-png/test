@@ -70,3 +70,50 @@ def test_stationary_1597_part_majority_avoids_global_pose_search(monkeypatch):
     assert not deferred_alignment._periodic_global_offset_possible(
         a,b,.01,1597,free_a=set(range(1482,1597)),
         free_b=set(range(1482,1597)),baseline=1482)
+
+
+
+def test_zw3d_same_frame_with_revised_parts_skips_shift_engine(monkeypatch):
+    """Changed B-Rep representation or genuinely revised parts must not trigger
+    global relocation when diverse stationary native matches cover the frame.
+    """
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from dsac29.geometry import describe
+    from dsac29.alignment import _relocate
+    from dsac29.compare import Record
+    a=[];b=[]
+    for i in range(60):
+        # Sizes form distinct geometric families; different names are irrelevant.
+        shape=BRepPrimAPI_MakeBox(20+i,15+i*.12,10+i*.09).Shape()
+        part=describe(shape,'REV_A','old')
+        pos=np.array([i*53.,(i%7)*37.,(i%5)*25.])
+        a.append(_relocate(part,np.eye(3),pos))
+        shape_b=(shape if i<40 else
+                 BRepPrimAPI_MakeBox(200+i,45+i,15).Shape())
+        b.append(_relocate(describe(shape_b,'REV_B','new'),np.eye(3),pos))
+    stationary=[Record(i,i,'SAME','independent native proof') for i in range(40)]
+    def forbidden(*args,**kwargs):
+        raise AssertionError('Do not re-run alignment when independent '
+                             'stationary world evidence is already verified')
+    monkeypatch.setattr(deferred_alignment,'propose',forbidden)
+    assert deferred_alignment._stationary_unique_frame(a,b,stationary,.01)
+    assert deferred_alignment.propose_from_stage1(
+        a,b,stationary,range(40,60),range(40,60),.01) is None
+
+
+def test_periodic_repeated_pitched_frame_is_not_skipped_by_unique_gate():
+    from dsac29.compare import Record
+    a=fake_parts([i*40. for i in range(30)])
+    b=fake_parts([i*40.+40. for i in range(30)])
+    matches=[Record(i+1,i,'SAME','independent native proof') for i in range(29)]
+    assert not deferred_alignment._stationary_unique_frame(a,b,matches,.01)
+    assert deferred_alignment._periodic_global_offset_possible(
+        a,b,.01,30,free_a={0},free_b={29},baseline=29)
+
+
+def test_unverified_geometry_never_triggers_stationary_world_skip():
+    from dsac29.compare import Record
+    a=fake_parts([i*40 for i in range(20)])
+    b=fake_parts([i*40 for i in range(20)])
+    suspects=[Record(i,i,'UNCERTAIN','native timeout') for i in range(18)]
+    assert not deferred_alignment._stationary_unique_frame(a,b,suspects,.01)
