@@ -224,6 +224,10 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     trace.mark('signatures','END')
     from .registration_search import RegistrationSearch
     registration_search=RegistrationSearch()
+    from .fingerprint_priority import FingerprintPriority
+    # A single comparison-local cache feeds native world pairing, unique
+    # alignment witnesses and bent-material Common candidate ordering.
+    registration_search._dscompare_fingerprint_priority=FingerprintPriority.shared(geometry_context)
     registration_search.diagnostic_path=Path(output)/'WYROWNANIE_DIAGNOSTYKA.json'
     def inspect_stage1(matched,free_a,free_b):
         if not should_align:return None
