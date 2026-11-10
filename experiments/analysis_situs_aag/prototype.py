@@ -242,8 +242,8 @@ def step_smoke():
     return out
 
 if __name__=='__main__':
-    ordinary=trial(18,False)
-    ambiguous=trial(8,True)
+    ordinary=trial(60,False)
+    ambiguous=trial(32,True)
     data={'method':'Python/OCP AAG-inspired only, not native Analysis Situs C++',
           'scope':'native SAME candidate ordering; not full DS Compare or crash-isolated Common',
           'ordinary':ordinary,'ambiguous':ambiguous,
