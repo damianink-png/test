@@ -62,6 +62,21 @@ s=once(s,
 "from .native_guard import NativeGeometryFailure,guarded_world_reexport,guarded_registered_world,guarded_world_equivalent",
 "compare native imports")
 s=once(s,
+"    # Match exact names first GLOBALLY: repeated and overlapping occurrences
+    # must not consume a counterpart that has an exact-name match elsewhere.",
+"""    # Only near-equidistant candidates use the existing CAD inertia/area
+    # invariants as a SOFT priority. Do not change any native proof or filter.
+    from .fingerprint_priority import FingerprintPriority
+    fingerprint_rank=FingerprintPriority()
+    # Match exact names first GLOBALLY: repeated and overlapping occurrences
+    # must not consume a counterpart that has an exact-name match elsewhere.""","fingerprint world-stage priority")
+s=once(s,
+"            js.sort(key=lambda j:(dist(s,b[j]),abs(s.volume-b[j].volume),j))",
+"""            js.sort(key=lambda j:(dist(s,b[j]),abs(s.volume-b[j].volume),j))
+            if len(js)>1:
+                js=fingerprint_rank.world_ties(s,js,b,tolerance)""",
+"ambiguous same-position priority")
+s=once(s,
 "    failed_groups = set()",
 """    failed_groups = set()
     # Preserve unknown native outcomes for identical definition pairs; never

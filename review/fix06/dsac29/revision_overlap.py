@@ -411,6 +411,12 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     x_index=_XIntervalIndex(bb)
     stat['spatial_index_build_seconds']=round(perf_counter()-index_started,5)
     stat['spatial_candidates_scanned']=0
+    # Fingerprint is only a candidate-order accelerator, never a veto.
+    # It computes no geometry: volume/area/central inertia are already loaded.
+    from .fingerprint_priority import FingerprintPriority
+    fingerprint_rank=FingerprintPriority()
+    stat['fingerprint_tie_groups']=0
+    stat['fingerprint_descriptors_calculated']=0
     edges={}
     best_common={}
     # Store verified reusable Common proofs for large assemblies, not only the first 128.
@@ -475,6 +481,14 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             priority=boxvol/bbox_larger+0.035*int(_name_eq(ref,other))-0.08*distance
             candidates.append((-priority,j))
         candidates.sort()
+        # Priority-only: all eligible pairs still get the same strict native
+        # Common/Cut and global one-to-one assignment. On near-overlap ties
+        # try the most CAD-similar definition first to reduce wasted work
+        # before an existing operation budget/recovery path.
+        if len(candidates)>1:
+            candidates=fingerprint_rank.common_ties(ref,candidates,b)
+            stat['fingerprint_tie_groups']=fingerprint_rank.tie_groups
+            stat['fingerprint_descriptors_calculated']=fingerprint_rank.descriptors_computed
         stat['candidate_pairs']+=len(candidates)
         for _,j in candidates:
             if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
