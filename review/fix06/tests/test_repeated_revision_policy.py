@@ -194,3 +194,23 @@ def test_moved_just_above_cad_tolerance_is_not_mistaken_for_export_drift():
                  delta_x=0.,delta_y=0.04,delta_z=0.,rotation_deg=0.)]
     records=classify_revisions(old,new,rows,tolerance=.01,geometry_first=True)
     assert Counter(r.status for r in records)=={'MOVED':1}
+
+
+def test_unequal_repeated_family_keeps_proven_stationary_copy():
+    """An added/removed duplicate must not turn a stationary proof into MOVED.
+
+    The native matcher can initially label an occurrence MOVED before the
+    population audit. If its original world placement is unchanged, keep SAME
+    even though the repeated family has lost one occurrence.
+    """
+    old = parts(count=3)
+    new = parts(count=2)
+    records = [
+        Record(0, 0, 'MOVED', 'upstream rigid proof', distance_mm=0.0),
+        Record(1, 1, 'SAME', 'native stationary proof'),
+        Record(2, None, 'REMOVED', 'copy deleted'),
+    ]
+    result = classify_revisions(old, new, records, geometry_first=True)
+    assert Counter(row.status for row in result) == {'SAME': 2, 'REMOVED': 1}
+    assert {row.a_index for row in result if row.status == 'SAME'} == {0, 1}
+    assert not any(row.status == 'MOVED' for row in result)
