@@ -86,6 +86,35 @@ for case, width, shift, count, name, expected in (
             proc.kill()
             proc.wait()
 
+# Unequal repeated population: a stationary survivor is SAME, a uniquely
+# reworked neighbour is CHANGED, and one missing occurrence is REMOVED.
+# This exercises the *frozen executable*, not just the Python policy helper.
+old=ColoredDocument();new=ColoredDocument()
+for i in range(8):
+    pos=np.array([i*57.,i*i*3.,0.])
+    old.add(transform(BRepPrimAPI_MakeBox(20,10,7).Shape(),np.eye(3),pos),
+            'PLATE_123_REV_A',(.2,.5,.8))
+    if i<7:
+        width=11 if i==6 else 10
+        new.add(transform(BRepPrimAPI_MakeBox(20,width,7).Shape(),np.eye(3),pos),
+                'PLATE_123_REV_B',(.2,.5,.8))
+pa=root/'mixed_unequal_old.step';pb=root/'mixed_unequal_new.step'
+old.write(pa);new.write(pb);output=root/'mixed_unequal_stationary'
+proc=subprocess.Popen([exe,'--worker','compare','--a',str(pa),'--b',str(pb),
+    '--output',str(output),'--revision-style','--no-bom','--generate-step'])
+try:
+    proc.wait(timeout=300)
+    assert proc.returncode==0,proc.returncode
+    summary=json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
+    assert summary['statuses']=={'SAME':6,'CHANGED':1,'REMOVED':1},summary['statuses']
+    assert summary['revision_overlap']['boolean_checks']>=1,summary['revision_overlap']
+    assert all('Common' in r['confidence'] for r in summary['records']
+               if r['status']=='CHANGED'),summary['records']
+    assert summary['main_step_ready'] and not summary.get('material_errors'),summary
+    print('Frozen comparison PASS: mixed_unequal_stationary',flush=True)
+finally:
+    if proc.poll() is None:proc.kill();proc.wait()
+
 # Actual independent STEP write/read + arbitrary rigid pose in the frozen
 # worker, rather than only direct in-memory registration functions.
 axis=np.array([1.,2.,3.]);axis/=np.linalg.norm(axis)
