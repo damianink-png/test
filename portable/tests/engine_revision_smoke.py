@@ -29,7 +29,7 @@ model(root/'old.step')
 for case, width, shift, count, name, expected in (
     ('repeated_named_revision', 11, 0, 8, 'PLATE_123_REV_B', {'CHANGED':8}),
     ('repeated_other_name', 11, 0, 8, 'OTHER_123_REV_B', {'REMOVED':8, 'ADDED':8}),
-    ('repeated_unequal_count', 11, 0, 7, 'PLATE_123_REV_B', {'REMOVED':8, 'ADDED':7}),
+    ('repeated_unequal_count', 11, 0, 7, 'PLATE_123_REV_B', {'CHANGED':7, 'REMOVED':1}),
     ('global_shift', 10, 1000, 8, 'PLATE_123_REV_B', {'SAME':8}),
     ('repeated_afm_revision', 11, 0, 8, 'czesc1_afm2', {'CHANGED':8}),
 ):
@@ -65,7 +65,16 @@ for case, width, shift, count, name, expected in (
         assert not summary.get('material_errors'), summary.get('material_errors')
         if case in ('repeated_named_revision','repeated_afm_revision'):
             assert summary['revision_overlap']['accepted']==8
-        elif case in ('repeated_other_name','repeated_unequal_count'):
+        elif case == 'repeated_unequal_count':
+            # The current material policy admits seven individually unique,
+            # spatially aligned revisions even if an eighth copy disappeared.
+            # Require completed native Common/Cut evidence for every CHANGED
+            # pair; never weaken this test to accept a heuristic classification.
+            assert summary['revision_overlap']['accepted']==7, summary['revision_overlap']
+            assert summary['revision_overlap']['boolean_checks']>=1, summary['revision_overlap']
+            changed=[r for r in summary['records'] if r['status']=='CHANGED']
+            assert len(changed)==7 and all('Common' in r['confidence'] for r in changed), changed
+        elif case == 'repeated_other_name':
             assert summary['revision_overlap']['boolean_checks']==0
         if shift:
             assert summary['alignment']['applied'], summary['alignment']
