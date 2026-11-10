@@ -84,21 +84,25 @@ def test_zw3d_same_frame_with_revised_parts_skips_shift_engine(monkeypatch):
     a=[];b=[]
     for i in range(60):
         # Sizes form distinct geometric families; different names are irrelevant.
-        shape=BRepPrimAPI_MakeBox(20+i,15+i*.12,10+i*.09).Shape()
+        # Only 24/60 locations are unchanged. They form a load-bearing
+        # majority of the old solid volume, despite the low occurrence ratio.
+        dims=((40+i,25+i*.1,20+i*.07) if i<24 else
+              (8+i*.1,8+i*.07,6+i*.05))
+        shape=BRepPrimAPI_MakeBox(*dims).Shape()
         part=describe(shape,'REV_A','old')
         pos=np.array([i*53.,(i%7)*37.,(i%5)*25.])
         a.append(_relocate(part,np.eye(3),pos))
-        shape_b=(shape if i<40 else
+        shape_b=(shape if i<24 else
                  BRepPrimAPI_MakeBox(200+i,45+i,15).Shape())
         b.append(_relocate(describe(shape_b,'REV_B','new'),np.eye(3),pos))
-    stationary=[Record(i,i,'SAME','independent native proof') for i in range(40)]
+    stationary=[Record(i,i,'SAME','independent native proof') for i in range(24)]
     def forbidden(*args,**kwargs):
         raise AssertionError('Do not re-run alignment when independent '
                              'stationary world evidence is already verified')
     monkeypatch.setattr(deferred_alignment,'propose',forbidden)
     assert deferred_alignment._stationary_unique_frame(a,b,stationary,.01)
     assert deferred_alignment.propose_from_stage1(
-        a,b,stationary,range(40,60),range(40,60),.01) is None
+        a,b,stationary,range(24,60),range(24,60),.01) is None
 
 
 def test_periodic_repeated_pitched_frame_is_not_skipped_by_unique_gate():
