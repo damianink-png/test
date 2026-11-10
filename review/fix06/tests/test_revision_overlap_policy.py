@@ -631,3 +631,47 @@ def test_two_terminal_native_failures_skip_expensive_third_probe(monkeypatch):
     assert stat['retry_skipped_unproductive']==1
     assert stat['retry_failure_attempted']==0
     assert {r.status for r in result}=={'UNCERTAIN'}
+
+
+def test_assembly_bent_part_common_recovers_in_original_world_frame(monkeypatch):
+    """A curved thin solid exported far from origin is re-tested locally
+    after a deterministic assembly-only native Boolean failure.  Final Common
+    and both Cuts must still be validated against the ORIGINAL sources.
+    """
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeTorus
+    from dsac29 import native_guard,material_deltas
+    from dsac29.alignment import _relocate
+    from dsac29.geometry import _precise_world_bounds,describe
+    offset=np.array([2500.,-720.,410.])
+    original=describe(BRepPrimAPI_MakeTorus(28.,3.).Shape(),'BENT_SECTION','old')
+    revised=describe(BRepPrimAPI_MakeTorus(28.,3.25).Shape(),'BENT_SECTION','new')
+    a=[_relocate(original,np.eye(3),offset)]
+    b=[_relocate(revised,np.eye(3),offset)]
+    before_a=np.asarray(_precise_world_bounds(a[0].shape))
+    before_b=np.asarray(_precise_world_bounds(b[0].shape))
+    attempts={'world_regions':0,'centered_regions':0,'common':0}
+    def fail_original_common(*args,**kwargs):
+        attempts['common']+=1
+        raise native_guard.NativeGeometryFailure(
+            'OCCT Boolean returned invalid or null topology')
+    def simulate_native_material(left,right,tolerance,**kwargs):
+        cx=0.5*(_precise_world_bounds(left.shape)[0]+
+                _precise_world_bounds(left.shape)[3])
+        if abs(cx)>500.:
+            attempts['world_regions']+=1
+            raise native_guard.NativeGeometryFailure(
+                'MATERIAL_BOOLEAN_UNVERIFIED: OCCT Boolean returned invalid or null topology')
+        attempts['centered_regions']+=1
+        return material_deltas.calculate(left,right,tolerance)
+    monkeypatch.setattr(native_guard,'guarded_common',fail_original_common)
+    monkeypatch.setattr(revision_overlap,'calculate',simulate_native_material)
+    rows=[Record(0,None,'REMOVED',''),Record(None,0,'ADDED','')]
+    out,regions,stats=revision_overlap.merge_material_revisions(
+        a,b,rows,review_approval=lambda _:'review')
+    assert {r.status for r in out}=={'CHANGED'},out
+    assert stats['recentered_material_attempted']==1,stats
+    assert stats['recentered_material_recovered']==1,stats
+    assert attempts=={'world_regions':0,'centered_regions':1,'common':1}
+    assert np.array_equal(np.asarray(_precise_world_bounds(a[0].shape)),before_a)
+    assert np.array_equal(np.asarray(_precise_world_bounds(b[0].shape)),before_b)
+    assert 0 in regions

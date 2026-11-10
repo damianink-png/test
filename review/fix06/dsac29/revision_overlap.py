@@ -185,6 +185,65 @@ def _translated_regions(regions, offset):
                            regions.added_mm3, regions.removed_mm3)
 
 
+
+def _recenter_origin(a,b,tolerance):
+    """Numerical stabilizer for whole-assembly bent/thin Boolean geometry.
+
+    Bounding boxes are location hints only; they NEVER prove a material
+    intersection. Both source solids are translated by the SAME rigid offset.
+    Native Common/Cut and source-bound conservation still have to pass.
+    """
+    bounds_a=np.asarray(_precise_world_bounds(a.shape),dtype=float)
+    bounds_b=np.asarray(_precise_world_bounds(b.shape),dtype=float)
+    if (bounds_a.shape!=(6,) or bounds_b.shape!=(6,) or
+            not np.isfinite(bounds_a).all() or not np.isfinite(bounds_b).all()):
+        return None
+    origin=.5*(np.minimum(bounds_a[:3],bounds_b[:3])+
+               np.maximum(bounds_a[3:],bounds_b[3:]))
+    # Do not introduce another native computation near the origin. This
+    # intervention is for geometry numerically displaced in an assembly.
+    if not np.isfinite(origin).all() or np.linalg.norm(origin)<=max(100.,1000.*tolerance):
+        return None
+    return origin
+
+
+def _topology_recenter_candidate(message):
+    reason=str(message)
+    return ('Original STEP stored tolerance exceeds CAD budget' not in reason and
+            any(marker in reason for marker in (
+                'OCCT Boolean returned invalid or null topology',
+                'MATERIAL_BOOLEAN_UNVERIFIED:',
+                'Invalid Boolean topology')))
+
+
+def _recentered_regions(a,b,tolerance):
+    """Try the existing isolated Common/Cut near local origin and rebind.
+
+    All three resulting B-Reps are moved BACK to their original world
+    coordinates and validated against unmodified original A/B sources.
+    This is never a heuristic CHANGED proof or a change in tolerance.
+    """
+    from types import SimpleNamespace
+    from OCP.gp import gp_Trsf,gp_Vec
+    from OCP.TopLoc import TopLoc_Location
+    origin=_recenter_origin(a,b,tolerance)
+    if origin is None:
+        raise ValueError('Brak odsunietego ukladu CAD do ponowienia')
+    transform=gp_Trsf()
+    transform.SetTranslation(gp_Vec(*map(float,-origin)))
+    location=TopLoc_Location(transform)
+    left=SimpleNamespace(shape=a.shape.Moved(location),
+                         volume=a.volume,name=a.name)
+    right=SimpleNamespace(shape=b.shape.Moved(location),
+                          volume=b.volume,name=b.name)
+    centered=calculate(left,right,tolerance)
+    restored=_translated_regions(centered,origin)
+    # Exact bound/conservation of the CURRENT source geometry remains
+    # mandatory; a successful subprocess alone cannot certify a revision.
+    bind_regions(restored,a,b,tolerance)
+    return restored
+
+
 def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=None,review_approval=None,geometry_context=None):
     """Strict by default; an explicit review choice may preserve unknowns."""
     records=list(records)
@@ -376,6 +435,9 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     stat['common_proof_reuse']=0
     stat['alternative_region_recovery']=0
     stat['alternative_region_failures']=0
+    stat['recentered_material_attempted']=0
+    stat['recentered_material_recovered']=0
+    stat['recentered_material_failed']=0
     stat['excluded_after_common_failure']=0
     stat['exclusion_witnesses']=[]
     guarded_large = True  # every unresolved Common is isolated, including small assemblies
@@ -471,7 +533,26 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 # source-bound material regions pass strict conservation.
                 if shape is None and cached is None:
                     try:
-                        recovered_regions=measured_brep('revision_common_alternative_regions',i,j,calculate,ref,b[j],tolerance)
+                        # Re-exported bent parts far from the world origin
+                        # can produce unstable Boolean topology even if the
+                        # individually exported detail (near 0,0,0) works.
+                        # Replace the usual alternative with ONE equivalent
+                        # local-coordinate attempt, keeping original operands
+                        # and exact conservation checks.
+                        use_local=(_topology_recenter_candidate(exc) and
+                                   _recenter_origin(ref,b[j],tolerance) is not None)
+                        if use_local:
+                            stat['recentered_material_attempted']+=1
+                            try:
+                                recovered_regions=measured_brep(
+                                    'revision_common_recentered_regions',i,j,
+                                    _recentered_regions,ref,b[j],tolerance)
+                            except Exception:
+                                stat['recentered_material_failed']+=1
+                                raise
+                            stat['recentered_material_recovered']+=1
+                        else:
+                            recovered_regions=measured_brep('revision_common_alternative_regions',i,j,calculate,ref,b[j],tolerance)
                         bind_regions(recovered_regions,ref,b[j],tolerance)
                         common=volume(recovered_regions.common)
                         stat['alternative_region_recovery']+=1
@@ -796,58 +877,79 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 reg=measured_brep('revision_material_regions',i,j,calculate,a[i],b[j],tolerance,common_shape=cached[2] if cached and cached[1]==j else None)
             bound=verify_regions(reg,i,j)
         except Exception as exc:
-            if not recover_failures:
-                if isinstance(exc,NativeGeometryFailure):raise
-                raise NativeGeometryFailure('Niekompletna analiza różnic materiału: '+str(exc)) from exc
-            # Running an identical isolated material operation immediately
-            # after its subprocess timeout repeats the same 120–240s deadline
-            # without new evidence. Keep the part explicitly UNCERTAIN.
-            import subprocess
-            cause=exc
-            timed_out=False
-            while cause is not None:
-                if isinstance(cause,subprocess.TimeoutExpired):
-                    timed_out=True
-                    break
-                cause=cause.__cause__
-            if timed_out:
-                stat['region_retry_skipped_timeout']=stat.get('region_retry_skipped_timeout',0)+1
-                trace.mark('revision_material_regions_retry','SKIP_IDENTICAL_TIMEOUT',a_index=i,b_index=j)
-                mark_failure(i,j,f'Podział materiału przekroczył limit czasu: {exc}. '
-                               'Nie powtórzono identycznej kosztownej operacji.')
-                continue
-            # A native worker that returned a *verified failure code* for a
-            # deterministic Boolean/topology defect will run the exact same
-            # operands again in the fresh retry. OpenArm 2026-11-04: 13/13
-            # such retries failed, wasting ~110 seconds. Fail closed instead:
-            # leave the pair for explicit review, never classify it as SAME.
-            # Do not skip unknown exceptions: those can be transient.
-            reason_text=str(exc)
-            if any(code in reason_text for code in (
-                    'MATERIAL_BOOLEAN_UNVERIFIED:',
-                    'INVALID_BREP_AFTER_REPAIR:',
-                    'Original STEP stored tolerance exceeds CAD budget')):
-                stat['region_retry_skipped_deterministic']=stat.get('region_retry_skipped_deterministic',0)+1
-                trace.mark('revision_material_regions_retry','SKIP_DETERMINISTIC_FAILURE',
-                           a_index=i,b_index=j,reason=reason_text)
-                mark_failure(i,j,'Niepotwierdzony podział materiału (bez ponawiania identycznej operacji): '+reason_text)
-                continue
-            # Critical: initial Common can succeed but the final region split
-            # can fail in the large assembly. Retry this SAME verified pair
-            # independently, with no cached Common or translated regions.
-            stat['region_retry_attempted']+=1
-            trace.mark('revision_material_regions_retry','BEGIN',a_index=i,b_index=j,reason=str(exc))
-            try:
-                reg=measured_brep('revision_material_regions_fresh_retry',i,j,
-                                    calculate,a[i],b[j],tolerance)
-                bound=verify_regions(reg,i,j)
-                stat['region_retry_recovered']+=1
-                trace.mark('revision_material_regions_retry','RECOVERED',a_index=i,b_index=j)
-                if progress:progress(f'Zweryfikowano ponownie podział materiału A[{i}] / B[{j}]')
-            except Exception as retry_exc:
-                stat['region_retry_failed']+=1
-                mark_failure(i,j,f'Podział materiału: {exc}; niezależna próba: {retry_exc}')
-                continue
+            # Same bent detail may pass in isolation but fail in a large
+            # world-coordinate assembly. Before categorizing it UNCERTAIN,
+            # try exactly one translated, source-verified local frame.
+            rescued=False
+            if (_topology_recenter_candidate(exc) and
+                    _recenter_origin(a[i],b[j],tolerance) is not None):
+                stat['recentered_material_attempted']+=1
+                try:
+                    reg=measured_brep('revision_material_regions_recentered',i,j,
+                                      _recentered_regions,a[i],b[j],tolerance)
+                    bound=verify_regions(reg,i,j)
+                    rescued=True
+                    stat['recentered_material_recovered']+=1
+                    if progress:
+                        progress(f'Zmiany materiału: odzyskano Common/Cut '
+                                 f'dla A[{i}] / B[{j}] w lokalnym układzie CAD.')
+                except Exception as local_exc:
+                    stat['recentered_material_failed']+=1
+                    trace.mark('revision_material_regions_recentered','UNVERIFIED',
+                               a_index=i,b_index=j,error=str(local_exc))
+            if not rescued:
+                if not recover_failures:
+                    if isinstance(exc,NativeGeometryFailure):raise
+                    raise NativeGeometryFailure('Niekompletna analiza różnic materiału: '+str(exc)) from exc
+                # Running an identical isolated material operation immediately
+                # after its subprocess timeout repeats the same 120–240s deadline
+                # without new evidence. Keep the part explicitly UNCERTAIN.
+                import subprocess
+                cause=exc
+                timed_out=False
+                while cause is not None:
+                    if isinstance(cause,subprocess.TimeoutExpired):
+                        timed_out=True
+                        break
+                    cause=cause.__cause__
+                if timed_out:
+                    stat['region_retry_skipped_timeout']=stat.get('region_retry_skipped_timeout',0)+1
+                    trace.mark('revision_material_regions_retry','SKIP_IDENTICAL_TIMEOUT',a_index=i,b_index=j)
+                    mark_failure(i,j,f'Podział materiału przekroczył limit czasu: {exc}. '
+                                   'Nie powtórzono identycznej kosztownej operacji.')
+                    continue
+                # A native worker that returned a *verified failure code* for a
+                # deterministic Boolean/topology defect will run the exact same
+                # operands again in the fresh retry. OpenArm 2026-11-04: 13/13
+                # such retries failed, wasting ~110 seconds. Fail closed instead:
+                # leave the pair for explicit review, never classify it as SAME.
+                # Do not skip unknown exceptions: those can be transient.
+                reason_text=str(exc)
+                if any(code in reason_text for code in (
+                        'MATERIAL_BOOLEAN_UNVERIFIED:',
+                        'INVALID_BREP_AFTER_REPAIR:',
+                        'Original STEP stored tolerance exceeds CAD budget')):
+                    stat['region_retry_skipped_deterministic']=stat.get('region_retry_skipped_deterministic',0)+1
+                    trace.mark('revision_material_regions_retry','SKIP_DETERMINISTIC_FAILURE',
+                               a_index=i,b_index=j,reason=reason_text)
+                    mark_failure(i,j,'Niepotwierdzony podział materiału (bez ponawiania identycznej operacji): '+reason_text)
+                    continue
+                # Critical: initial Common can succeed but the final region split
+                # can fail in the large assembly. Retry this SAME verified pair
+                # independently, with no cached Common or translated regions.
+                stat['region_retry_attempted']+=1
+                trace.mark('revision_material_regions_retry','BEGIN',a_index=i,b_index=j,reason=str(exc))
+                try:
+                    reg=measured_brep('revision_material_regions_fresh_retry',i,j,
+                                        calculate,a[i],b[j],tolerance)
+                    bound=verify_regions(reg,i,j)
+                    stat['region_retry_recovered']+=1
+                    trace.mark('revision_material_regions_retry','RECOVERED',a_index=i,b_index=j)
+                    if progress:progress(f'Zweryfikowano ponownie podział materiału A[{i}] / B[{j}]')
+                except Exception as retry_exc:
+                    stat['region_retry_failed']+=1
+                    mark_failure(i,j,f'Podział materiału: {exc}; niezależna próba: {retry_exc}')
+                    continue
         rename=_name_changed(a[i],b[j])
         d=b[j].center-a[i].center
         record=Record(i,j,'CHANGED',
