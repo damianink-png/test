@@ -414,9 +414,12 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     # Fingerprint is only a candidate-order accelerator, never a veto.
     # It computes no geometry: volume/area/central inertia are already loaded.
     from .fingerprint_priority import FingerprintPriority
-    fingerprint_rank=FingerprintPriority()
+    fingerprint_rank=FingerprintPriority.shared(geometry_context)
     stat['fingerprint_tie_groups']=0
     stat['fingerprint_descriptors_calculated']=0
+    stat['fingerprint_surface_analyses']=0
+    stat['fingerprint_surface_rankings']=0
+    stat['fingerprint_surface_reuses']=0
     edges={}
     best_common={}
     # Store verified reusable Common proofs for large assemblies, not only the first 128.
@@ -489,6 +492,9 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             candidates=fingerprint_rank.common_ties(ref,candidates,b)
             stat['fingerprint_tie_groups']=fingerprint_rank.tie_groups
             stat['fingerprint_descriptors_calculated']=fingerprint_rank.descriptors_computed
+            stat['fingerprint_surface_analyses']=fingerprint_rank.surface_analyses
+            stat['fingerprint_surface_rankings']=fingerprint_rank.surface_pair_rankings
+            stat['fingerprint_surface_reuses']=fingerprint_rank.surface_reuses
         stat['candidate_pairs']+=len(candidates)
         for _,j in candidates:
             if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
