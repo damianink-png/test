@@ -36,12 +36,13 @@ class FingerprintPriority:
         self._cache={}
         self._surface_cache={}
         self._surface_native={}
+        self._surface_shapes={}
         self.tie_groups=0
         self.descriptors_computed=0
         self.surface_analyses=0
         self.surface_reuses=0
         self.surface_pair_rankings=0
-        self.surface_budget=256
+        self.surface_budget=64
 
     @classmethod
     def shared(cls,context):
@@ -58,18 +59,29 @@ class FingerprintPriority:
         """Analytical face features. NEVER a CAD equality certificate."""
         source=getattr(part,'step_definition_key',None)
         key=('XCAF',tuple(source)) if source is not None else ('occurrence',id(part))
-        if key in self._surface_cache:
-            self.surface_reuses+=1
-            return self._surface_cache[key]
         shape=getattr(part,'shape',None)
-        if shape is None or self.surface_analyses>=self.surface_budget:
+        if shape is None:
+            return None
+        # A reworked CAD part can preserve its imported XCAF label while
+        # replacing the native geometry. Check IsPartner before serving a
+        # cached surface fingerprint, to avoid stale data across revisions.
+        if key in self._surface_cache:
+            cached_shape=self._surface_shapes.get(key)
+            if cached_shape is not None and shape.IsPartner(cached_shape):
+                self.surface_reuses+=1
+                return self._surface_cache[key]
+        if self.surface_analyses>=self.surface_budget:
             return None
         # Verify IsPartner after a native-hash lookup; hash collisions do
         # not authorize reusing a face descriptor from another definition.
-        h=hash(shape.TShape())
+        try:
+            h=hash(shape.TShape())
+        except (AttributeError,RuntimeError,TypeError,ValueError):
+            return None
         for saved,value in self._surface_native.get(h,()):
             if shape.IsPartner(saved):
                 self._surface_cache[key]=value
+                self._surface_shapes[key]=shape
                 self.surface_reuses+=1
                 return value
         self.surface_analyses+=1
@@ -109,6 +121,7 @@ class FingerprintPriority:
         except (ValueError,RuntimeError,TypeError,AttributeError,OverflowError):
             value=None
         self._surface_cache[key]=value
+        self._surface_shapes[key]=shape
         self._surface_native.setdefault(h,[]).append((shape,value))
         return value
 
