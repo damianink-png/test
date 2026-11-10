@@ -138,7 +138,12 @@ def classify_revisions(old, new, records, tolerance=0.01, progress=None, geometr
                 bounds_b=np.asarray(_precise_world_bounds(right.shape),dtype=float)
                 near_world=bool(np.all(np.isfinite(bounds_a)) and
                     np.all(np.isfinite(bounds_b)) and
-                    np.max(np.abs(bounds_a-bounds_b))<=max(.01,float(tolerance)*4))
+                    # The approximate 4*tolerance envelope previously hid
+                    # real 0.04 mm moves at tolerance=0.01 mm. Only an
+                    # envelope within the actual CAD tolerance can be a
+                    # possible stationary re-export: larger changes are
+                    # genuine candidate movements after rigid native proof.
+                    np.max(np.abs(bounds_a-bounds_b))<=max(1e-8,min(.01,float(tolerance))))
                 same_placement=bool(near_world and np.allclose(
                     _location_matrix(left),_location_matrix(right),
                     rtol=0,atol=max(1e-8,min(float(tolerance),0.01)*.25)))

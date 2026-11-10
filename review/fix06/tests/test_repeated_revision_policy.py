@@ -182,3 +182,15 @@ def test_baked_coordinates_without_toploc_are_not_falsely_stationary():
                  distance_mm=300.,delta_x=300.,delta_y=0.,delta_z=0.,rotation_deg=0.)]
     result=classify_revisions(old,new,rows,geometry_first=True)
     assert Counter(r.status for r in result)=={'MOVED':1}
+
+
+def test_moved_just_above_cad_tolerance_is_not_mistaken_for_export_drift():
+    # Regression from 42797621418: a 0.04 mm local move became UNCERTAIN
+    # because 4*tolerance world-bound broadening was too permissive.
+    old=parts(count=1)
+    new=parts(count=1)
+    new[0]=_relocate(new[0],np.eye(3),np.array([0.,0.04,0.]))
+    rows=[Record(0,0,'MOVED','native rigid',distance_mm=0.04,
+                 delta_x=0.,delta_y=0.04,delta_z=0.,rotation_deg=0.)]
+    records=classify_revisions(old,new,rows,tolerance=.01,geometry_first=True)
+    assert Counter(r.status for r in records)=={'MOVED':1}
