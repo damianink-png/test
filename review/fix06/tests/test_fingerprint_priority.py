@@ -13,6 +13,63 @@ def model(volume=100.,area=140.,eigen=(5.,7.,9.),center=(0.,0.,0.)):
                            eigenvalues=np.asarray(eigen,float),
                            center=np.asarray(center,float))
 
+
+def test_shared_store_reused_across_common_and_alignment():
+    context=SimpleNamespace()
+    left=FingerprintPriority.shared(context)
+    right=FingerprintPriority.shared(context)
+    assert left is right
+    original=model()
+    other=model()
+    left.distance(original,other)
+    assert right.descriptors_computed==2
+    right.distance(original,other)
+    assert right.descriptors_computed==2
+
+
+def test_curved_surface_radius_changes_soft_order_but_never_filters():
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeTorus
+    old=describe(BRepPrimAPI_MakeTorus(28.,3.).Shape(),'old','A')
+    wrong=describe(BRepPrimAPI_MakeTorus(28.,6.).Shape(),'wrong','B')
+    matching=describe(BRepPrimAPI_MakeTorus(28.,3.1).Shape(),'new','B')
+    fp=FingerprintPriority()
+    assert fp.surface(old)[2]
+    assert fp.distance(old,matching,with_surface=True)<fp.distance(old,wrong,with_surface=True)
+    assert fp.surface_analyses==3
+    all_candidates=[(-.90,0),(-.89,1)]
+    ordered=fp.common_ties(old,all_candidates,[wrong,matching])
+    assert set(ordered)==set(all_candidates)
+    assert fp.surface_pair_rankings>=2
+
+
+def test_curved_features_reuse_xcaf_definitions_at_different_placements():
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+    from dsac29.alignment import _relocate
+    shape=describe(BRepPrimAPI_MakeCylinder(3.,80.).Shape(),'pipe','old')
+    shape.step_definition_key=('source_file','OCAF_label',1)
+    moved=_relocate(shape,np.eye(3),np.array([100.,200.,300.]))
+    moved.step_definition_key=shape.step_definition_key
+    fp=FingerprintPriority()
+    first=fp.surface(shape)
+    assert first is not None
+    assert fp.surface(moved)==first
+    assert fp.surface_analyses==1
+    assert fp.surface_reuses>=1
+
+
+def test_different_number_of_faces_is_not_a_false_negative():
+    s=BRepPrimAPI_MakeBox(20.,10.,2.).Shape()
+    first=BRepPrimAPI_MakeBox(gp_Pnt(0.,0.,0.),10.,10.,2.).Shape()
+    second=BRepPrimAPI_MakeBox(gp_Pnt(10.,0.,0.),10.,10.,2.).Shape()
+    f=BRepAlgoAPI_Fuse(first,second);f.Build()
+    assert f.IsDone()
+    a=describe(s,'source','old')
+    b=describe(f.Shape(),'repartition','new')
+    fp=FingerprintPriority()
+    assert fp.distance(a,b)<1.e-6
+    assert fp.distance(a,b,with_surface=True)<1.e-6
+
+
 def test_world_equal_location_prioritizes_correct_fingerprint():
     ref=model()
     wrong=model(area=200.,eigen=(6.,25.,31.))
