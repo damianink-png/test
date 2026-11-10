@@ -35,7 +35,7 @@ class FingerprintPriority:
     def __init__(self):
         self._cache={}
         self._surface_cache={}
-        self._surface_native={}
+        self._surface_native=[]
         self._surface_shapes={}
         self.tie_groups=0
         self.descriptors_computed=0
@@ -70,15 +70,11 @@ class FingerprintPriority:
             if cached_shape is not None and shape.IsPartner(cached_shape):
                 self.surface_reuses+=1
                 return self._surface_cache[key]
-        # Verify IsPartner after a native-hash lookup; hash collisions do
-        # not authorize reusing a face descriptor from another definition.
-        # Check existing definitions BEFORE consuming the bounded analysis
-        # budget, so reverting an edited shape reuses its original descriptor.
-        try:
-            h=hash(shape.TShape())
-        except (AttributeError,RuntimeError,TypeError,ValueError):
-            return None
-        for saved,value in self._surface_native.get(h,()):
+        # The OCP Python wrapper returned by shape.TShape() is ephemeral:
+        # hash(shape.TShape()) is NOT stable for the same native definition.
+        # At most 64 definitions are retained. Check genuine native
+        # IsPartner directly; it also works for translated occurrences.
+        for saved,value in self._surface_native:
             if shape.IsPartner(saved):
                 self._surface_cache[key]=value
                 self._surface_shapes[key]=shape
@@ -124,7 +120,7 @@ class FingerprintPriority:
             value=None
         self._surface_cache[key]=value
         self._surface_shapes[key]=shape
-        self._surface_native.setdefault(h,[]).append((shape,value))
+        self._surface_native.append((shape,value))
         return value
 
     @staticmethod
