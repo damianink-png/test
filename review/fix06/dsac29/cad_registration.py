@@ -97,6 +97,14 @@ def _sampled_frame_decision(checked,positive,candidate_count,certified,a,toleran
                       f'{diverse} różnych geometrii; pozostałe części wymagają końcowego porównania')
 
 
+def strong_incomplete_hypotheses(state,population):
+    """Reuse native whole-body evidence before trying face extraction."""
+    limit=max(24,int(.30*population))
+    return [f for f in state.failures if f.get('pairs')
+            and len(f.get('proven_pairs',()))>=12
+            and int(f.get('count_upper_bound',0))>=limit]
+
+
 def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=None,extended=False,support=None):
     from .registration_gate import frame_support
     from .registration_search import RegistrationSearch
@@ -200,7 +208,9 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
             for pair in [*getattr(pose,'anchor_pairs',()),*getattr(pose,'retry_proven_pairs',())]:cache.results[tuple(pair)]=True
             cache.lookup_points=(state.features[0],state.features[1]@pose.rotation.T+pose.translation)
             try:
+                pre_started=monotonic()
                 pre=native(a,placed,tolerance,proofs=24,progress=progress,cancelled=cancelled,proof_cache=cache)
+                pre_elapsed=max(0.,monotonic()-pre_started)
                 checked=int(pre['checked']);positive=int(pre['proofs'])
                 state.sample_history.append(dict(translation_B_to_A_mm=pose.translation.tolist(),
                     rotation_B_to_A=pose.rotation.tolist(),search_pass=search_pass,source=pose.source,
@@ -215,7 +225,9 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                 # 48-proof stage instead of silently rejecting the candidate.
                 if (population>=80 and checked>=20 and
                     positive>=ceil(.80*checked) and not extra_time_given):
-                    reserve=min(180.,max(90.,.15*population))
+                    # Dynamic budget based on measured B-Rep throughput, not
+                    # duplicated STEP occurrence count. Timeouts remain unknown.
+                    reserve=min(105.,max(50.,3.*pre_elapsed))
                     body_deadline=max(body_deadline,monotonic()+reserve)
                     deadline=max(deadline,body_deadline+30.)
                     cache.deadline=body_deadline
@@ -348,7 +360,8 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
             complete=verify(rotations)
         if complete:
             complete=verify(translations[3:])
-        if not winners and baseline<max(8,int(.2*population)) and monotonic()<deadline:
+        if (not winners and not strong_incomplete_hypotheses(state,population)
+                and baseline<max(8,int(.2*population)) and monotonic()<deadline):
             from .surface_registration import propose as preserved_frame
             frame=preserved_frame(a,b,tolerance,state,extended=extended,progress=progress,
                                   cancelled=cancelled,deadline=deadline)

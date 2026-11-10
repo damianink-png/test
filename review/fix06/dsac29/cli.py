@@ -41,9 +41,8 @@ def _continue_strong_incomplete_frame(a,b,tolerance,state,proposal,progress=None
     if (proposal is None or proposal.get('status')!='unresolved'
             or state.expanded or min(len(a),len(b))<80):
         return proposal
-    candidates=[f for f in state.failures
-                if f.get('pairs') and len(f.get('proven_pairs',()))>=12
-                and int(f.get('count_upper_bound',0))>=max(24,int(.30*min(len(a),len(b))))]
+    from .cad_registration import strong_incomplete_hypotheses
+    candidates=strong_incomplete_hypotheses(state,min(len(a),len(b)))
     if not candidates:
         return proposal
     candidate=max(candidates,key=lambda f:(len(f.get('proven_pairs',())),
