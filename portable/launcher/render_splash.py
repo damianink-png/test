@@ -17,9 +17,14 @@ APPROVED_GIT_BLOB = "8672bfea98580f6fc4fcd429f9900cdfa6684a78"
 source = Path(sys.argv[1])
 output = Path(sys.argv[2])
 raw = source.read_bytes()
+# Windows Git checkout may use CRLF; Git blob digest is over canonical LF.
+# Preserve the exact original bytes semantically rather than weakening the
+# provenance check for the approved HTML/image.
+raw = raw.replace(b"\\r\\n", b"\\n")
 blob_header=b"blob "+str(len(raw)).encode("ascii")+bytes([0])
-if hashlib.sha1(blob_header+raw).hexdigest() != APPROVED_GIT_BLOB:
-    raise SystemExit("Approved splash HTML differs from pinned Git blob")
+actual=hashlib.sha1(blob_header+raw).hexdigest()
+if actual != APPROVED_GIT_BLOB:
+    raise SystemExit(f"Approved splash HTML differs from pinned Git blob: got={actual}, bytes={len(raw)}")
 if b'data:image/webp;base64,' not in raw:
     raise SystemExit("Missing original CAD hero artwork")
 with sync_playwright() as playwright:
