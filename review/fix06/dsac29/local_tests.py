@@ -80,9 +80,20 @@ def run(folder, progress=None, source_step=None):
         same=compare_status([one(0)],[one(55)])
         different=compare_status([one(0)],[one(55),one(105)])
         if [r.status for r in same]!=['MOVED']:raise AssertionError("Bledne przesuniecie 1:1")
-        if any(r.status=='MOVED' for r in different) or len(different)!=3:
-            raise AssertionError("Bledna kategoria po zmianie liczby wystapien")
-        return "MOVED 1:1; przy 1:2 tylko ADDED/REMOVED"
+        # A single proven rigid move remains MOVED even if other copies
+        # were independently added or removed in the next revision.
+        # This diagnostic must exercise the NEW mixed-population policy,
+        # not the retired equal-population-only restriction.
+        from collections import Counter
+        statuses=Counter(r.status for r in different)
+        if statuses!=Counter({'MOVED':1,'ADDED':1}):
+            raise AssertionError("Bledna kategoria po zmianie liczby wystapien: "+str(statuses))
+        if (sorted(r.a_index for r in different if r.a_index is not None)!=[0]
+                or sorted(r.b_index for r in different if r.b_index is not None)!=[0,1]
+                or sum(r.a_index is not None and r.b_index is not None and r.status=='MOVED'
+                       for r in different)!=1):
+            raise AssertionError("Wystapienie zgubione lub wykorzystane wielokrotnie")
+        return "MOVED 1:1; przy 1:2 MOVED=1, ADDED=1; wystapienia 1:1"
     check("Rozna liczba wystapien",moved_parity)
 
     def current_registration_continuation():
