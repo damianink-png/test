@@ -639,6 +639,7 @@ def test_assembly_bent_part_common_recovers_in_original_world_frame(monkeypatch)
     and both Cuts must still be validated against the ORIGINAL sources.
     """
     from OCP.BRepPrimAPI import BRepPrimAPI_MakeTorus
+    import numpy as np
     from dsac29 import native_guard,material_deltas
     from dsac29.alignment import _relocate
     from dsac29.geometry import _precise_world_bounds,describe
