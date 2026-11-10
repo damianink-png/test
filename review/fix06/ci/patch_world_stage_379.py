@@ -67,7 +67,7 @@ s=once(s,
 """    # Only near-equidistant candidates use the existing CAD inertia/area
     # invariants as a SOFT priority. Do not change any native proof or filter.
     from .fingerprint_priority import FingerprintPriority
-    fingerprint_rank=FingerprintPriority()
+    fingerprint_rank=FingerprintPriority.shared(geometry_context)
     # Match exact names first GLOBALLY: repeated and overlapping occurrences
     # must not consume a counterpart that has an exact-name match elsewhere.""","fingerprint world-stage priority")
 s=once(s,
