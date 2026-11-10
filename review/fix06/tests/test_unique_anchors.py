@@ -23,6 +23,20 @@ def scene():
     return a,b,records,shift
 
 
+
+def test_spatially_diverse_anchor_order_never_loses_a_candidate():
+    from dsac29.unique_anchors import prioritize_unique_anchors
+    parts=[]
+    for i,x in enumerate((0.,1.,2.,1800.,-1600.)):
+        s=describe(BRepPrimAPI_MakeBox(25.-i,10.,10.).Shape(),'ANCHOR','x')
+        parts.append(_relocate(s,np.eye(3),np.array([x,0.,0.])))
+    pairs=[(i,i) for i in range(len(parts))]
+    result=prioritize_unique_anchors(parts,pairs)
+    assert result[0]==(0,0)
+    assert set(result)==set(pairs)
+    assert result[1] in ((3,3),(4,4))
+
+
 def test_largest_bilateral_unique_body_first_despite_order_names_and_repeats():
     a,b,_,_=scene();pairs=list(unique_anchors.unique_pairs(a,b))
     assert pairs[0]==(22,0)
