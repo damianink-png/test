@@ -68,8 +68,16 @@ def prepare_occurrence_identities(a,b,*,progress=None,limit=3500,face_cap=400):
     repeated={k for k,n in candidates.items() if n>=3}
     if not repeated:
         return {'selected':0,'proven':0,'skipped':0,'elapsed_s':0.0}
+    # The previous all-parts x repeated-buckets scan became quadratic for
+    # assemblies containing many different repeated families. Expand the
+    # same +/-2 log-bucket neighbourhood once and use constant-time lookups.
+    # This is ONLY a candidate filter; equality still needs complete B-Rep.
+    candidate_neighbourhood={(v+dv,a+da)
+                             for v,a in repeated
+                             for dv in range(-2,3)
+                             for da in range(-2,3)}
     selected=[i for i,k in enumerate(keys)
-              if k is not None and any(abs(k[0]-s[0])<=2 and abs(k[1]-s[1])<=2 for s in repeated)]
+              if k is not None and k in candidate_neighbourhood]
     if len(selected)>limit:
         if progress:
             progress('Powtórzenia STEP: pomijam kosztowną normalizację bardzo dużej grupy; stosuję pełne dowody CAD.')
