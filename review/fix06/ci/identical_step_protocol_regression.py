@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from hashlib import hashlib, md5, sha256
+from hashlib import md5, sha256
 from io import BytesIO
 import json
 import os
