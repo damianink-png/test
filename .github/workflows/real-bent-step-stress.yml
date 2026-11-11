@@ -4,13 +4,11 @@ on:
     branches: ['fix/dscompare-0613-material-z-20261109']
     paths:
       - '.github/workflows/real-bent-step-stress.yml'
+      - 'review/fix06/dsac29/**'
+      - 'review/fix06/ci/patch_*.py'
       - 'review/fix06/ci/real_step_current_engine.py'
-      - 'review/fix06/dsac29/fingerprint_priority.py'
-      - 'review/fix06/dsac29/unique_anchors.py'
-      - 'review/fix06/tests/test_fingerprint_priority.py'
-      - 'review/fix06/dsac29/repeated_geometry.py'
-      - 'review/fix06/dsac29/revision_overlap.py'
-      - 'review/fix06/tests/test_repeated_material_exception.py'
+      - 'review/fix06/tests/**'
+      - 'portable/assemble_engine.py'
   workflow_dispatch:
 permissions:
   contents: read
