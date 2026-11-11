@@ -1,0 +1,71 @@
+name: DS Compare identical assemblies AP203 AP214 AP242
+on:
+  workflow_dispatch:
+  push:
+    branches: ['fix/dscompare-0613-material-z-20261109']
+    paths:
+      - '.github/workflows/identical-step-protocol-regression.yml'
+      - 'review/fix06/ci/identical_step_protocol_regression.py'
+jobs:
+  same-geometry-across-formats:
+    name: Unchanged ${{ matrix.assembly }} AP203 AP214 AP242
+    runs-on: windows-2022
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        assembly: [bent, trident]
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      QT_QPA_PLATFORM: offscreen
+      PYTHONPATH: portable-src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Assemble the same CAD engine as Windows OneEXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Invoke-WebRequest 'https://raw.githubusercontent.com/damianink-png/test/22b9e73746e8721e146b10d3e3656df67e77956c/DSCompare_RC9_KOMPLET_ZRODLA.zip' -OutFile baseline.zip
+          if(!(Test-Path baseline.zip) -or (Get-Item baseline.zip).Length -lt 1024){throw 'Source baseline missing'}
+          python portable/prepare_source.py baseline.zip portable-src
+          if($LASTEXITCODE -ne 0){throw 'Source baseline setup failed'}
+          python portable/assemble_engine.py portable-src
+          if($LASTEXITCODE -ne 0){throw 'Production engine assembly failed'}
+      - name: Install native Open CASCADE CAD runtime
+        shell: pwsh
+        working-directory: portable-src
+        run: |
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if($LASTEXITCODE -ne 0){throw 'CAD dependencies failed'}
+      - name: Compare the same unmodified physical assembly across STEP formats
+        shell: pwsh
+        run: |
+          python -X faulthandler -u review/fix06/ci/identical_step_protocol_regression.py ${{ matrix.assembly }}
+          if($LASTEXITCODE -ne 0){throw 'Identical STEP schema equivalence FAILED'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: identical-step-protocols-${{ matrix.assembly }}-diagnostics
+          path: |
+            evidence/identical_protocols/${{ matrix.assembly }}/RESULT.json
+            evidence/identical_protocols/${{ matrix.assembly }}/*/PODSUMOWANIE.json
+            evidence/identical_protocols/${{ matrix.assembly }}/*/CZASY_ANALIZY.json
+            evidence/identical_protocols/${{ matrix.assembly }}/*/WYROWNANIE_DIAGNOSTYKA.json
+            evidence/identical_protocols/${{ matrix.assembly }}/*/DIAGNOSTYKA_DOPASOWANIA.json
+          if-no-files-found: warn
+          retention-days: 21
+      - uses: actions/upload-artifact@v4
+        if: ${{ matrix.assembly == 'bent' }}
+        with:
+          name: identical-bent-ap203-ap214-ap242-original-step
+          path: |
+            evidence/identical_protocols/bent/AP203.step
+            evidence/identical_protocols/bent/AP214.step
+            evidence/identical_protocols/bent/AP242.step
+          if-no-files-found: warn
+          retention-days: 14
