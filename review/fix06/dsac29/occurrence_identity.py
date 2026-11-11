@@ -79,9 +79,28 @@ def prepare_occurrence_identities(a,b,*,progress=None,limit=3500,face_cap=400):
     selected=[i for i,k in enumerate(keys)
               if k is not None and k in candidate_neighbourhood]
     if len(selected)>limit:
+        # Budget expensive independent B-Rep definitions, not cheap XCAF
+        # occurrences. Large assemblies can contain thousands of references
+        # to just a handful of exact source-file definitions. Every reference
+        # still receives its own placement verification downstream.
+        source_definitions=set()
+        independent=0
+        for i in selected:
+            source_key=getattr(parts[i],'step_definition_key',None)
+            if source_key is None:
+                independent+=1
+            else:
+                source_definitions.add(tuple(source_key))
+            if len(source_definitions)+independent>limit:
+                if progress:
+                    progress('Powtórzenia STEP: zbyt wiele niezależnych definicji; '
+                             'stosuję pełne dowody CAD zamiast masowej normalizacji.')
+                return {'selected':len(selected),'proven':0,
+                        'skipped':len(selected),'elapsed_s':0.0}
         if progress:
-            progress('Powtórzenia STEP: pomijam kosztowną normalizację bardzo dużej grupy; stosuję pełne dowody CAD.')
-        return {'selected':len(selected),'proven':0,'skipped':len(selected),'elapsed_s':0.0}
+            progress(f'Powtórzenia STEP: {len(selected)} wystąpień / '
+                     f'{len(source_definitions)+independent} definicji; '
+                     'normalizuję wspólne definicje XCAF tylko raz.')
     started=perf_counter()
     native_cache={}
     # XCAF references to the SAME source-file definition and subsolid
