@@ -46,3 +46,29 @@ def test_no_repeated_family_does_not_select_or_serialize(monkeypatch):
     result = prepare_occurrence_identities(parts, [], limit=0)
     assert result["selected"] == 0
     assert result["proven"] == 0
+
+
+def test_neighbourhood_boundary_and_large_sparse_families(monkeypatch):
+    """No false exclusions at +/-2; +/-3 must remain outside the filter."""
+    from dsac29 import occurrence_identity as identity
+
+    # Families are spaced apart so their expanded neighbourhoods cannot
+    # overlap; also exercise negative bucket coordinates and axis corners.
+    centres = [(i * 17 - 510, i * 23 - 690) for i in range(80)]
+    keys = [centre for centre in centres for _ in range(3)]
+    for v, a in centres:
+        keys.extend(((v + 2, a + 2), (v - 2, a - 2),
+                     (v + 2, a - 2), (v - 2, a + 2),
+                     (v + 3, a), (v, a - 3)))
+    keys.append(None)
+    counts = Counter(k for k in keys if k is not None)
+    repeated = {k for k, count in counts.items() if count >= 3}
+    expected = sum(k is not None and any(
+        abs(k[0] - r[0]) <= 2 and abs(k[1] - r[1]) <= 2
+        for r in repeated) for k in keys)
+    parts = [SimpleNamespace(key=k) for k in keys]
+    monkeypatch.setattr(identity, "_bucket", lambda part: part.key)
+    result = prepare_occurrence_identities(parts, [], limit=0)
+    assert result["selected"] == expected
+    assert result["skipped"] == expected
+    assert result["proven"] == 0
