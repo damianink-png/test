@@ -1,0 +1,59 @@
+name: DS Compare 4201 XCAF and STEP export scale regression
+on:
+  push:
+    branches: ['fix/dscompare-0613-material-z-20261109']
+    paths:
+      - '.github/workflows/dscompare-step-scale-stress.yml'
+      - 'review/fix06/ci/step_scale_export_stress.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  scale-and-export:
+    runs-on: windows-2022
+    timeout-minutes: 70
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONFAULTHANDLER: '1'
+      PYTHONPATH: portable-src
+      DSCOMPARE_STEP_PCURVES: 'on'
+      DSCOMPARE_STEP_VERIFY: 'fast'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Assemble exact production DS Compare CAD source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Invoke-WebRequest 'https://raw.githubusercontent.com/damianink-png/test/22b9e73746e8721e146b10d3e3656df67e77956c/DSCompare_RC9_KOMPLET_ZRODLA.zip' -OutFile baseline.zip
+          if($LASTEXITCODE -ne 0){throw 'Baseline STEP source fetch failed'}
+          python portable/prepare_source.py baseline.zip portable-src
+          if($LASTEXITCODE -ne 0){throw 'Baseline extraction failed'}
+          python portable/assemble_engine.py portable-src
+          if($LASTEXITCODE -ne 0){throw 'Production CAD overlay failed'}
+      - name: Install tested OCC runtime
+        shell: pwsh
+        working-directory: portable-src
+        run: |
+          $ErrorActionPreference='Stop'
+          ./BUDUJ_WINDOWS.ps1 -InstallOnly
+          if($LASTEXITCODE -ne 0){throw 'OCC dependencies failed'}
+      - name: Test 4201 instances and 180-instance STEP size and strict readback
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -X faulthandler -u review/fix06/ci/step_scale_export_stress.py
+          if($LASTEXITCODE -ne 0){throw 'STEP scale/export benchmark failed'}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dscompare-4201-xcaf-180-step-export-stress
+          path: |
+            evidence/step_scale_export/RESULT.json
+            evidence/step_scale_export/*.step
+          if-no-files-found: warn
+          retention-days: 21
