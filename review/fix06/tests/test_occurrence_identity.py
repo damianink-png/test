@@ -186,3 +186,58 @@ def test_xcaf_source_cache_never_crosses_files_or_different_subsolids(monkeypatc
     assert len(n)==3
     assert stats['xcaf_reuse']==12
     assert p[0]._dscompare_normalized_digest!=p[2]._dscompare_normalized_digest
+
+
+def test_large_xcaf_reference_population_uses_definition_budget():
+    """Many occurrences of two source-scoped XCAF parts still get full B-Rep."""
+    from types import SimpleNamespace
+
+    first=BRepPrimAPI_MakeBox(7.,11.,13.).Shape()
+    second=BRepPrimAPI_MakeBox(7.,11.,13.).Shape()
+    a=[SimpleNamespace(shape=first,volume=1001.,area=622.,
+                       step_definition_key=('first.step','0:1:1:8',1))
+       for _ in range(21)]
+    b=[SimpleNamespace(shape=second,volume=1001.,area=622.,
+                       step_definition_key=('second.step','0:1:1:8',1))
+       for _ in range(19)]
+    # Forty occurrences exceed limit=4, but cost only two independent
+    # definitions. The digests come from actual complete serialized B-Reps.
+    result=prepare_occurrence_identities(a,b,limit=4)
+    assert result['selected']==40
+    assert result['proven']==40
+    assert result['skipped']==0
+    assert result['xcaf_reuse']>=38
+    assert all(getattr(p,'_dscompare_normalized_digest',None) for p in a+b)
+
+
+def test_large_independent_step_population_preserves_budget(monkeypatch):
+    """Unknown/baked geometry cannot pretend to be a cheap shared XCAF part."""
+    from types import SimpleNamespace
+    from dsac29 import occurrence_identity as identity
+
+    parts=[SimpleNamespace(volume=1001.,area=622.) for _ in range(40)]
+    def should_not_serialize(*args,**kwargs):
+        raise AssertionError('Independent over-budget B-Rep must not be serialized')
+    monkeypatch.setattr(identity,'_canonical',should_not_serialize)
+    result=prepare_occurrence_identities(parts,[],limit=4)
+    assert result['selected']==40
+    assert result['proven']==0
+    assert result['skipped']==40
+
+
+def test_xcaf_population_budget_remains_scoped_to_source_file(monkeypatch):
+    """Identical label IDs in different STEP files still cost separate proofs."""
+    from types import SimpleNamespace
+    from dsac29 import occurrence_identity as identity
+
+    shape=BRepPrimAPI_MakeBox(7.,11.,13.).Shape()
+    parts=[SimpleNamespace(shape=shape,volume=1001.,area=622.,
+                           step_definition_key=(f'source_{i}.step','0:1:1:8',1))
+           for i in range(6) for _ in range(3)]
+    def should_not_serialize(*args,**kwargs):
+        raise AssertionError('Six different STEP files exceed the four-definition budget')
+    monkeypatch.setattr(identity,'_canonical',should_not_serialize)
+    result=prepare_occurrence_identities(parts,[],limit=4)
+    assert result['selected']==18
+    assert result['proven']==0
+    assert result['skipped']==18
