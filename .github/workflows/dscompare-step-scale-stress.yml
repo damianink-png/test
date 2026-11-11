@@ -30,7 +30,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           Invoke-WebRequest 'https://raw.githubusercontent.com/damianink-png/test/22b9e73746e8721e146b10d3e3656df67e77956c/DSCompare_RC9_KOMPLET_ZRODLA.zip' -OutFile baseline.zip
-          if($LASTEXITCODE -ne 0){throw 'Baseline STEP source fetch failed'}
+          if(!(Test-Path baseline.zip) -or (Get-Item baseline.zip).Length -lt 1024){throw 'Baseline STEP source fetch failed'}
           python portable/prepare_source.py baseline.zip portable-src
           if($LASTEXITCODE -ne 0){throw 'Baseline extraction failed'}
           python portable/assemble_engine.py portable-src
