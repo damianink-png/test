@@ -18,8 +18,11 @@ with sync_playwright() as p:
   else:route.fulfill(path=str(demo/name),content_type='text/html')
  page.route('**/artifacts/*',route_artifact)
  page.add_init_script(script);page.goto('http://127.0.0.1:8768');page.wait_for_function("window.__listeners['tauri://drag-drop']!==undefined")
- assert page.get_by_role('button',name='Diagnostyka',exact=True).count()==0
- assert page.locator('aside.rail nav button').count()==2
+ page.get_by_role('button',name='Diagnostyka modeli',exact=True).click()
+ assert page.get_by_role('heading',name='Diagnostyka modeli',exact=True).is_visible()
+ assert page.get_by_role('button',name='Zapisz diagnostykę',exact=True).is_disabled()
+ page.get_by_role('button',name='Porównanie',exact=True).click()
+ assert page.locator('aside.rail nav button').count()==3
  assert page.get_by_label('Tolerancja geometryczna',exact=True).count()==1
  assert not page.get_by_label('Tolerancja geometryczna',exact=True).is_visible()
  page.get_by_role('button',name='Ustawienia',exact=True).click()
@@ -50,7 +53,7 @@ with sync_playwright() as p:
  assert 'masa_calosci_kg' not in page.locator('main').inner_text();page.get_by_role('button',name='Otwórz zestawienie HTML').click()
  assert page.evaluate("window.__calls.some(c=>c.cmd==='open_artifact'&&c.args.name==='RAPORT_MASY.html')")
  page.screenshot(path=str(out/'mass-1280.png'))
- page.get_by_role('button',name='Otwórz wyniki',exact=True).click();assert page.get_by_role('heading',name='Wyniki porównania',exact=True).is_visible();assert page.get_by_label('Wyniki porównania').count()==1;assert page.locator('aside.rail nav button').count()==2;assert page.locator('iframe').count()==0
+ page.get_by_role('button',name='Otwórz wyniki',exact=True).click();assert page.get_by_role('heading',name='Wyniki porównania',exact=True).is_visible();assert page.get_by_label('Wyniki porównania').count()==1;assert page.locator('aside.rail nav button').count()==3;assert page.locator('iframe').count()==0
  page.get_by_role('button',name='BOM A · HTML',exact=True).click();assert page.evaluate("window.__calls.some(c=>c.cmd==='open_artifact'&&c.args.name==='BOM_A.html')")
  page.get_by_role('button',name='BOM B · HTML',exact=True).click();assert page.evaluate("window.__calls.some(c=>c.cmd==='open_artifact'&&c.args.name==='BOM_B.html')")
  assert page.locator('iframe').count()==0

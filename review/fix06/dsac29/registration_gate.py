@@ -65,12 +65,16 @@ def _select_diverse_proof_pairs(pairs, parts, limit):
   selected.append(k);used.add(k);seen_keys.add(descriptors[k])
   if len(selected)>=max(1,n//2):break
  centers=np.asarray([parts[i].center for i,j in pairs],dtype=float)
+ distances=np.full(total,np.inf)
+ def include(k):
+  np.minimum(distances,np.sum((centers-centers[k])**2,axis=1),out=distances)
+ for k in selected:include(k)
  while len(selected)<n:
   best=max((k for k in range(total) if k not in used),
-           key=lambda k:(min(float(np.sum((centers[k]-centers[j])**2))
-                             for j in selected),
+           key=lambda k:(float(distances[k]),
                          -frequency[descriptors[k]],volume(k),-k))
   selected.append(best);used.add(best)
+  include(best)
  return [pairs[k] for k in selected]
 
 

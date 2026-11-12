@@ -145,13 +145,20 @@ def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=Non
            "reversed_solid_orientations":0,"xcaf_reference_occurrences":0}
     definition_populations={}
     source_key=str(p.resolve())
+    outside_counts={}
     def label_entry(label):
         entry=TCollection_AsciiString()
         TDF_Tool.Entry_s(label,entry)
         return entry.ToCString()
     def add_shape(shape,name,hierarchy,name_origin,definition_label):
-        outside=TopExp_Explorer(shape,TopAbs_FACE,TopAbs_SOLID)
-        while outside.More():stats['faces_outside_solids']+=1;outside.Next()
+        # A rigid occurrence preserves topology. Count this diagnostic once
+        # per XCAF definition, retaining occurrence totals in the report.
+        if definition_label not in outside_counts:
+            outside=TopExp_Explorer(shape,TopAbs_FACE,TopAbs_SOLID)
+            count=0
+            while outside.More():count+=1;outside.Next()
+            outside_counts[definition_label]=count
+        stats['faces_outside_solids']+=outside_counts[definition_label]
         solids=list(_solids(shape))
         for k,s in enumerate(solids,1):
             if len(out)>=max_solids: raise ValueError(f'Limit bezpieczenstwa: {max_solids} bryl na plik')
