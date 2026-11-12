@@ -226,7 +226,9 @@ def test_medium_shift_24_24_extends_budget_for_full_proof_and_competing_pose(mon
         for i in range(24):
             proof_cache.results[i,i]=True
         return {'count':38,'checked':24,'proofs':24}
-    monkeypatch.setattr(cad_registration,'frame_support',slow_native)
+    # propose() resolves the native proof function from registration_gate,
+    # not as a module-level cad_registration attribute.
+    monkeypatch.setattr('dsac29.registration_gate.frame_support',slow_native)
     result=cad_registration.propose(a,b,rows,.01,search_state=state)
     assert result['status']=='registered',result
     assert result['votes']==38
