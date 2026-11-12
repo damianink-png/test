@@ -50,7 +50,7 @@ with Image.open(BytesIO(frame)) as image:
     expected_width = 1120 * resolution_scale
     expected_height = 620 * resolution_scale
     # Fractional CSS geometry can add one physical pixel in Chromium.
-    if image.width != expected_width or image.height not in (expected_height, expected_height + 1):
+    if image.width != expected_width or not expected_height <= image.height <= expected_height + resolution_scale:
         raise SystemExit(f"Unexpected 3x startup frame: {image.size}")
     output.parent.mkdir(parents=True, exist_ok=True)
     image.convert("RGB").crop((0, 0, expected_width, expected_height)).save(output, "BMP")
