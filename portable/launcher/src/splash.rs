@@ -186,17 +186,29 @@ mod win {
     const ARTWORK_BMP: &[u8] =
         include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/splash-frame.bmp"));
     unsafe fn draw_approved_background(dc: HDC) {
-        // A validated 1120x620, bottom-up, 24-bit uncompressed BMP.
-        // Source dimensions and provenance are checked by render_splash.py.
+        // Native, embedded 3x-resolution RGB artwork, built from the
+        // approved HTML prototype. Keep the logical coordinate system
+        // 1120x620 so the progress bar and animation stay native and live.
+        // The old 1120px bitmap was repeatedly resampled by Win32/GDI.
+        const SRC_WIDTH: i32 = 3360;
+        const SRC_HEIGHT: i32 = 1860;
         let offset = u32::from_le_bytes(ARTWORK_BMP[10..14].try_into().unwrap()) as usize;
+        let src_width = i32::from_le_bytes(ARTWORK_BMP[18..22].try_into().unwrap());
+        let src_height = i32::from_le_bytes(ARTWORK_BMP[22..26].try_into().unwrap());
+        assert_eq!((src_width, src_height), (SRC_WIDTH, SRC_HEIGHT),
+                   "Unexpected low-resolution startup artwork");
         let mut bmi: BITMAPINFO = std::mem::zeroed();
         bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
-        bmi.bmiHeader.biWidth = 1120;
-        bmi.bmiHeader.biHeight = 620;
+        bmi.bmiHeader.biWidth = src_width;
+        bmi.bmiHeader.biHeight = src_height;
         bmi.bmiHeader.biPlanes = 1;
         bmi.bmiHeader.biBitCount = 24;
         bmi.bmiHeader.biCompression = BI_RGB;
-        StretchDIBits(dc, 0, 0, 1120, 620, 0, 0, 1120, 620,
+        // HALFTONE produces smooth high-DPI downsampling, not the nearest-
+        // pixel look of COLORONCOLOR. The image remains fully offline.
+        SetStretchBltMode(dc, HALFTONE);
+        SetBrushOrgEx(dc, 0, 0, null_mut());
+        StretchDIBits(dc, 0, 0, 1120, 620, 0, 0, src_width, src_height,
             ARTWORK_BMP[offset..].as_ptr() as *const _,
             &bmi, DIB_RGB_COLORS, SRCCOPY);
     }
@@ -310,9 +322,11 @@ mod win {
             // displays and enlarged Windows DPI without off-screen cropping.
             let avail_w = GetSystemMetrics(SM_CXSCREEN).max(1) as f64;
             let avail_h = GetSystemMetrics(SM_CYSCREEN).max(1) as f64;
-            let scale = factor.min(avail_w * 0.90 / 900.0)
-                              .min(avail_h * 0.86 / (900.0 * 620.0 / 1120.0));
-            let width = (900.0 * scale).round() as i32;
+            // Display the full 1120px design at standard DPI and scale it
+            // proportionally on high-DPI systems. Still fit laptop screens.
+            let scale = factor.min(avail_w * 0.92 / 1120.0)
+                              .min(avail_h * 0.88 / 620.0);
+            let width = (1120.0 * scale).round() as i32;
             let height = (width as f64 * 620.0 / 1120.0).round() as i32;
             let x = (GetSystemMetrics(SM_CXSCREEN) - width) / 2;
             let y = (GetSystemMetrics(SM_CYSCREEN) - height) / 2;

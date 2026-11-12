@@ -50,6 +50,8 @@ jobs:
           python portable/launcher/render_splash.py portable/launcher/assets/DSCompare_Splash_Prototyp.html portable/launcher/assets/splash-frame.bmp
           if($LASTEXITCODE -ne 0){throw 'Approved startup artwork rendering failed'}
           if(!(Test-Path portable/launcher/assets/splash-frame.bmp)){throw 'Native startup artwork missing'}
+          python -c "from PIL import Image; im=Image.open('portable/launcher/assets/splash-frame.bmp'); assert im.size == (3360,1860) and im.mode == 'RGB', ('HiDPI splash resolution regression', im.size, im.mode)"
+          if($LASTEXITCODE -ne 0){throw 'HiDPI startup artwork validation failed'}
       - name: Run geometry regression tests and compile the exact shipped CAD engine
         shell: pwsh
         working-directory: portable-src
