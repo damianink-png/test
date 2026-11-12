@@ -67,11 +67,16 @@ def main(argv=None):
             import_worker(ns.input, ns.output, ns.max_solids, emit,source_proof=json.loads(ns.source_proof))
             payload={'ok':True,'folder':str(folder)}
         elif ns.worker=='diagnostic':
-            from .local_tests import run as run_local_diagnostics
-            diagnostics=run_local_diagnostics(folder,progress=emit,source_step=ns.diagnostic_step or None)
-            payload={'ok':diagnostics['ok'],'folder':str(folder),
-                     'passed':diagnostics['passed'],'total':diagnostics['total'],
-                     'report':diagnostics['report']}
+            if ns.a and ns.b:
+                from .model_diagnostic import run as report_models
+                report=report_models((ns.a,ns.b),folder,ns.max_solids,emit)
+                payload={'ok':True,'folder':str(folder),'report':str(report)}
+            else:
+                from .local_tests import run as run_local_diagnostics
+                diagnostics=run_local_diagnostics(folder,progress=emit,source_step=ns.diagnostic_step or None)
+                payload={'ok':diagnostics['ok'],'folder':str(folder),
+                         'passed':diagnostics['passed'],'total':diagnostics['total'],
+                         'report':diagnostics['report']}
         elif ns.worker=='compare':
             import os
             os.environ['DSCOMPARE_STEP_SCHEMA']=ns.schema

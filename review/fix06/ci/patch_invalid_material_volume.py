@@ -98,6 +98,18 @@ source=source.replace(old,new)
 compile(source,str(native),'exec')
 
 s=step.read_text(encoding='utf-8')
+# Delay the native micro-cylinder test until normal geometry filters need it.
+old_micro="""            micro_candidate=bool(allow_micro_cylinders and collapsed_cylinder_equal(actual_a[face_index],actual_b[j],tolerance))
+            if ori!=other_ori and not (strip_candidate or micro_candidate):continue
+            dc=float(np.linalg.norm(c-cb))
+            db=float(np.max(np.abs(box-bb)))"""
+new_micro="""            dc=float(np.linalg.norm(c-cb))
+            db=float(np.max(np.abs(box-bb)))
+            needs_micro=(ori!=other_ori and not strip_candidate) or (dc>tolerance and db>tolerance and not strip_candidate)
+            micro_candidate=bool(needs_micro and allow_micro_cylinders and collapsed_cylinder_equal(actual_a[face_index],actual_b[j],tolerance))
+            if ori!=other_ori and not (strip_candidate or micro_candidate):continue"""
+if s.count(old_micro)!=1:raise RuntimeError('Unexpected micro-cylinder candidate filter')
+s=s.replace(old_micro,new_micro)
 marker='def _verified_difference_empty(a,b,tolerance):'
 if s.count(marker)!=1:
     raise RuntimeError('Unexpected solid symmetric-difference verifier')
