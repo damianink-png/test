@@ -177,3 +177,70 @@ def test_pending_exact_pose_is_retried_even_after_nearby_pose_completed(monkeypa
     assert first['status']=='registered' and state.failures
     assert continue_registration(a,b,.01,state)['status']=='registered'
     assert len(calls)>=2 and not state.failures
+
+
+def test_medium_shift_24_24_extends_budget_for_full_proof_and_competing_pose(monkeypatch):
+    """40 real TopoDS bodies: 24 completed positives may consume 28/30 sec.
+
+    Native evidence still has to finish 38/40 real assignments AND reject a
+    competitive pose. Old 80-body threshold made this a false UNRESOLVED.
+    The synthetic clock models a slow STEP re-export; it never fakes a
+    B-Rep verdict in production.
+    """
+    from dsac29 import unique_anchors
+    from dsac29.cad_pose_search import Pose
+    a,b=parts(count=40),parts(count=40,shift=1000)
+    rows=([Record(i,None,'REMOVED','') for i in range(40)] +
+          [Record(None,j,'ADDED','') for j in range(40)])
+    state=RegistrationSearch()
+    state.bind(a,b,.01)
+    state.features=(np.array([p.center for p in a]),
+                    np.array([p.center for p in b]))
+    time_now=[100.]
+    monkeypatch.setattr(cad_registration,'monotonic',lambda:time_now[0])
+    monkeypatch.setattr(unique_anchors,'proven_translations',
+                        lambda *_args,**_kwargs:[])
+    original=Pose(np.eye(3),np.array([-1000.,0.,0.]),
+                  [(i,i) for i in range(38)],
+                  sum(p.volume for p in a[:38]),'verified_frame')
+    rival=Pose(np.eye(3),np.array([-500.,0.,0.]),
+               [(i,i) for i in range(38)],
+               sum(p.volume for p in a[:38]),'unverified_rival')
+    monkeypatch.setattr(cad_pose_search,'hypotheses',
+                        lambda *_args,**_kwargs:[original,rival])
+    calls=[]
+    def slow_native(_left,_right,_tolerance,proofs=8,verify_all=False,
+                    proof_cache=None,**_kwargs):
+        correct=np.linalg.norm(
+            np.array(_right[0].center)-np.array(_left[0].center))<.01
+        calls.append((correct,verify_all,time_now[0]))
+        if not correct:
+            return {'count':38,'checked':24,'proofs':0}
+        if verify_all:
+            time_now[0]+=5.
+            for i in range(38):
+                proof_cache.results[i,i]=True
+            return {'count':38,'checked':38,'proofs':38,
+                    'pairs':[(i,i) for i in range(38)]}
+        time_now[0]+=28.
+        for i in range(24):
+            proof_cache.results[i,i]=True
+        return {'count':38,'checked':24,'proofs':24}
+    monkeypatch.setattr(cad_registration,'frame_support',slow_native)
+    result=cad_registration.propose(a,b,rows,.01,search_state=state)
+    assert result['status']=='registered',result
+    assert result['votes']==38
+    assert result['translation_B_to_A_mm']==pytest.approx([-1000.,0.,0.])
+    assert any(not right for right,full,_ in calls),calls
+    assert len(result['certified_pairs'])==38
+    assert result['verification_scope']=='full_brep'
+    assert state.sample_history[0]['world_proofs']==24
+
+
+def test_small_assembly_does_not_relax_brep_acceptance_threshold(monkeypatch):
+    """The time-budget fix must not convert descriptor votes into SAME."""
+    import inspect
+    source=inspect.getsource(cad_registration.propose)
+    assert 'positive>=ceil(.80*checked)' in source
+    assert 'cache.deadline=body_deadline' in source
+    assert "if not complete:" in source

@@ -220,10 +220,14 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                 if (pre['count']<required or pre['count']<=baseline or
                     checked<min(8,pre['count']) or positive<min(pre['count'],max(4,ceil(.65*checked)))):
                     close_or_defer(pose,cache);continue
-                # A strong 21/24 preliminary sample may have used most of
-                # the former 30-second budget. Reserve time for the actual
-                # 48-proof stage instead of silently rejecting the candidate.
-                if (population>=80 and checked>=20 and
+                # A strong 24/24 preliminary sample of a 40-body bent STEP
+                # can use almost the entire initial 30s frame budget; the
+                # full per-body proof and the rival-pose check then fail due
+                # to the expired clock, NOT due to CAD disagreement.
+                # Apply the same measured proof-throughput extension to
+                # medium-sized 40-79 body assemblies. This changes ONLY the
+                # search time, never the required native CAD certificates.
+                if (population>=40 and checked>=20 and
                     positive>=ceil(.80*checked) and not extra_time_given):
                     # Dynamic budget based on measured B-Rep throughput, not
                     # duplicated STEP occurrence count. Timeouts remain unknown.
@@ -234,7 +238,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                     extra_time_given=True
                     if progress:progress(
                         f'Wyrównanie: {positive}/{checked} pozytywnych B-Rep; '
-                        f'rezerwuję czas na 48 niezależnych dowodów i kontrolę konkurencji.')
+                        f'rezerwuję czas na dalsze dowody B-Rep i kontrolę konkurencji.')
                 sampled=population>=80 and pre['count']>=max(48,ceil(.55*population))
                 recovered_sample=False
                 if sampled:
