@@ -155,7 +155,7 @@ jobs:
           if($result.total -ne 12){throw 'Packaged CAD is missing the current alignment diagnostic tests'}
           $build=Get-Content (Join-Path $diagnostic 'ENGINE_BUILD.json') -Raw | ConvertFrom-Json
           if(-not $build.frozen -or $build.build.source_commit -ne $env:GITHUB_SHA){throw 'Packaged engine provenance differs from the tested commit'}
-          if($build.build.revision -notmatch 'Portable 0\.6\.13'){throw 'Packaged engine version mismatch'}
+          if($build.build.revision -notmatch 'Portable 0\.6\.14'){throw 'Packaged engine version mismatch'}
           Write-Host "PACKAGED_CAD_PASS $($result.passed)/$($result.total)"
           $env:PYTHONPATH=(Resolve-Path portable-src).Path
           python portable/tests/engine_revision_smoke.py $engine evidence/revision-policy
