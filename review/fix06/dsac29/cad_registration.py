@@ -77,7 +77,10 @@ def _sampled_frame_decision(checked,positive,candidate_count,certified,a,toleran
         return False,False,f'Niepełna próbka: {positive}/{checked}, wymagane {min(40,candidate_count)} sprawdzeń'
     if positive>=strict_required:
         return True,False,f'Próg standardowy: {positive}/{checked}, wymagane {strict_required}'
-    if (checked<40 or pre_checked<20 or pre_positive<ceil(.85*pre_checked)
+    # The independent larger sample below is the decisive evidence. Allow
+    # the preliminary sample to contain up to 20% changed/unknown pairs;
+    # they are never certified, and this recovery always asks the user.
+    if (checked<40 or pre_checked<20 or pre_positive<ceil(.80*pre_checked)
             or positive<max(32,ceil(.80*checked))):
         return False,False,f'Próbka poniżej progów: {positive}/{checked}, standard {strict_required}'
     pairs=sorted(set((int(i),int(j)) for i,j in certified))
@@ -205,6 +208,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
             # five synthetic native failures when no proof has even started.
             if monotonic()>=body_deadline:return False
             cache=FrameProofCache();cache.deadline=body_deadline;cache.pair_timeout=24. if extended else 12.
+            cache.deprioritized_pairs=set(getattr(pose,'retry_unverified_pairs',()))
             for pair in [*getattr(pose,'anchor_pairs',()),*getattr(pose,'retry_proven_pairs',())]:cache.results[tuple(pair)]=True
             cache.lookup_points=(state.features[0],state.features[1]@pose.rotation.T+pose.translation)
             try:
@@ -333,6 +337,8 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                                   np.array_equal(pose.translation,np.asarray(f.get('proof_offset',[]))))
                 pose.anchor_pairs=[tuple(pair) for pair in f.get('anchor_pairs',())] if exact_proof_pose else []
                 pose.retry_proven_pairs=[tuple(pair) for pair in f.get('proven_pairs',())] if exact_proof_pose else []
+                pose.retry_unverified_pairs=[(e['a'],e['b']) for e in f.get('native_errors',())
+                                             if 'a' in e and 'b' in e] if exact_proof_pose else []
                 retry_poses.append(pose)
             if retry_poses:
                 if state.features is None:state.features=(search.landmarks(a,cancelled),search.landmarks(b,cancelled))

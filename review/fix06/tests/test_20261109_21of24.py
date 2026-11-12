@@ -33,6 +33,22 @@ def test_21_of_24_never_authorizes_a_weak_second_sample(monkeypatch):
     assert not passed and not weak
 
 
+def test_20_of_24_and_40_of_48_needs_user_confirmation(monkeypatch):
+    monkeypatch.setattr(geometry,'signature',lambda p:p.kind)
+    accepted,needs_confirmation,_=cad_registration._sampled_frame_decision(
+        48,40,238,[(i,i) for i in range(40)],_parts(),.01,24,20,0,100)
+    assert accepted and needs_confirmation
+
+
+def test_20_of_24_does_not_override_weak_or_ambiguous_evidence(monkeypatch):
+    monkeypatch.setattr(geometry,'signature',lambda p:p.kind)
+    for parts,positive,pre in [(_parts(),35,20),(_parts(types=1),40,20),
+                               (_parts(collinear=True),40,20),(_parts(),40,19)]:
+        accepted,_,_=cad_registration._sampled_frame_decision(
+            48,positive,92,[(i,i) for i in range(positive)],parts,.01,24,pre,0,100)
+        assert not accepted
+
+
 def test_21_of_24_never_authorizes_ambiguous_repeated_geometries(monkeypatch):
     monkeypatch.setattr(geometry,'signature',lambda p:p.kind)
     for parts in (_parts(types=1),_parts(collinear=True)):

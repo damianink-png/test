@@ -2,7 +2,7 @@ name: DS Compare portable Windows ZIP and single EXE
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/rc9-boundary-ui-ci-20261030', 'codex/rc9-palette-20261102', 'fix/latest-common-shift-20261105', 'build/dscompare-0.6.5-20261105', 'fix/dscompare-0613-material-z-20261109']
+    branches: ['codex/rc9-boundary-ui-ci-20261030', 'codex/rc9-palette-20261102', 'fix/latest-common-shift-20261105', 'build/dscompare-0.6.5-20261105', 'fix/dscompare-0613-material-z-20261109', 'fix/dscompare-0614-registration-diagnostics']
     paths: ['portable/**', 'review/fix06/**', '.github/workflows/desktop-portable.yml']
 concurrency:
   group: dscompare-portable-${{ github.ref }}
@@ -190,13 +190,13 @@ jobs:
           Get-FileHash delivery/portable/DSCompare.exe,delivery/onefile/DSCompare.exe | Format-List | Out-File evidence/launcher-hashes.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-0.6.13-Portable-ZIP
+          name: DSCompare-0.6.14-Portable-ZIP
           path: delivery/portable/
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-0.6.13-Portable-OneEXE
+          name: DSCompare-0.6.14-Portable-OneEXE
           path: delivery/onefile/DSCompare.exe
           compression-level: 0
           if-no-files-found: error

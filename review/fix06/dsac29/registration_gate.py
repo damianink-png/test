@@ -18,6 +18,7 @@ class FrameProofCache:
   self.registry=GeometryRegistry();self.anchors={};self.results={}
   self.exact_anchors={};self.failed_pairs=set();self.exact_anchor_hits=0
   self.timed_out_pairs=set();self.skipped_timeouts=0;self.native_errors={}
+  self.deprioritized_pairs=set()
   self.deadline=None;self.pair_timeout=None;self.lookup_points=None
   self.failed_definition_pairs={};self.skipped_repeat_failures=0
   self._binding=None
@@ -269,6 +270,11 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
  if verify_all:return dict(count=len(pairs),ratio=len(pairs)/max(1,min(len(a),len(b))),proofs=len(pairs),checked=len(pairs),pairs=pairs,unverified=len(unverified))
  n=min(proofs,len(pairs))
  selection=_select_diverse_proof_pairs(pairs,a,n)
+ # On an exact-pose retry, evaluate previously slow/failed pairs last.
+ # Selection and acceptance thresholds do not change; unknowns remain
+ # unknown, and every selected pair is still eligible for a fresh proof.
+ if proof_cache is not None and proof_cache.deprioritized_pairs:
+  selection.sort(key=lambda pair:pair in proof_cache.deprioritized_pairs)
  confirmed=0
  for number,(i,j) in enumerate(selection,1):
   if progress:progress(f'Dowód geometrii B-Rep {number}/{n}: A[{i}] ↔ B[{j}]…')
