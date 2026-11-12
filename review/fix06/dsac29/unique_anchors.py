@@ -95,6 +95,9 @@ def proven_translations(a,b,tolerance,state,deadline,*,extended=False,progress=N
     if not hasattr(state,'unique_anchor_cache'):state.unique_anchor_cache={}
     from .fingerprint_priority import FingerprintPriority
     fingerprints=FingerprintPriority.shared(state)
+    if clock()>=deadline:
+        # Do not erase evidence gathered before a resumed hypothesis used its budget.
+        return []
     diagnostics={'candidates':0,'native_checks':0,'proven':0,'unknown':0,'anchors':[],
                  'anchor_pool':0,'anchor_strategy':'diversity_plus_volume'}
     state.unique_anchor_diagnostics=diagnostics

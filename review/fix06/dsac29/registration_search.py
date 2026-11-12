@@ -38,6 +38,7 @@ class RegistrationSearch:
                     'rotation_B_to_A':f.get('rotation',np.eye(3).tolist()),
                     'candidate_count':f['count_upper_bound'],
                     'verified_pair_count':len(f.get('proven_pairs',())),
+                    'completed_negative_pair_count':len(f.get('completed_negative_pairs',())),
                     'attempts':f.get('attempts',1),'last_pass':f.get('last_pass','unknown'),
                     'last_error':f['reason'],'pair_timeout_s':f.get('pair_timeout_s'),
                     'retryable':bool(f.get('pairs')), 'native_errors':f.get('native_errors',[])}

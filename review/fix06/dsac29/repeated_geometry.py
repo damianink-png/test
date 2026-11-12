@@ -123,6 +123,8 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
         # eligible() is called twice during Common preparation, often with
         # overlapping operand sets. Topological bounds are immutable within
         # one comparison, so compute them at most once per occurrence.
+        from .world_bounds import WorldBoundsCache
+        self.world_bounds=WorldBoundsCache.shared(geometry_context)
         self._bbox_cache_a={}
         self._bbox_cache_b={}
 
@@ -158,12 +160,11 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
             if self.keys_b[j]:by_new[self.keys_b[j]].append(j)
         self._residual_spatial_checks=0
         self._residual_spatial_ambiguous=0
-        from .geometry import _precise_world_bounds
         import numpy as np
         bbox_a,bbox_b=self._bbox_cache_a,self._bbox_cache_b
         def world_bbox(part,index,cache):
             if index not in cache:
-                box=np.asarray(_precise_world_bounds(part.shape),dtype=float)
+                box=self.world_bounds.bounds(part)
                 cache[index]=box if box.shape==(6,) and np.isfinite(box).all() else None
             return cache[index]
         for name,ids in by_old.items():

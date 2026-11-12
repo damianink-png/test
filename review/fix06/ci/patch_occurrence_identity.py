@@ -73,7 +73,8 @@ s=once(s,
     if max(len(a),len(b))>=40:
         from .occurrence_identity import prepare_occurrence_identities
         occurrence_stats=prepare_occurrence_identities(a,b,progress=progress)
-        trace.mark('step_occurrences','NORMALIZED',**occurrence_stats)
+        trace.mark('step_occurrences','NORMALIZED',duration_s=occurrence_stats['elapsed_s'],
+                   **{k:v for k,v in occurrence_stats.items() if k!='elapsed_s'})
     group_a=[geometry_context.definition(s) for s in a]""",'prepare full geometry certificates before grouping')
 s=once(s,
 """    def exact_same_definition(s,t,ga,gb):

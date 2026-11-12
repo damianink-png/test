@@ -79,6 +79,22 @@ def _select_diverse_proof_pairs(pairs, parts, limit):
 
 
 
+def _select_retry_proof_pairs(pairs, parts, limit, deferred):
+ """Keep sample size/diversity; try other witnesses before previous timeouts.
+
+ A deferred pair is not rejected or proven. If alternatives are exhausted it
+ remains eligible. Acceptance still uses the original full-sample thresholds,
+ and the final comparator checks bodies outside the registration sample.
+ """
+ n=min(max(0,int(limit)),len(pairs))
+ fresh=[pair for pair in pairs if pair not in deferred]
+ selection=_select_diverse_proof_pairs(fresh,parts,n)
+ if len(selection)<n:
+  selection.extend(_select_diverse_proof_pairs(
+      [pair for pair in pairs if pair in deferred],parts,n-len(selection)))
+ return selection
+
+
 def _prioritize_previously_proven_definition(choices,a,part):
  """Order candidate assignments by already known complete local B-Rep.
 
@@ -273,12 +289,8 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
  if not pairs:return dict(count=0,ratio=0.,proofs=0,checked=0,pairs=[],unverified=len(unverified))
  if verify_all:return dict(count=len(pairs),ratio=len(pairs)/max(1,min(len(a),len(b))),proofs=len(pairs),checked=len(pairs),pairs=pairs,unverified=len(unverified))
  n=min(proofs,len(pairs))
- selection=_select_diverse_proof_pairs(pairs,a,n)
- # On an exact-pose retry, evaluate previously slow/failed pairs last.
- # Selection and acceptance thresholds do not change; unknowns remain
- # unknown, and every selected pair is still eligible for a fresh proof.
- if proof_cache is not None and proof_cache.deprioritized_pairs:
-  selection.sort(key=lambda pair:pair in proof_cache.deprioritized_pairs)
+ deferred=proof_cache.deprioritized_pairs if proof_cache is not None else set()
+ selection=_select_retry_proof_pairs(pairs,a,n,deferred)
  confirmed=0
  for number,(i,j) in enumerate(selection,1):
   if progress:progress(f'Dowód geometrii B-Rep {number}/{n}: A[{i}] ↔ B[{j}]…')

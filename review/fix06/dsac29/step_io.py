@@ -144,7 +144,10 @@ def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=Non
     stats={"solids":0,"faces_outside_solids":0,"solid_limit":max_solids,
            "reversed_solid_orientations":0,"xcaf_reference_occurrences":0}
     definition_populations={}
-    source_key=str(p.resolve())
+    # A path can be overwritten with another revision. Scope XCAF labels to
+    # this immutable import; persist the namespace with its exact B-Rep cache.
+    from uuid import uuid4
+    source_key=str(p.resolve())+'#'+uuid4().hex
     outside_counts={}
     def label_entry(label):
         entry=TCollection_AsciiString()

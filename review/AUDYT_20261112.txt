@@ -1,0 +1,283 @@
+DS COMPARE — PRZEGLĄD PROCESU I ZALECANE ZMIANY
+12 listopada 2026
+
+1. Co sprawdziłem
+
+Nowa paczka DSCompare.zip zawiera cztery zestawy diagnostyczne, a nie źródłowe
+modele STEP ani cały kod programu. Wszystkie wskazują Portable 0.6.15,
+source_commit 000b97c1a18c1a3bf046051b2e77e970835b9cc2.
+Analizowałem kod złożony dla tej wersji przez prepare_source.py i assemble_engine.py,
+a nie sam historyczny katalog review. Silnik ma 85 modułów Python, 18 576 wierszy.
+
+Prześledziłem główną ścieżkę: import STEP, przesyłanie brył między procesami,
+definicje i wystąpienia, charakterystyki geometrii, dopasowanie w miejscu,
+wyrównanie globalne, ruch lokalny, zasady powtórzeń, Common/Cut, zapis wyników
+oraz komunikację z interfejsem. To przegląd procesu i kluczowych implementacji;
+nie deklaruję pełnej weryfikacji każdej linii wszystkich starych interfejsów.
+Bez wejściowych STEP nie odtworzyłem natywnych operacji na Twoich modelach.
+Oddzielam poniżej pomiary z logów, błędy potwierdzone w kodzie i rekomendacje.
+
+2. Co naprawdę trwa długo
+
+Udana analiza DSCompare_1794490472607308100: różne rewizje, bez wyrównania.
+Zaimportowano 380 brył A i 560 brył B.
+
+Całość:                                      556,95 s (9 min 17 s)
+Import równoległy wraz z przekazaniem B-Rep:    12,21 s
+Dopasowanie i klasyfikacja:                   495,56 s
+Zapis STEP i raportów:                         48,88 s
+
+Wewnątrz dopasowania, więc NIE należy ponownie dodawać do powyższej sumy:
+- przygotowanie podpisów/normalizacja wystąpień: około 244,3 s;
+- klasyfikacja wystąpień po dopasowaniu: 4,06 s;
+- dobór i porównanie zmian materiału: 185,82 s.
+
+Wewnątrz zmian materiału:
+- policzenie rodzin/powtórzeń: po około 0,01 s na rewizję, zero nowych testów B-Rep;
+- od końca liczenia rodzin do komunikatu o 57/53 kandydatach: około 102,54 s;
+- od tego komunikatu do pierwszego Common: około 13,89 s;
+- 18 testów Common: około 32,86 s;
+- 16 obliczeń obszarów zmian: około 33,28 s; dwa wyniki wykorzystano ponownie.
+
+Wniosek: nie jest prawdą, że większość czasu zabiera odczyt SOLID ze STEP.
+Największy widoczny koszt to przygotowanie geometrii i dobór kandydatów.
+Same zliczenia wystąpień są już szybkie w tej konkretnej próbie.
+Pole alignment_preflight_and_optional_registration_s nie mierzy całej kontroli
+położenia: dopasowanie w miejscu odbywa się także wewnątrz compare().
+
+3. Potwierdzony błąd: import gubi tożsamość definicji
+
+step_io.load_step dopisuje do części step_definition_key: plik, etykieta XCAF,
+numer bryły w definicji. Dzięki temu 100 wystąpień tej samej części można
+rozpoznawać jako jedną definicję i 100 osobnych położeń.
+
+parallel_import.write_cache nie zapisuje tego pola, a read_cache go nie odtwarza.
+Ten sam transport służy także trwałej pamięci importu, jeśli zostanie włączona.
+To konkretny błąd integracji optymalizacji, a nie przypuszczenie o eksporcie ZW3D.
+
+Potwierdziłem go lokalnie na prawdziwej bryle OCCT: po write_cache/read_cache
+objętość pozostała prawidłowa, lecz step_definition_key zmieniło się na brak.
+W Twoim logu: 839 kandydatów normalizacji, 834 ukończone, tylko 43 użycia
+natywnej tożsamości i ZERO trafień XCAF. Koszt normalizacji: około 244 s.
+Utrata pola wyjaśnia brak trafień XCAF; dokładną oszczędność po naprawie
+trzeba zmierzyć na wejściowych STEP.
+
+Zalecenie nr 1:
+- zachować identyfikatory definicji w transporcie i pamięci importu;
+- wersjonować format pamięci i odrzucać stare niekompletne wpisy;
+- zakres tożsamości oprzeć na niezmiennej zawartości źródła/importowanej scenie,
+  nie samej nazwie części; nie scalać dwóch rewizji po etykiecie XCAF;
+- zachować osobno położenie każdego wystąpienia;
+- dodać test całej ścieżki import -> transport -> normalizacja -> porównanie.
+Testy samego importera nie wykrywają tego błędu.
+
+4. Nie robić kosztownej normalizacji całego złożenia na wejściu
+
+compare() dla modeli >=40 części uruchamia przygotowanie normalizowanych
+podpisów przed dopasowaniem w miejscu. occurrence_identity._canonical wykonuje
+AddOptimal, kopię z translacją i zapis całego B-Rep do pliku.
+To może kosztować więcej niż właściwe rozpoznanie wielu niezmienionych części.
+
+Zmieniłbym kolejność:
+- najpierw grupowanie po zachowanych referencjach XCAF/natywnej definicji;
+- właściwości i tanie kandydatury tylko raz na definicję;
+- normalizowany B-Rep dopiero dla nierozstrzygniętych definicji, które rzeczywiście
+  mają odpowiadającą im rodzinę w drugiej rewizji;
+- współdzielić wynik między wystąpieniami, bez kopiowania ich położeń.
+
+Dodatkowo occurrence_identity indeksuje cache przez hash(part.shape.TShape())
+bez przechowywania tych samych uchwytów wrapperów. Inne moduły już uwzględniają
+niestabilność takich wrapperów. Ujednoliciłbym rejestr definicji zamiast kolejnego
+niezależnego cache. IsPartner musi nadal potwierdzać tożsamość przy takim indeksie.
+
+5. Dokładne obwiednie są liczone w kilku miejscach
+
+RepeatedMaterialPolicy.eligible używa _precise_world_bounds, czyli
+BRepBndLib.AddOptimal_s(..., False, False). Później revision_overlap buduje
+oddzielne ba i bb, ponownie wywołując tę funkcję dla dopuszczonych części.
+Jest lokalny cache wewnątrz polityki powtórzeń, ale nie jest współdzielony
+z następnym etapem. Widać też dwukrotne wywołanie eligible.
+
+W logu około 102,54 s przypada na ten fragment selekcji, a kolejne około 13,89 s
+na przygotowanie przed Common. Brakuje osobnego pomiaru każdej funkcji, więc
+nie przypisuję całych tych 116 s wyłącznie AddOptimal bez profilowania.
+
+Zmiana:
+- jeden cache obwiedni na definicję + rzeczywiste położenie + wersję geometrii;
+- dla czystej translacji można przenieść zapamiętaną obwiednię;
+- po obrocie przeniesiona obwiednia lokalna jest tylko obwiednią zachowawczą,
+  niekoniecznie dokładną; wystarczy do wstępnego odrzucania odległych par;
+- dokładne obwiednie obliczać dopiero dla pozostałych kandydatów;
+- po zmianie geometrii unieważnić cache;
+- pomiar czasu osobno dla eligible, obwiedni i indeksu przestrzennego.
+Nie usuwałbym indeksu przestrzennego: jego budowa w tej próbie trwała 0,00007 s.
+
+6. Co zawodzi przy wyrównaniu
+
+Próba DSCompare_1794490085227728600 zawiera kandydat B -> A:
+X około -129,999719 mm, Y -280 mm, Z -410,000179 mm; obrót jednostkowy.
+238 par kandydatów; nie oznacza to 238 dowodów zgodności.
+Pierwsza próbka: 5 dowodów / 24 sprawdzenia i 18 wyników nieukończonych.
+Rozszerzona próbka: 12 dowodów / 24 i 11 wyników nieukończonych.
+Nie osiągnięto rozszerzonej próbki 48 sprawdzeń.
+
+Są limity czasu na validated_solid_symmetric_difference, m.in. dla A224/B206
+i A220/B202. Ta sama A2/B2 otrzymuje ukończony negatywny wynik dwa razy,
+około 10,26 oraz 10,98 s. Przy wznowieniu exact-pose przenoszone są dowody
+pozytywne, lecz nie cały komplet zakończonych wyników weryfikacji tej hipotezy.
+Końcowe przerwanie przez użytkownika nie jest dowodem awarii jądra CAD.
+
+Obecny kod MA już wyszukiwanie unikatowych części po objętości, powierzchni
+i centralnych głównych momentach bezwładności, od największych. Dokładanie
+drugiego takiego algorytmu nie rozwiąże problemu koordynacji i kosztów dowodu.
+
+Przebudowałbym zarządzanie wyrównaniem:
+- jedna hipoteza i jeden stan dowodów, współdzielony przez auto i „Szukaj dokładniej”;
+- wynik równy, różny, nieukończony to trzy osobne stany;
+- zachować także zakończone wyniki negatywne dla tej samej geometrii, dokładnej
+  transformacji, tolerancji i tego samego trybu dowodu; mocniejszy tryb może
+  wymagać nowego sprawdzenia, więc samo False nie wystarczy jako uniwersalny klucz;
+- ponawiać nieukończone pary z kontrolowanym budżetem; nie zaczynać od najwolniejszej;
+- wybierać niezależne przestrzennie, różne definicje, a nie wiele kopii śruby;
+- głosy po zgodnym wektorze/transformacji, z odpornością na lokalnie przesunięte części;
+- potwierdzenie położenia całego złożenia oddzielić od pełnego rozliczenia materiału
+  każdej części. Trudny zmieniony detal nie powinien sam blokować układu potwierdzonego
+  przez wiele niezależnych części, ale musi pozostać oznaczony jako nierozstrzygnięty;
+- zachować i uzupełniać diagnostykę kotwic. Teraz kolejne wywołanie może zastąpić
+  ją zerami, gdy budżet skończył się przed następną próbą.
+
+Nie uznałbym automatycznie przesunięcia tylko dlatego, że 12 dowodów się zgadza.
+Trzeba ocenić niezależność, rozrzut, alternatywne hipotezy i spójność reszty złożenia.
+Podany wektor jest kandydatem z tej paczki, nie zweryfikowaną przeze mnie wartością.
+
+7. Czy momenty bezwładności wystarczą?
+
+Momenty centralne, liczone względem środka masy, nie zależą od translacji.
+Ich wartości główne nie zależą też od obrotu. Składowe tensora w osiach świata
+zmieniają się przy obrocie, a momenty względem początku układu zależą od przesunięcia.
+Program wykorzystuje centralne wartości główne — to właściwy rodzaj deskryptora.
+
+Zgodność objętości, pola i trzech momentów jest dobrym filtrem kandydatów,
+ale nie dowodem identycznego kształtu. Różne bryły mogą mieć te same parametry.
+Także zgodne odległości między środkami części nie dowodzą zgodności materiału.
+Potrzebny jest dowód geometrii reprezentanta, potem kontrola położeń wystąpień.
+
+8. Zwykła rewizja: co musi zostać, co można pominąć
+
+Musi zostać:
+- odczyt brył i struktury złożenia, aby wiedzieć, co faktycznie jest w STEP;
+- podstawowa kontrola danych potrzebnych do objętości i operacji bryłowych;
+- rozpoznanie geometrii definicji;
+- kontrola położenia każdego wystąpienia i jednoznaczne przypisanie A do B.
+
+Nie musi być wykonywane:
+- globalne szukanie translacji/obrotu, jeśli wspólny układ jest już potwierdzony;
+- ponowna pełna analiza geometrii każdej kopii tej samej definicji;
+- ponowny Common/Cut dla identycznych definicji przy takim samym położeniu względnym;
+- naprawianie poprawnych brył „na zapas” i ponawianie zakończonych identycznych zadań.
+
+W udanej próbie kod już pominął globalne wyszukiwanie po potwierdzeniu układu.
+Nie proponuję dodania tej samej optymalizacji po raz drugi: trzeba przyspieszyć
+przygotowanie i osiągnięcie tego potwierdzenia.
+
+Przypadek 8/8, z czego 6 nieruchomych i 2 przesunięte:
+ta sama liczba + ta sama geometria nie oznacza „bez zmian”. Najpierw 6 zgodnych
+położeń, potem osobne przypisanie 2 pozostałych. Ruch tych dwóch zostaje ruchem
+lokalnym po ewentualnym usunięciu globalnej transformacji całego modelu.
+
+9. Common i nazwy
+
+Pozostawiłbym zasadę pełnych liczebności rodzin w obu rewizjach oraz zgodnej
+rodziny nazw dla powtarzalnych zmienionych części. Nazwa to wskazówka do doboru,
+nie dowód geometrii ani położenia. czesc1_afm0 i czesc1_afm2 mogą być kandydatami.
+Nie obcinałbym bezwarunkowo wszystkiego po pierwszym _: np. czesc1_lewa oraz
+czesc1_prawa mogłyby wtedy zostać błędnie połączone. Normalizacja powinna
+uwzględniać rozpoznany przyrostek rewizji i niejednoznaczności w całym zestawie nazw.
+
+Common uruchamiałbym na dopasowanych przestrzennie pozostałych częściach dopiero
+po usunięciu par bez zmian i ruchów sztywnych. Wyjątki dla zmienionej liczebności
+i nazw wygenerowanych przez eksportera trzeba udokumentować jedną polityką;
+obecnie ich logika jest rozproszona między klasyfikacją i doborem Common.
+
+10. ZW3D i zakres importu
+
+Diagnostyka zwykłej nowej rewizji: AP203, 560 SOLID, 120 definicji,
+281 wystąpień ścian poza bryłami.
+Diagnostyka test_nowy_przesuniety.stp: AP214, 554 SOLID, 118 definicji,
+2712 wystąpień ścian poza bryłami.
+
+To różnica struktury zaimportowanych danych; nie tylko etykieta AP203/AP214.
+Nie dowodzi sama w sobie uszkodzenia pliku ani tego, które części się zmieniły.
+Ściany poza SOLID mogą być dodatkową geometrią powierzchniową. Nie wolno po prostu
+założyć identycznego zbioru brył. Diagnostyka powinna pokazywać te różnice przed
+oceną wyrównania i wskazywać zakres objęty porównaniem. Grupowanie brył eksportera
+powinno być osobnym etapem, nie ukrytym skutkiem kolejnego fallbacku.
+
+11. Uproszczenie architektury i zabezpieczeń
+
+Docelowa kolejność:
+import -> definicje i wystąpienia -> tanie deskryptory i indeksy -> potwierdzenie
+wspólnego układu / wyrównanie gdy potrzebne -> pary w miejscu -> ruchy lokalne
+-> Common/Cut pozostałych zmian -> wynik -> wybrane eksporty.
+
+Wspólne obiekty:
+- Definicja: geometria, deskryptory, walidacja, lokalne obwiednie i identyfikator;
+- Wystąpienie: definicja, nazwa/ścieżka, transformacja;
+- Dowód: operacja, definicje, położenie względne, tolerancja, wynik i przyczyna;
+- Sesja: stan wyrównania, cache, budżety oraz profil czasu.
+
+Zabezpieczenia do uproszczenia: wielokrotna walidacja tej samej geometrii,
+równoległe cache tej samej informacji, powtarzane heurystyki i ponowne pytania
+wynikające z utraty stanu. Walidację definiować raz i unieważniać po zmianie bryły.
+
+Zabezpieczenia do zachowania: izolacja OCCT w procesie, anulowanie/limit czasu
+pojedynczej operacji, rozróżnienie timeoutu i różnicy geometrii, brak podwójnego
+przypisania wystąpień, kontrola poprawności/objętości wyników operacji materiałowych,
+niezmienność oryginałów. Ich usunięcie mogłoby dać szybszy, ale fałszywy wynik.
+
+Logowanie trace_r22 robi os.fsync przy każdym zdarzeniu. Rozważyłbym zapis lokalny,
+grupowanie zwykłych zdarzeń i trwałe punkty przed operacją natywną/błędem. W tej
+paczce nie ma pomiaru pozwalającego przypisać mu konkretną liczbę straconych sekund.
+To optymalizacja drugiego rzędu wobec potwierdzonych 244 s normalizacji.
+
+Budowanie programu: obecnie historyczna paczka + nakładki + skrypty podmiany tekstu.
+Przeniósłbym złożony, aktualny silnik do jednego drzewa źródeł, a stare warianty do
+archiwum poza buildem. Osobny punkt wejścia workerów pozwoli oddzielić stare GUI
+Qt/Tk od Tauri. Stare moduły nie są automatycznie martwe: launcher nadal posiada
+odwołania do kilku z nich. Usuwać po sprawdzeniu grafu zależności i trybów uruchamiania.
+Takie porządki poprawią utrzymanie i potencjalnie rozmiar paczki, lecz samo usunięcie
+nieużywanego pliku nie przyspiesza obliczeń geometrii.
+
+12. Kolejność wdrożenia i weryfikacji
+
+Najpierw naprawić transport definicji oraz współdzielić obwiednie. Potem odroczyć
+normalizację i uporządkować stan/próby wyrównania. Następnie scalić klasyfikację
+powtórzeń i rejestr dowodów. Na końcu uprościć strukturę źródeł i budowania.
+Pełne przepisanie od zera utraciłoby sprawdzone przypadki CAD bez gwarancji poprawy.
+
+Wymagane porównania przed/po:
+- te same dane i ten sam układ;
+- ten sam model z translacją, także z różnymi eksporterami;
+- przesunięcie globalne plus zmiany rewizji;
+- 8/8 wystąpień, 6 nieruchomych i 2 lokalnie przesunięte;
+- różne liczebności, zmienione nazwy i dopiski rewizji;
+- jeden trudny lub niepoprawny detal nie może zatrzymywać pozostałych dowodów;
+- ten sam wynik przy imporcie szeregowym, równoległym i z cache;
+- rzeczywiste czasy etapów, liczba obliczeń na definicję i brak utraty części.
+
+Nie podaję obietnicy przyspieszenia typu „10 razy”: potrzebny pomiar po wdrożeniu.
+
+13. Co zostało zmienione w tym przeglądzie
+
+W źródłach interfejsu przeniosłem „Diagnostyka” bezpośrednio nad „O programie”,
+skróciłem nazwę także w nagłówku i zastosowałem wspólny styl przycisków nawigacji.
+Test przeglądarkowy sprawdza kolejność, nazwę oraz zgodność fontu.
+Zmiany silnika w punktach powyżej są zaleceniami, a nie wdrożoną naprawą wyrównania.
+Ten przegląd nie tworzy nowego Windows oneexe.
+
+Weryfikacja zmiany interfejsu:
+- svelte-check: 0 błędów, 0 ostrzeżeń;
+- vite build: zakończony;
+- vitest: 10/10 testów;
+- browser_usability: PASS (kod wyjścia 0), w tym kolejność i font;
+- inspekcja zrzutu nowej zakładki: poprawna.

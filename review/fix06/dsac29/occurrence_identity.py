@@ -103,6 +103,7 @@ def prepare_occurrence_identities(a,b,*,progress=None,limit=3500,face_cap=400):
                      'normalizuję wspólne definicje XCAF tylko raz.')
     started=perf_counter()
     native_cache={}
+    native_handles=[]  # retain OCP wrappers used as native-cache keys
     # XCAF references to the SAME source-file definition and subsolid
     # have identical local B-Rep. Serialize the definition exactly once,
     # even when OCC built separate native wrappers for each occurrence.
@@ -124,7 +125,9 @@ def prepare_occurrence_identities(a,b,*,progress=None,limit=3500,face_cap=400):
             if result is not None:
                 xcaf_hits+=1
             else:
-                key=hash(part.shape.TShape())
+                handle=part.shape.TShape()
+                native_handles.append(handle)
+                key=hash(handle)
                 for representative,value in native_cache.get(key,()):
                     if part.shape.IsPartner(representative.shape):
                         result=value

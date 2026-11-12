@@ -167,7 +167,8 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
             anchor_pairs=list(getattr(pose,'anchor_pairs',())),
             proof_rotation=pose.rotation.tolist(),proof_offset=pose.translation.tolist(),
             proven_pairs=[pair for pair,result in cache.results.items() if result is True],
-            native_errors=[dict(a=i,b=j,error=error) for (i,j),error in cache.native_errors.items()][:8],
+            completed_negative_pairs=sorted(cache.completed_negative_pairs),
+            native_errors=[dict(a=i,b=j,error=error) for (i,j),error in cache.native_errors.items()],
             attempts=(old.get('attempts',1)+1 if old else 1),
             last_pass=search_pass,pair_timeout_s=cache.pair_timeout)
         if old is not None:state.failures[state.failures.index(old)]=entry
@@ -209,6 +210,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
             if monotonic()>=body_deadline:return False
             cache=FrameProofCache();cache.deadline=body_deadline;cache.pair_timeout=24. if extended else 12.
             cache.deprioritized_pairs=set(getattr(pose,'retry_unverified_pairs',()))
+            cache.completed_negative_pairs.update(getattr(pose,'retry_negative_pairs',()))
             for pair in [*getattr(pose,'anchor_pairs',()),*getattr(pose,'retry_proven_pairs',())]:cache.results[tuple(pair)]=True
             cache.lookup_points=(state.features[0],state.features[1]@pose.rotation.T+pose.translation)
             try:
@@ -337,12 +339,15 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                                   np.array_equal(pose.translation,np.asarray(f.get('proof_offset',[]))))
                 pose.anchor_pairs=[tuple(pair) for pair in f.get('anchor_pairs',())] if exact_proof_pose else []
                 pose.retry_proven_pairs=[tuple(pair) for pair in f.get('proven_pairs',())] if exact_proof_pose else []
+                # Same immutable originals, exact pose, tolerance and native mode.
+                # A finished non-proof is not a timeout and needs no replay.
+                pose.retry_negative_pairs=[tuple(pair) for pair in f.get('completed_negative_pairs',())] if exact_proof_pose else []
                 pose.retry_unverified_pairs=[(e['a'],e['b']) for e in f.get('native_errors',())
                                              if 'a' in e and 'b' in e] if exact_proof_pose else []
                 retry_poses.append(pose)
             if retry_poses:
                 if state.features is None:state.features=(search.landmarks(a,cancelled),search.landmarks(b,cancelled))
-                if progress:progress(f'Wyrównanie: ponawiam {len(retry_poses)} nieukończonych hipotez; zachowuję ukończone pozytywne dowody dla dokładnie tego samego położenia.')
+                if progress:progress(f'Wyrównanie: ponawiam {len(retry_poses)} nieukończonych hipotez; zachowuję ukończone wyniki dla dokładnie tego samego położenia.')
                 retry_complete=verify(retry_poses)
         anchors=proven_translations(a,b,tolerance,state,body_deadline,extended=extended,
                                    progress=progress,cancelled=cancelled,clock=monotonic)

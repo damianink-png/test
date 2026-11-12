@@ -396,6 +396,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     # A renamed survivor must not defeat the user's equal-population/name
     # exception. Restore ONLY unmatched repeated operands that meet it; never
     # consume an existing SAME/MOVED record or override a native failure.
+    eligibility_started=perf_counter()
     admitted_old,admitted_new=repeat_policy.eligible(original_old_ids,original_new_ids)
     old_ids.update(admitted_old & repeat_policy.repeated_a)
     new_ids.update(admitted_new & repeat_policy.repeated_b)
@@ -412,10 +413,13 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     stat['repeated_candidate_pairs_skipped']=0
     stat['removed_repeated_occurrences_excluded']=len(excluded_occurrences)
     stat['added_repeated_occurrences_excluded']=len(excluded_added)
+    stat['eligibility_seconds']=round(perf_counter()-eligibility_started,6)
+    stat['world_bounds']=repeat_policy.world_bounds.statistics()
     if not old_ids or not new_ids:return list(records),{},stat
     if progress:progress(f'Zmiany materiału: {len(old_ids)} starych i {len(new_ids)} nowych elementów; sprawdzanie geometrii…')
-    ba={i:np.asarray(_precise_world_bounds(a[i].shape),float) for i in old_ids}
-    bb={j:np.asarray(_precise_world_bounds(b[j].shape),float) for j in new_ids}
+    ba={i:repeat_policy.world_bounds.bounds(a[i]) for i in old_ids}
+    bb={j:repeat_policy.world_bounds.bounds(b[j]) for j in new_ids}
+    stat['world_bounds']=repeat_policy.world_bounds.statistics()
     # Spatial broad phase: avoid repeatedly slicing every earlier B interval
     # for each A. The interval tree is conservative and never proves geometry.
     index_started=perf_counter()
