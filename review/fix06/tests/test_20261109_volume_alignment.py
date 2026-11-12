@@ -64,6 +64,28 @@ def test_native_world_exception_publishes_unknown_and_forces_reset(tmp_path,monk
     assert 'direction=A_minus_B' in payload['error']
 
 
+@pytest.mark.parametrize('request_data', ['[]', '{}'])
+def test_native_failure_resets_even_without_stderr(tmp_path,monkeypatch,request_data):
+    request=tmp_path/'req.json'
+    reply=tmp_path/'reply.json'
+    request.write_text(request_data)
+    def error(*args,**kwargs):
+        raise ValueError('Invalid material volume')
+    monkeypatch.setattr(native_guard,'_worker_unchecked',error)
+    monkeypatch.setattr(native_guard.sys,'stderr',None)
+    class ExitCalled(Exception):pass
+    def stop(code):
+        assert code==70
+        raise ExitCalled()
+    monkeypatch.setattr(native_guard.os,'_exit',stop)
+    with pytest.raises(ExitCalled):
+        native_guard.worker(request,reply)
+    payload=json.loads(reply.read_text(encoding='utf-8'))
+    assert payload['status']=='UNVERIFIED'
+    assert payload['error_code']=='INVALID_MATERIAL_VOLUME'
+    assert payload['operation']=='unknown'
+
+
 def test_repeated_face_votes_are_not_independent_parent_parts():
     left=[SimpleNamespace(parent=p) for p in [0]*24+[1]*8+[2]*8+[3]*8]
     right=[SimpleNamespace(parent=p) for p in [0]*24+[1]*8+[2]*8+[3]*8]

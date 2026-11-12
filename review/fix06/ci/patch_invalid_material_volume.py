@@ -49,6 +49,8 @@ wrapper='''def worker(request_path, result_path, *args, **kwargs):
             req=json.loads(Path(request_path).read_text(encoding='utf-8'))
         except (OSError, UnicodeError, ValueError, TypeError):
             req={}
+        if not isinstance(req,dict):
+            req={}
         error=str(exc)
         code=('INVALID_MATERIAL_VOLUME' if 'invalid material volume' in error.lower()
               else 'NATIVE_PROOF_INCOMPLETE')
@@ -64,8 +66,14 @@ wrapper='''def worker(request_path, result_path, *args, **kwargs):
             partial.replace(reply)
         except (OSError, TypeError):
             pass
-        sys.stderr.write(code+': '+payload['error']+'; stage='+stage+'\\n')
-        sys.stderr.flush()
+        # Frozen Windows GUI executables may have no stderr. Diagnostics are
+        # best-effort; a missing or broken stream must not prevent the reset.
+        try:
+            if sys.stderr is not None:
+                sys.stderr.write(code+': '+payload['error']+'; stage='+stage+'\\n')
+                sys.stderr.flush()
+        except (OSError, ValueError):
+            pass
         os._exit(70)
 
 
