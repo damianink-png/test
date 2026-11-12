@@ -550,9 +550,43 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                         stat['invalid_boolean']+=1
                         trace.mark('revision_common_cache','RECOMPUTE',a_index=i,b_index=j,error=str(exc))
                         if progress:progress(f'Zmiany materiału: ponowne obliczenie podziału A[{i}] ↔ B[{j}] po odrzuceniu pomocniczego Common')
-                        recovered_regions=measured_brep('revision_invalid_common_fresh_regions',i,j,
-                                                        calculate,ref,b[j],tolerance)
-                        bind_regions(recovered_regions,ref,b[j],tolerance)
+                        try:
+                            recovered_regions=measured_brep('revision_invalid_common_fresh_regions',i,j,
+                                                            calculate,ref,b[j],tolerance)
+                            bind_regions(recovered_regions,ref,b[j],tolerance)
+                        except (NativeGeometryFailure,ValueError,RuntimeError,OSError) as fresh_exc:
+                            # A non-null, but INVALID, native Common used to
+                            # bypass the local-origin fallback completely.
+                            # Whole assembly: COMMON returns a shape whose
+                            # topology fails validation; standalone STEP detail
+                            # may pass when its coordinates are near origin.
+                            # Recompute ONE source-validated partition in
+                            # common local coordinates, then restore to the
+                            # exact ORIGINAL world frame. No heuristic match.
+                            can_recenter=(
+                                _topology_recenter_candidate(exc) and
+                                'Original STEP stored tolerance exceeds CAD budget'
+                                not in str(fresh_exc) and
+                                _recenter_origin(ref,b[j],tolerance) is not None)
+                            if not can_recenter:
+                                raise
+                            stat['recentered_material_attempted']+=1
+                            if progress:
+                                progress(f'Zmiany materiału: nieprawidłowy Common '
+                                         f'A[{i}]/B[{j}]; próbuję niezależnego '
+                                         'podziału w lokalnym układzie CAD.')
+                            try:
+                                recovered_regions=measured_brep(
+                                    'revision_invalid_common_recentered_regions',
+                                    i,j,_recentered_regions,ref,b[j],tolerance)
+                                bind_regions(recovered_regions,ref,b[j],tolerance)
+                            except Exception:
+                                stat['recentered_material_failed']+=1
+                                raise
+                            stat['recentered_material_recovered']+=1
+                            trace.mark('revision_invalid_common_recentered_regions',
+                                       'RECOVERED',a_index=i,b_index=j,
+                                       initial_error=str(exc),fallback_error=str(fresh_exc))
                         shape=recovered_regions.common
                     common=volume(shape)
                     common_cache.save(ref,b[j],common)

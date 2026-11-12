@@ -676,3 +676,86 @@ def test_assembly_bent_part_common_recovers_in_original_world_frame(monkeypatch)
     assert np.array_equal(np.asarray(_precise_world_bounds(a[0].shape)),before_a)
     assert np.array_equal(np.asarray(_precise_world_bounds(b[0].shape)),before_b)
     assert 0 in regions
+
+
+def test_invalid_nonnull_common_recovers_local_brep_only_after_source_validation(monkeypatch):
+    """Real OCCT parts, distant assembly placement, invalid serialized Common.
+
+    In the old assembly path a non-NULL Common failed bind_common, then
+    calculate() also failed, but the safe local-origin recovery was skipped.
+    A standalone pair close to zero worked. The corrected code must use a
+    REAL Common+Cut with source-bound validation before emitting CHANGED.
+    """
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeTorus
+    from dsac29 import native_guard,material_deltas
+    from dsac29.alignment import _relocate
+    from dsac29.geometry import _precise_world_bounds
+    import numpy as np
+    offset=np.array([2500.,-720.,410.])
+    old=describe(BRepPrimAPI_MakeTorus(28.,3.).Shape(),'97175804','old')
+    new=describe(BRepPrimAPI_MakeTorus(28.,3.25).Shape(),'97175804','new')
+    a=[_relocate(old,np.eye(3),offset)]
+    b=[_relocate(new,np.eye(3),offset)]
+    original_a=np.asarray(_precise_world_bounds(a[0].shape))
+    original_b=np.asarray(_precise_world_bounds(b[0].shape))
+    calls={'world_fresh':0,'local':0,'common_shape':0}
+    def invalid_common_shape(*_args,**_kwargs):
+        calls['common_shape']+=1
+        return a[0].shape  # non-null transport result; binding detects bad Common
+    def reject_invalid_common(*_args,**_kwargs):
+        raise ValueError('OCCT Boolean returned invalid or null topology')
+    def local_or_world(left,right,tolerance,**_kwargs):
+        center=.5*sum((_precise_world_bounds(left.shape)[0],
+                       _precise_world_bounds(left.shape)[3]))
+        if abs(center)>500.:
+            calls['world_fresh']+=1
+            raise native_guard.NativeGeometryFailure(
+                'MATERIAL_BOOLEAN_UNVERIFIED: OCCT Boolean returned invalid or null topology')
+        calls['local']+=1
+        return material_deltas.calculate(left,right,tolerance)
+    monkeypatch.setattr(native_guard,'guarded_common',invalid_common_shape)
+    monkeypatch.setattr(revision_overlap,'bind_common',reject_invalid_common)
+    monkeypatch.setattr(revision_overlap,'calculate',local_or_world)
+    out,regions,stats=revision_overlap.merge_material_revisions(
+        a,b,records(a,b),review_approval=lambda _:'review')
+    assert [r.status for r in out]==['CHANGED'],out
+    assert stats['invalid_boolean']==1
+    assert stats['recentered_material_attempted']==1
+    assert stats['recentered_material_recovered']==1
+    assert stats['recentered_material_failed']==0
+    assert calls=={'world_fresh':1,'local':1,'common_shape':1}
+    assert not stats.get('incomplete')
+    assert np.array_equal(original_a,np.asarray(_precise_world_bounds(a[0].shape)))
+    assert np.array_equal(original_b,np.asarray(_precise_world_bounds(b[0].shape)))
+    assert 0 in regions
+
+
+def test_invalid_nonnull_common_stays_uncertain_when_local_cad_also_fails(monkeypatch):
+    """Never infer a revision from a valid shift guess or invalid Boolean."""
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeTorus
+    from dsac29 import native_guard
+    from dsac29.alignment import _relocate
+    import numpy as np
+    a=[_relocate(describe(BRepPrimAPI_MakeTorus(28.,3.).Shape(),'old','old'),
+                 np.eye(3),np.array([2500.,-720.,410.]))]
+    b=[_relocate(describe(BRepPrimAPI_MakeTorus(28.,3.25).Shape(),'new','new'),
+                 np.eye(3),np.array([2500.,-720.,410.]))]
+    attempts={'local_or_world':0}
+    def fail_regions(*_args,**_kwargs):
+        attempts['local_or_world']+=1
+        raise native_guard.NativeGeometryFailure(
+            'MATERIAL_BOOLEAN_UNVERIFIED: OCCT Boolean returned invalid or null topology')
+    monkeypatch.setattr(native_guard,'guarded_common',lambda *_args,**_kwargs:a[0].shape)
+    monkeypatch.setattr(revision_overlap,'bind_common',
+                        lambda *_args,**_kwargs: (_ for _ in ()).throw(
+                            ValueError('OCCT Boolean returned invalid or null topology')))
+    monkeypatch.setattr(revision_overlap,'calculate',fail_regions)
+    out,_,stats=revision_overlap.merge_material_revisions(
+        a,b,records(a,b),review_approval=lambda _:'review')
+    assert stats.get('incomplete') is True
+    assert stats['recentered_material_attempted']==1
+    assert stats['recentered_material_recovered']==0
+    assert stats['recentered_material_failed']==1
+    assert all(r.status!='CHANGED' for r in out),out
+    assert sum(r.status=='UNCERTAIN' for r in out)==2,out
+    assert attempts['local_or_world']>=2
