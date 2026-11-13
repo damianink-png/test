@@ -170,3 +170,26 @@ def test_expanded_frame_sample_keeps_all_preliminary_witnesses():
     assert cache.sample_pairs[:24] == saved
     assert len(set(cache.sample_pairs)) == 48
     assert cache.proof_calls == 48
+
+
+def test_broad_bounds_contain_exact_bounds_without_extrema(monkeypatch):
+    from dsac29 import geometry
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+    part = describe(BRepPrimAPI_MakeCylinder(6., 17.).Shape(), 'cylinder', '0')
+    tr = gp_Trsf(); tr.SetRotation(gp_Ax1(gp_Pnt(), gp_Dir(1, 1, 0)), .7)
+    part.shape = part.shape.Moved(TopLoc_Location(tr))
+    exact = geometry._precise_world_bounds(part.shape)
+    def forbidden(*args):
+        raise AssertionError('Broad phase must not compute precise extrema')
+    monkeypatch.setattr(geometry, '_precise_world_bounds', forbidden)
+    cache = WorldBoundsCache()
+    broad = cache.broad_bounds(part)
+    assert np.all(broad[:3] <= exact[:3] + 1e-8)
+    assert np.all(broad[3:] >= exact[3:] - 1e-8)
+    delta = np.array([130., 280., 410.])
+    tr = gp_Trsf(); tr.SetTranslation(gp_Vec(*delta))
+    moved = replace(part, shape=part.shape.Moved(TopLoc_Location(tr)))
+    assert cache.broad_bounds(moved) == pytest.approx(broad + np.tile(delta, 2))
+    assert cache.calculations == 0
+    assert cache.broad_calculations == 1
+    assert cache.broad_hits == 1

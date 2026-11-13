@@ -179,11 +179,18 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
                 continue
             deg_a=defaultdict(list);deg_b=defaultdict(list)
             for i in ids:
-                x=world_bbox(self._parts_a[i],i,bbox_a)
-                if x is None:continue
-                vol_x=float(np.prod(np.maximum(0.,x[3:]-x[:3])))
-                if vol_x<=0:continue
+                coarse_x=self.world_bounds.broad_bounds(self._parts_a[i])
                 for j in others:
+                    coarse_y=self.world_bounds.broad_bounds(self._parts_b[j])
+                    # Cheap conservative rejection before expensive extrema on
+                    # spline surfaces. Overlap is never a geometry certificate.
+                    if (np.any(coarse_x[3:] < coarse_y[:3]) or
+                            np.any(coarse_y[3:] < coarse_x[:3])):
+                        continue
+                    x=world_bbox(self._parts_a[i],i,bbox_a)
+                    if x is None:continue
+                    vol_x=float(np.prod(np.maximum(0.,x[3:]-x[:3])))
+                    if vol_x<=0:continue
                     y=world_bbox(self._parts_b[j],j,bbox_b)
                     if y is None:continue
                     vol_y=float(np.prod(np.maximum(0.,y[3:]-y[:3])))

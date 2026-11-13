@@ -273,3 +273,14 @@ def test_real_engineering_drawing_name_is_not_hidden_as_occ_label():
     assert material_name_key('BRACKET_123')!=''
 
 
+
+
+def test_disjoint_repeated_families_skip_precise_extrema(monkeypatch):
+    from dsac29.world_bounds import WorldBoundsCache
+    old = named(10, 8, 'czesc1_afm0')
+    new = [replace(p, name='czesc1_afm2') for p in parts(width=11, count=7, shift=10000)]
+    policy = RepeatedMaterialPolicy(old, new)
+    def forbidden(*args):
+        raise AssertionError('Disjoint families must not need precise spline bounds')
+    monkeypatch.setattr(WorldBoundsCache, 'bounds', forbidden)
+    assert policy.eligible(set(range(8)), set(range(7))) == (set(), set())

@@ -621,7 +621,14 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                                 raise
                             stat['recentered_material_recovered']+=1
                         else:
-                            recovered_regions=measured_brep('revision_common_alternative_regions',i,j,calculate,ref,b[j],tolerance)
+                            # The primary Common has already consumed its full
+                            # deadline. Keep an independent recovery algorithm,
+                            # but do not grant another 120-240 s to this pair.
+                            retry_options={}
+                            if 'Timeout odizolowanej operacji Common' in str(exc):
+                                retry_options['timeout_s']=30.0
+                                stat['bounded_timeout_recoveries']=stat.get('bounded_timeout_recoveries',0)+1
+                            recovered_regions=measured_brep('revision_common_alternative_regions',i,j,calculate,ref,b[j],tolerance,**retry_options)
                         bind_regions(recovered_regions,ref,b[j],tolerance)
                         common=volume(recovered_regions.common)
                         stat['alternative_region_recovery']+=1
@@ -646,7 +653,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                                           'MATERIAL_BOOLEAN_UNVERIFIED:' in alternative_msg))
                         double_timeout=('Timeout odizolowanej operacji Common' in primary_msg and
                                         ('timed out' in alternative_msg or
-                                         'limit 120 s' in alternative_msg))
+                                         'Obliczenie Common/Cut nieukończone' in alternative_msg))
                         if double_topology or double_timeout:
                             code=('REPEATED_NATIVE_TIMEOUT' if double_timeout
                                   else 'DETERMINISTIC_NATIVE_FAILURE')

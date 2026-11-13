@@ -584,6 +584,7 @@ def test_both_native_timeouts_do_not_repeat_unchanged_pair(monkeypatch):
             'Timeout odizolowanej operacji Common — wynik rewizji niekompletny')
     def regions_timeout(*args,**kwargs):
         calls['regions']+=1
+        assert kwargs['timeout_s']==30.0
         raise native_guard.NativeGeometryFailure(
             'Obliczenie Common/Cut nieukończone (limit 180 s)')
     monkeypatch.setattr(native_guard,'guarded_common',common_timeout)
