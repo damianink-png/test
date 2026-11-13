@@ -85,7 +85,7 @@ def test_cli_search_continues_current_engine_and_does_not_ask_again(tmp_path,mon
     cli.process(pa,pb,out,step=False,diff_step=False,full_bom=False,
                 revision_style=True,auto_align=True,alignment_approval=answer,progress=None)
     data=json.loads((out/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
-    assert len(questions)==1 and questions[0]['status']=='unresolved'
+    assert not questions
     assert data['alignment']['applied']
     assert data['alignment']['search_diagnostics']['expanded']
     assert data['statuses']=={'SAME':8}
@@ -106,8 +106,8 @@ def test_failed_expanded_search_cannot_loop_or_silently_use_original(tmp_path,mo
     with pytest.raises(InterruptedError):
         cli.process(pa,pb,out,step=False,diff_step=False,full_bom=False,
                     revision_style=True,auto_align=True,alignment_approval=answer,progress=None)
-    assert len(calls)==1 and len(questions)==2
-    assert questions[1]['search_failed'] is True
+    assert len(calls)==1 and len(questions)==1
+    assert questions[0]['search_failed'] is True
     assert not (out/'PODSUMOWANIE.json').exists()
 
 
@@ -181,12 +181,15 @@ def test_weak_native_frame_never_auto_relaxes_proof_requirements(monkeypatch):
         proven_pairs=[(i,i) for i in range(3)],
         pairs=[(i,i) for i in range(24)],
         count_upper_bound=243,offset=[-130.,-280.,-410.])])
-    monkeypatch.setattr(registration_search,'continue_registration',
-                        lambda *a,**kw:pytest.fail('Weak pose must not auto-continue'))
+    def finish(*args,**kwargs):
+        states.expanded=True
+        return dict(status='unresolved',reason='Still insufficient evidence')
+    monkeypatch.setattr(registration_search,'continue_registration',finish)
     proposal=dict(status='unresolved',reason='Insufficient independent B-Rep')
     result=cli._continue_strong_incomplete_frame(
         [None]*380,[None]*554,.01,states,proposal)
-    assert result is proposal and not states.expanded
+    assert result['status']=='unresolved' and result['search_failed']
+    assert states.expanded
 
 
 def test_auto_extended_unresolved_pose_disables_redundant_search_button(monkeypatch):
@@ -203,4 +206,19 @@ def test_auto_extended_unresolved_pose_disables_redundant_search_button(monkeypa
     result=cli._continue_strong_incomplete_frame(
         [None]*380,[None]*554,.01,states,dict(status='unresolved'))
     assert result['status']=='unresolved' and result['search_failed']
-    assert 'została już wykonana' in result['reason']
+    assert 'zostało już wykonane' in result['reason']
+
+
+def test_small_unresolved_search_continues_once_without_proof_threshold(monkeypatch):
+    from types import SimpleNamespace
+    from dsac29 import registration_search
+    state=SimpleNamespace(expanded=False)
+    calls=[]
+    def finish(*args,**kwargs):
+        calls.append(1);state.expanded=True
+        return dict(status='unresolved',reason='No confirmed frame')
+    monkeypatch.setattr(registration_search,'continue_registration',finish)
+    proposal=dict(status='unresolved')
+    for _ in range(2):
+        proposal=cli._continue_strong_incomplete_frame([None]*2,[None]*2,.01,state,proposal)
+    assert len(calls)==1 and proposal['search_failed']

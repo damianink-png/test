@@ -19,6 +19,7 @@ class FrameProofCache:
   self.exact_anchors={};self.failed_pairs=set();self.exact_anchor_hits=0
   self.timed_out_pairs=set();self.skipped_timeouts=0;self.native_errors={}
   self.deprioritized_pairs=set()
+  self.sample_pairs=[]
   self.deadline=None;self.pair_timeout=None;self.lookup_points=None
   self.failed_definition_pairs={};self.skipped_repeat_failures=0
   self._binding=None
@@ -290,7 +291,17 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
  if verify_all:return dict(count=len(pairs),ratio=len(pairs)/max(1,min(len(a),len(b))),proofs=len(pairs),checked=len(pairs),pairs=pairs,unverified=len(unverified))
  n=min(proofs,len(pairs))
  deferred=proof_cache.deprioritized_pairs if proof_cache is not None else set()
- selection=_select_retry_proof_pairs(pairs,a,n,deferred)
+ # Extend the existing sample instead of selecting a different 48-part set.
+ # The preliminary acceptance ratio and the expanded evidence must describe
+ # nested samples of this same immutable pose. Never count cached proofs
+ # outside the selected sample as if they had been checked in it.
+ previous=proof_cache.sample_pairs if proof_cache is not None else []
+ available=set(pairs)
+ selection=[pair for pair in previous if pair in available][:n]
+ selected=set(selection)
+ selection.extend(_select_retry_proof_pairs(
+     [pair for pair in pairs if pair not in selected],a,n-len(selection),deferred))
+ if proof_cache is not None:proof_cache.sample_pairs=list(selection)
  confirmed=0
  for number,(i,j) in enumerate(selection,1):
   if progress:progress(f'Dowód geometrii B-Rep {number}/{n}: A[{i}] ↔ B[{j}]…')

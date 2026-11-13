@@ -156,3 +156,17 @@ def test_persistent_import_namespace_survives_cache_but_not_changed_source(tmp_p
     path.write_bytes(path.read_bytes().replace(b'ISO-10303-21;', b'ISO-10303-21;\n/* changed */', 1))
     changed = load_step_persistent(path)
     assert first[0].step_definition_key != changed[0].step_definition_key
+
+
+def test_expanded_frame_sample_keeps_all_preliminary_witnesses():
+    from test_r13_deferred_alignment import models
+    from dsac29.registration_gate import frame_support, FrameProofCache
+    a, _ = models(count=80, stable=80, shift=0)
+    cache = FrameProofCache()
+    initial = frame_support(a, a, .01, proofs=24, proof_cache=cache)
+    saved = list(cache.sample_pairs)
+    expanded = frame_support(a, a, .01, proofs=48, proof_cache=cache)
+    assert initial['proofs'] == 24 and expanded['proofs'] == 48
+    assert cache.sample_pairs[:24] == saved
+    assert len(set(cache.sample_pairs)) == 48
+    assert cache.proof_calls == 48

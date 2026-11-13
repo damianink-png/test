@@ -155,7 +155,7 @@ jobs:
           if($result.total -ne 12){throw 'Packaged CAD is missing the current alignment diagnostic tests'}
           $build=Get-Content (Join-Path $diagnostic 'ENGINE_BUILD.json') -Raw | ConvertFrom-Json
           if(-not $build.frozen -or $build.build.source_commit -ne $env:GITHUB_SHA){throw 'Packaged engine provenance differs from the tested commit'}
-          if($build.build.revision -notmatch 'Portable 0\.6\.16'){throw 'Packaged engine version mismatch'}
+          if($build.build.revision -notmatch 'Portable 0\.6\.17'){throw 'Packaged engine version mismatch'}
           Write-Host "PACKAGED_CAD_PASS $($result.passed)/$($result.total)"
           $env:PYTHONPATH=(Resolve-Path portable-src).Path
           python portable/tests/engine_revision_smoke.py $engine evidence/revision-policy
@@ -190,13 +190,13 @@ jobs:
           Get-FileHash delivery/portable/DSCompare.exe,delivery/onefile/DSCompare.exe | Format-List | Out-File evidence/launcher-hashes.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-0.6.16-Portable-ZIP
+          name: DSCompare-0.6.17-Portable-ZIP
           path: delivery/portable/
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-0.6.16-Portable-OneEXE
+          name: DSCompare-0.6.17-Portable-OneEXE
           path: delivery/onefile/DSCompare.exe
           compression-level: 0
           if-no-files-found: error
