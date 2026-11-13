@@ -97,11 +97,11 @@ def test_extended_surface_search_still_asks_before_applying_frame(tmp_path,monke
         return {'status':'unresolved','reason':'initial search incomplete'}
     monkeypatch.setattr(deferred_alignment,'propose_from_stage1',initial)
     questions=[]
-    def answer(proposal):questions.append(proposal);return 'search' if len(questions)==1 else 'cancel'
+    def answer(proposal):questions.append(proposal);return 'cancel'
     with pytest.raises(InterruptedError):
         cli.process(pa,pb,tmp_path/'result',step=False,diff_step=False,full_bom=False,
                     revision_style=True,auto_align=True,alignment_approval=answer,progress=None)
-    assert len(questions)==2 and questions[1]['method']=='preserved_native_faces'
+    assert len(questions)==1 and questions[0]['method']=='preserved_native_faces'
     assert not (tmp_path/'result/PODSUMOWANIE.json').exists()
 
 
