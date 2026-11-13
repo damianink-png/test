@@ -1,0 +1,86 @@
+name: SwissTransfer DSCompare exact OneEXE build 43421704550
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/transfer-dscompare-43421704550.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  transfer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      XDG_CONFIG_HOME: /tmp/swissfer-config
+    steps:
+      - name: Build pinned Swissfer uploader
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout -q --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+      - name: Restore confirmed sender verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p sender "$XDG_CONFIG_HOME/swissfer"
+          gh run download 43395259785 --repo "$GITHUB_REPOSITORY" --name swissfer-validation-state --dir sender
+          cp sender/email-validations.json "$XDG_CONFIG_HOME/swissfer/email-validations.json"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path(os.environ['XDG_CONFIG_HOME'])/'swissfer'/'email-validations.json'
+          c=json.loads(p.read_text(encoding='utf-8'))
+          assert c.get('validations',{}).get('damianink@gmail.com',{}).get('validated') is True
+          print('Confirmed sender cache restored')
+          PY
+      - name: Download exact 43421704550 OneEXE and prepare ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload outgoing
+          gh run download 43421704550 --repo "$GITHUB_REPOSITORY" --name DSCompare-0.6.19-Portable-OneEXE --dir payload
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZIP_STORED,ZipFile
+          exe=Path('payload/DSCompare.exe')
+          assert exe.is_file() and exe.stat().st_size > 100_000_000, "Missing full OneEXE"
+          dest=Path('outgoing/DSCompare-0.6.19-OneEXE-43421704550.zip')
+          with ZipFile(dest,'w',compression=ZIP_STORED) as z:
+              z.write(exe,arcname='DSCompare.exe')
+          with ZipFile(dest) as z:
+              assert z.namelist()==['DSCompare.exe']
+              assert z.getinfo('DSCompare.exe').file_size==exe.stat().st_size
+          print('ZIP bytes:',dest.stat().st_size)
+          PY
+      - name: Upload exact ZIP to SwissTransfer
+        shell: bash
+        timeout-minutes: 18
+        run: |
+          set -euo pipefail
+          timeout 900s swissfer/target/release/swissfer outgoing/DSCompare-0.6.19-OneEXE-43421704550.zip \
+            --email damianink@gmail.com --duration 30 \
+            --message 'DSCompare 0.6.19 OneEXE exact build 43421704550' </dev/null > transfer.log 2>&1
+          cat transfer.log
+          link=$(grep -Eo 'https://(www\.)?swisstransfer\.com/dl/[a-zA-Z0-9-]+' transfer.log | tail -n 1 || true)
+          test -n "$link"
+          echo "SwissTransfer download: $link" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve sender verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-validation-state
+          path: /tmp/swissfer-config/swissfer/email-validations.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Preserve transfer log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swisstransfer-43421704550-diagnostics
+          path: transfer.log
+          retention-days: 7
+          if-no-files-found: warn
