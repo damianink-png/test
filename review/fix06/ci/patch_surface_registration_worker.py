@@ -23,9 +23,20 @@ new="""        if not matched and bool(req.get('allow_solid_set_proof',False)) a
             from OCP.TopExp import TopExp_Explorer
             from OCP.TopAbs import TopAbs_SOLID
             if TopExp_Explorer(a_shape,TopAbs_SOLID).More() and TopExp_Explorer(b_shape,TopAbs_SOLID).More():
-                report('validated_solid_symmetric_difference')
-                matched=bool(_verified_difference_empty(a_shape,b_shape,proof_tolerance))
-                report('solid_symmetric_difference_proven' if matched else 'solid_symmetric_difference_unproven')
+                from .same_domain import equivalent as same_domain_equivalent
+                try:
+                    matched=same_domain_equivalent(a_shape,b_shape,proof_tolerance,progress=report)
+                except (RuntimeError,ValueError):
+                    # Optional normalization failure must retain the original
+                    # solid-set proof, never become a positive result.
+                    report('same_domain_normalization_unavailable')
+                    matched=False
+                if matched:
+                    report('same_domain_boundary_proven')
+                else:
+                    report('validated_solid_symmetric_difference')
+                    matched=bool(_verified_difference_empty(a_shape,b_shape,proof_tolerance))
+                    report('solid_symmetric_difference_proven' if matched else 'solid_symmetric_difference_unproven')
         response = dict(ok=True, match=matched)"""
 if s.count(old)!=1:raise RuntimeError('Native world response anchor changed')
 s=s.replace(old,new)
