@@ -24,7 +24,7 @@ Pozostałe pary z błędami Common są rzeczywistymi kandydatami zmian materiał
 
 Dotychczasowa szybka ścieżka odrzuca różne typy powierzchni i krzywych. Odtworzono to na identycznym cylindrze: wersja analityczna i dokładna kopia NURBS nie przechodzą szybkiego testu, trafiając do kosztownych różnic Boolean.
 
-Dodano izolowaną ścieżkę dla par o jednakowej strukturze topologicznej, ale różnych typach reprezentacji. OCCT NurbsConvert tworzy kopie we wspólnej reprezentacji NURBS, bez dopasowania siatki, naprawy czy przesuwania. Następnie wykonywany jest pełny test zorientowanych powierzchni i obrysów przy połowie tolerancji użytkownika. Konwersja sama nie stanowi dowodu zgodności. Sprawdzane są poprawność i zachowanie liczebności topologii. Błąd lub brak dowodu pozostawia dotychczasową weryfikację oryginalnych brył.
+Dodano izolowaną ścieżkę dla par o jednakowej strukturze topologicznej, ale różnych typach reprezentacji. OCCT NurbsConvert tworzy kopie we wspólnej reprezentacji NURBS, bez dopasowania siatki, naprawy czy przesuwania. Następnie wykonywany jest pełny test zorientowanych powierzchni i obrysów w granicach tolerancji użytkownika, z wewnętrznym podziałem budżetu na powierzchnie i obrysy. Konwersja sama nie stanowi dowodu zgodności. Sprawdzane są poprawność i zachowanie liczebności topologii. Błąd lub brak dowodu pozostawia dotychczasową weryfikację oryginalnych brył.
 
 Testy obejmują oba kierunki analityczny/NURBS, rzeczywistą zmianę promienia, przesunięcie lokalne, zachowanie oryginalnych brył i położeń oraz użycie nowej ścieżki w izolowanym procesie zamiast Boolean. Dotychczasowe testy podziału powierzchni, powtórzeń i wyrównania są zachowane.
 

@@ -60,6 +60,8 @@ def equivalent(a_shape,b_shape,tolerance,progress=None):
         if result.IsNull() or not is_valid(result) or _profile(result)[0]!=profile[0]:return False
         converted.append(describe(result,label,'nurbs-boundary/'+label))
     report('nurbs_boundary_surface_and_trim_proof')
-    # Retain stricter oriented-boundary checks; no Boolean or mass shortcut.
-    return bool(reexport_equivalent_world(*converted,tolerance*.5,
-        allow_boolean=False,_repair_boundary_only=True,progress=report))
+    # Exact representation conversion spends no shape-repair displacement
+    # budget. The original-boundary verifier allocates its own surface/trim
+    # budgets inside the user's tolerance; do not divide it again as repair.
+    return bool(reexport_equivalent_world(*converted,tolerance,
+        allow_boolean=False,_original_boundary_only=True,progress=report))

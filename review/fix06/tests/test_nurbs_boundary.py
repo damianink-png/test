@@ -49,3 +49,9 @@ def test_isolated_worker_proves_nurbs_pair(monkeypatch):
     a=BRepPrimAPI_MakeCylinder(5.,10.).Shape()
     assert guarded_registered_world(describe(a,'a','a'),describe(nurbs(a),'b','b'),.01)
     assert any(e.get('phase')=='nurbs_boundary_proven' and e.get('match') is True for e in events)
+
+
+def test_exact_conversion_does_not_apply_additional_repair_tolerance_reduction():
+    a=BRepPrimAPI_MakeCylinder(5.,10.).Shape()
+    assert equivalent(a,nurbs(BRepPrimAPI_MakeCylinder(5.001,10.).Shape()),.01)
+    assert not equivalent(a,nurbs(BRepPrimAPI_MakeCylinder(5.011,10.).Shape()),.01)
