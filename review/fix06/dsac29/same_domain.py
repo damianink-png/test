@@ -71,13 +71,13 @@ def normalize(shape, tolerance):
     return result
 
 
-def equivalent(a_shape, b_shape, tolerance, progress=None):
+def equivalent(a_shape, b_shape, tolerance, progress=None, *, properties=None):
     """Return positive only after whole normalized boundaries agree in place.
 
     False means this fast path is inconclusive, not necessarily different.
     Existing original-solid difference verification remains the fallback.
     """
-    from .geometry import describe
+    from .boundary_descriptor import describe_boundary
     from .step_reexport_tolerance import reexport_equivalent_world
     report = progress or (lambda phase: None)
     report('same_domain_normalize_A')
@@ -90,6 +90,6 @@ def equivalent(a_shape, b_shape, tolerance, progress=None):
         return False
     report('same_domain_oriented_boundary')
     return bool(reexport_equivalent_world(
-        describe(a, 'A', 'normalized/A'), describe(b, 'B', 'normalized/B'),
+        describe_boundary(a, properties[0] if properties is not None else None), describe_boundary(b, properties[1] if properties is not None else None),
         float(tolerance)*.5, allow_boolean=False, _repair_boundary_only=True,
         progress=report))

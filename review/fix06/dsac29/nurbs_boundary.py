@@ -30,7 +30,7 @@ def _profile(shape):
     return counts,surfaces,curves
 
 
-def equivalent(a_shape,b_shape,tolerance,progress=None):
+def equivalent(a_shape,b_shape,tolerance,progress=None,*,properties=None):
     """A positive requires complete oriented surfaces AND trimming wires.
 
     The native NurbsConvert operation converts analytic geometry exactly;
@@ -39,7 +39,7 @@ def equivalent(a_shape,b_shape,tolerance,progress=None):
     """
     from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
     from .brep_safety import is_valid
-    from .geometry import describe
+    from .boundary_descriptor import describe_boundary
     from .step_reexport_tolerance import reexport_equivalent_world
     tolerance=float(tolerance)
     if not isfinite(tolerance) or tolerance<=0:
@@ -47,21 +47,29 @@ def equivalent(a_shape,b_shape,tolerance,progress=None):
     report=progress or (lambda phase:None)
     if a_shape.IsNull() or b_shape.IsNull():return False
     pa,pb=_profile(a_shape),_profile(b_shape)
-    # No reason to convert a pair whose representation types already match.
-    # This path targets unchanged topology with different STEP representations.
-    if pa[0]!=pb[0] or pa[0][0]!=1 or (pa[1]==pb[1] and pa[2]==pb[2]):return False
-    if not is_valid(a_shape) or not is_valid(b_shape):return False
+    # Matching NURBS type histograms can still hide different UV conventions.
+    # Only skip pairs that contain no spline representation at all.
+    if pa[0]!=pb[0] or pa[0][0]!=1:
+        report('nurbs_rejected_topology_count');return False
+    if not any('BSpline' in kind for profile in (pa,pb) for histogram in profile[1:] for kind in histogram):
+        report('nurbs_skipped_analytic_pair');return False
+    if not is_valid(a_shape) or not is_valid(b_shape):
+        report('nurbs_rejected_invalid_source');return False
     converted=[]
     for label,shape,profile in (('A',a_shape,pa),('B',b_shape,pb)):
         report('nurbs_boundary_convert_'+label)
         converter=BRepBuilderAPI_NurbsConvert(shape,True)
-        if not converter.IsDone():return False
+        if not converter.IsDone():
+            report('nurbs_conversion_incomplete_'+label);return False
         result=converter.Shape()
-        if result.IsNull() or not is_valid(result) or _profile(result)[0]!=profile[0]:return False
-        converted.append(describe(result,label,'nurbs-boundary/'+label))
+        if result.IsNull() or not is_valid(result) or _profile(result)[0]!=profile[0]:
+            report('nurbs_rejected_conversion_'+label);return False
+        converted.append(describe_boundary(result,properties[len(converted)] if properties is not None else None))
     report('nurbs_boundary_surface_and_trim_proof')
     # Exact representation conversion spends no shape-repair displacement
     # budget. The original-boundary verifier allocates its own surface/trim
     # budgets inside the user's tolerance; do not divide it again as repair.
-    return bool(reexport_equivalent_world(*converted,tolerance,
+    matched=bool(reexport_equivalent_world(*converted,tolerance,
         allow_boolean=False,_original_boundary_only=True,_nurbs_orientation=True,progress=report))
+    report('nurbs_boundary_accepted' if matched else 'nurbs_boundary_rejected_surface_or_trim')
+    return matched
