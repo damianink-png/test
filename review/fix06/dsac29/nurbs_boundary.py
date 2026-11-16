@@ -64,4 +64,4 @@ def equivalent(a_shape,b_shape,tolerance,progress=None):
     # budget. The original-boundary verifier allocates its own surface/trim
     # budgets inside the user's tolerance; do not divide it again as repair.
     return bool(reexport_equivalent_world(*converted,tolerance,
-        allow_boolean=False,_original_boundary_only=True,progress=report))
+        allow_boolean=False,_original_boundary_only=True,_nurbs_orientation=True,progress=report))
