@@ -34,6 +34,15 @@ new="""        if not matched and bool(req.get('allow_solid_set_proof',False)) a
                 if matched:
                     report('same_domain_boundary_proven')
                 else:
+                    from .nurbs_boundary import equivalent as nurbs_boundary_equivalent
+                    try:
+                        matched=nurbs_boundary_equivalent(a_shape,b_shape,proof_tolerance,progress=report)
+                    except (RuntimeError,ValueError):
+                        report('nurbs_boundary_unavailable')
+                        matched=False
+                    if matched:
+                        report('nurbs_boundary_proven')
+                if not matched:
                     report('validated_solid_symmetric_difference')
                     matched=bool(_verified_difference_empty(a_shape,b_shape,proof_tolerance))
                     report('solid_symmetric_difference_proven' if matched else 'solid_symmetric_difference_unproven')
