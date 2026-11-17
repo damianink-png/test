@@ -55,3 +55,37 @@ def test_exact_conversion_does_not_apply_additional_repair_tolerance_reduction()
     a=BRepPrimAPI_MakeCylinder(5.,10.).Shape()
     assert equivalent(a,nurbs(BRepPrimAPI_MakeCylinder(5.001,10.).Shape()),.01)
     assert not equivalent(a,nurbs(BRepPrimAPI_MakeCylinder(5.011,10.).Shape()),.01)
+
+
+def test_facewise_fallback_proves_complete_boundary_when_solid_conversion_fails(monkeypatch):
+    from dsac29 import nurbs_boundary as module
+    from OCP.TopAbs import TopAbs_SOLID
+    a=BRepPrimAPI_MakeCylinder(5.,10.).Shape();b=nurbs(a)
+    native=module._convert
+    def failed_solid(shape):
+        return None if shape.ShapeType()==TopAbs_SOLID else native(shape)
+    monkeypatch.setattr(module,'_convert',failed_solid)
+    phases=[]
+    assert module.equivalent(a,b,.01,phases.append)
+    assert 'nurbs_facewise_convert_A' in phases
+    assert 'nurbs_reuse_existing_B' in phases
+    tr=gp_Trsf();tr.SetTranslation(gp_Vec(0.,0.,1.))
+    assert not module.equivalent(a,b.Moved(TopLoc_Location(tr)),.01)
+    assert not module.equivalent(a,nurbs(BRepPrimAPI_MakeCylinder(5.1,10.).Shape()),.01)
+
+
+def test_facewise_fallback_never_accepts_missing_face(monkeypatch):
+    from dsac29 import nurbs_boundary as module
+    monkeypatch.setattr(module,'_convert',lambda shape:None)
+    a=BRepPrimAPI_MakeCylinder(5.,10.).Shape()
+    phases=[]
+    assert not module.equivalent(a,nurbs(a),.01,phases.append)
+    assert 'nurbs_facewise_incomplete' in phases
+
+
+def test_existing_nurbs_does_not_repeat_conversion(monkeypatch):
+    from dsac29 import nurbs_boundary as module
+    a=nurbs(BRepPrimAPI_MakeCylinder(5.,10.).Shape())
+    def forbidden(shape):raise AssertionError('Redundant NURBS conversion')
+    monkeypatch.setattr(module,'_convert',forbidden)
+    assert module.equivalent(a,a,.01)

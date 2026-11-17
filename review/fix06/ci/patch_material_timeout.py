@@ -65,6 +65,10 @@ def patch(path):
         if source.count(old) != 1:
             raise RuntimeError('Missing expected material timeout anchor: ' + old)
         source = source.replace(old, new)
+    old = "            raise NativeGeometryFailure('Obliczenie Common/Cut nieukończone (limit '+str(deadline_s)+' s): '+str(exc)) from exc"
+    new = "            reason=('Przekroczony limit Common/Cut ('+str(deadline_s)+' s)' if isinstance(exc,subprocess.TimeoutExpired) else 'Obliczenie Common/Cut nieukończone — błąd geometrii lub procesu')\n            raise NativeGeometryFailure(reason+': '+str(exc)) from exc"
+    if source.count(old)!=1: raise RuntimeError('Missing material error classifier')
+    source=source.replace(old,new)
     compile(source, str(target), 'exec')
     target.write_text(source, encoding='utf-8')
     print('DSCOMPARE_MATERIAL_TIMEOUT_POLICY_PASS', target)

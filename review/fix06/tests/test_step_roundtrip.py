@@ -64,7 +64,8 @@ def test_process_uses_two_fresh_inputs_and_no_second_alignment(tmp_path, monkeyp
     assert (folder/'UJEDNOLICENIE_STEP.json').is_file()
 
 
-def test_alignment_exports_both_again_and_discards_old_proofs(tmp_path, monkeypatch):
+@pytest.mark.parametrize('automatic',[False,True])
+def test_alignment_exports_both_again_and_discards_old_proofs(tmp_path, monkeypatch,automatic):
     import json
     from dsac29 import cli
     from dsac29.step_roundtrip import _write
@@ -87,13 +88,19 @@ def test_alignment_exports_both_again_and_discards_old_proofs(tmp_path, monkeypa
         for x,y in zip(a,b): assert x.center==pytest.approx(y.center)
         return original_compare(a,b,*args,**kwargs)
     monkeypatch.setattr(cli,'compare',compare)
+    def approval(proposal):
+        assert not automatic, 'Automatic mode must not open an approval dialog'
+        return 'align'
     folder,records,error=cli.process(str(a_path),str(b_path),str(tmp_path/'result'),
-        normalize_steps=True,auto_align=True,alignment_approval=lambda p:'align',
+        normalize_steps=True,auto_align=True,automatic_alignment=automatic,alignment_approval=approval,
         step=False,full_bom=False,progress=None)
     assert error is None and len(calls)==2
     passes=json.loads((folder/'UJEDNOLICENIE_STEP.json').read_text())
     assert len(passes)==2 and passes[0]['a']!=passes[1]['a']
     assert all(r.status=='SAME' for r in records)
+    timing=json.loads((folder/'CZASY_ANALIZY.json').read_text())
+    assert timing['final_comparison_after_alignment_s']>0
+    assert timing['alignment_preflight_and_optional_registration_s']>=0
 
 
 def test_reimport_count_loss_is_not_silently_accepted(tmp_path,monkeypatch):

@@ -54,3 +54,19 @@ def test_actual_small_common_cut_is_still_exact():
     assert abs(reg.common_mm3-1000.)<.001
     assert abs(reg.added_mm3-200.)<.001
     assert abs(reg.removed_mm3)<.001
+
+
+def test_geometry_failure_is_not_reported_as_timeout(monkeypatch):
+    import json
+    from pathlib import Path
+    from types import SimpleNamespace
+    shape=BRepPrimAPI_MakeBox(1,2,3).Shape()
+    part=describe(shape,'part','part')
+    def failed(argv,**kwargs):
+        Path(argv[-1]).write_text(json.dumps({'ok':False,'error_code':'MATERIAL_BOOLEAN_UNVERIFIED','error':'invalid topology'}))
+        return SimpleNamespace(returncode=70,stderr=b'')
+    monkeypatch.setattr(material_guard.subprocess,'run',failed)
+    with pytest.raises(NativeGeometryFailure) as error:
+        material_guard.calculate_isolated(part,part)
+    assert 'MATERIAL_BOOLEAN_UNVERIFIED' in str(error.value)
+    assert 'limit' not in str(error.value).lower()

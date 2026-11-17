@@ -78,7 +78,7 @@ def _reused_world_pairs(existing,stage1_records,proposal):
     return sorted(set(map(tuple,saved)))
 
 
-def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress=print,cancelled=None,colors=None,diff_step=True,preview3d=False,align=False,direct_scene=False,manual_review=None,revision_style=False,old_alpha=0.4,thumbnails=False,max_solids=20000,full_bom=True,bom_fast=False,bom_csv=True,auto_align=False,alignment_approval=None,force_unrelated=False,material_approval=None,normalize_steps=False):
+def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress=print,cancelled=None,colors=None,diff_step=True,preview3d=False,align=False,direct_scene=False,manual_review=None,revision_style=False,old_alpha=0.4,thumbnails=False,max_solids=20000,full_bom=True,bom_fast=False,bom_csv=True,auto_align=False,alignment_approval=None,force_unrelated=False,material_approval=None,normalize_steps=False,automatic_alignment=False):
     # Both the desktop UI and CLI use this entrypoint. Reject NaN/Inf and
     # impossible settings before importing any CAD or touching output files.
     if not isfinite(float(tolerance)) or float(tolerance)<=0:
@@ -193,6 +193,8 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     geometry_context=GeometryRegistry()
     tc=perf_counter()
     deferred_s=0.0
+    final_comparison_s=0.0
+    post_alignment_normalization_s=0.0
     trace.mark('signatures','BEGIN',solids_a=len(a),solids_b=len(b))
     related_warning=None
     if not identical_sources and not manual_review:
@@ -334,6 +336,9 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                          if sample_only else f'{votes} potwierdzeń B-Rep')+
                         f' vs {original} bez przesunięcia. Wyrównuję automatycznie. '+
                         ('Końcowe porównanie zweryfikuje resztę.' if sample_only else ''))
+            if automatic_alignment and proposal.get('status')=='registered':
+                decision='align';automatic=True
+                if progress:progress('Potwierdzone przesunięcie: stosuję automatycznie i sprawdzam wynik w końcowym porównaniu.')
             if decision is None:
                 if alignment_approval is None:
                     raise RuntimeError('Niepewne przesunięcie wymaga decyzji użytkownika.')
@@ -392,6 +397,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             if normalize_steps and alignment.get('applied'):
                 a,b,normalization=normalize_pair(a,b,output,max_solids,progress,cancelled)
                 normalization_passes.append(normalization)
+                post_alignment_normalization_s+=normalization['seconds']
                 geometry_context=GeometryRegistry()
                 certified_pairs=[]
                 step_reexport_tol=False
@@ -409,8 +415,10 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                 if progress:progress(f'B-Rep STEP: {len(rec)} brył zgodnych. Wykorzystano zapisane dowody geometryczne bez powtarzania porównania.')
             else:
                 # Only one FULL comparison runs. The first pass stopped at stage 1.
+                final_started=perf_counter()
                 with trace.phase('final_comparison_after_alignment',certified_pairs=len(certified_pairs)):
                     rec=do_compare()
+                final_comparison_s+=perf_counter()-final_started
         if alignment.get('applied') and alignment.get('verification_scope')=='sample_then_final_compare':
             # Sampled candidates are never permission to publish unproven
             # changes. Verify a strong majority of the proposed frame in
@@ -428,7 +436,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             if progress:progress(f'Końcowa kontrola przesunięcia: {final_same} zgodnych brył.')
         trace.mark('alignment','END',applied=bool(alignment.get('applied')),certified_pairs=len(certified_pairs))
         deferred_s=perf_counter()-shift_start
-        alignment_s+=deferred_s
+        alignment_s+=max(0.0,deferred_s-final_comparison_s-post_alignment_normalization_s)
     if manual_review:
         from .manual_pairs import apply_pairs
         rec=apply_pairs(a,b,rec,manual_review['pairs'],tolerance)
@@ -458,7 +466,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             same=sum(r.status in ("SAME","RENAMED") for r in rec)
             renamed=sum(r.name_changed for r in rec if r.status in ("SAME","RENAMED"))
             progress(f"Po wyrównaniu: {same} brył BEZ ZMIAN geometrycznych (różnice zapisu nazw: {renamed}).")
-    matching_s=perf_counter()-tc-deferred_s
+    matching_s=max(0.0,perf_counter()-tc-deferred_s+final_comparison_s-revision_classification_s-material_revision_matching_s)
     if progress:progress(f'Dopasowanie geometrii: {matching_s:.1f} s')
     if progress:progress('Zapis modelu STEP, raportu i BOM...')
     t_output=perf_counter()
@@ -501,6 +509,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             if progress:progress('Podgląd niedostępny: '+str(exc))
     timing={'import_A_including_fingerprint_s':import_a_s,'import_B_s':import_b_s,'import_mode':import_mode,'parallel_import_wall_s':import_parallel_wall_s,'parallel_worker_import_s':import_parallel_worker_s,'alignment_preflight_and_optional_registration_s':alignment_s,'alignment_status':alignment.get('status','not_requested'),'matching_and_classification_s':matching_s,'revision_occurrence_classification_s':revision_classification_s,'material_revision_matching_s':material_revision_matching_s,'bom_grouping_s':summary.get('bom_seconds',0),
          'step_and_reports_stage_s':output_stage_s,
+         'final_comparison_after_alignment_s':final_comparison_s,
          'step_normalization_s':sum(item['seconds'] for item in normalization_passes),
          'total_s':perf_counter()-ts,'registry':dict(geometry_context.stats),'slowest_bom_or_population_checks':geometry_context.slow_checks}
     (folder/'CZASY_ANALIZY.json').write_text(json.dumps(timing,ensure_ascii=False,indent=2),encoding='utf-8')
