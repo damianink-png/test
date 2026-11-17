@@ -1,0 +1,21 @@
+name: Inspect SwissTransfer failure from run 44041713577
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/inspect-swisstransfer-44041713577.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Print SwissTransfer transfer error
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          gh run download 44041713577 --repo "$GITHUB_REPOSITORY" --name swisstransfer-43880142620-diagnostics --dir logs
+          cat logs/transfer.log
