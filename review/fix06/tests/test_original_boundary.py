@@ -37,3 +37,16 @@ def test_source_brep_is_not_modified(tmp_path):
     before=tmp_path/'before.brep';after=tmp_path/'after.brep'
     BRepTools.Write_s(a,str(before));assert equivalent(a,b,.01)
     BRepTools.Write_s(a,str(after));assert before.read_bytes()==after.read_bytes()
+
+
+def test_nearby_faces_with_reversed_enumeration_match_by_proven_geometry():
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopoDS import TopoDS_Shell,TopoDS_Solid,TopoDS
+    from OCP.BRep import BRep_Builder
+    from dsac29.parametric_identity import items
+    a=BRepPrimAPI_MakeBox(.001,10,20).Shape()
+    exported=BRepBuilderAPI_NurbsConvert(a,True).Shape()
+    builder=BRep_Builder();shell=TopoDS_Shell();builder.MakeShell(shell)
+    for face in reversed(items(exported,TopAbs_FACE,TopoDS.Face_s)):builder.Add(shell,face)
+    b=TopoDS_Solid();builder.MakeSolid(b);builder.Add(b,shell)
+    assert equivalent(a,b,.01)
