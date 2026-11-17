@@ -45,4 +45,5 @@ def oriented_surface_equal(left,right,tolerance):
                     good=False;break
             if not good:break
         if good:return True
-    return False
+    from .bernstein_partition import surfaces_equal
+    return surfaces_equal(a.BSpline(),b.BSpline(),required_flip,tolerance)
