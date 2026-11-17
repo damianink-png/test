@@ -1,0 +1,109 @@
+name: SwissTransfer DS-Estimate exact artifact 14233834321
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/transfer-dsestimate-43880142620.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  transfer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      XDG_CONFIG_HOME: /tmp/swissfer-config
+    steps:
+      - name: Build pinned Swissfer uploader
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Blutsh/swissfer.git swissfer
+          git -C swissfer checkout -q --detach 87fd6771421dda43cc27c695e14a067429043c17
+          cargo build --release --locked --manifest-path swissfer/Cargo.toml
+      - name: Restore confirmed sender verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p sender "$XDG_CONFIG_HOME/swissfer"
+          gh run download 43878528194 --repo "$GITHUB_REPOSITORY" --name swissfer-validation-state --dir sender
+          cp sender/email-validations.json "$XDG_CONFIG_HOME/swissfer/email-validations.json"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path(os.environ['XDG_CONFIG_HOME'])/'swissfer'/'email-validations.json'
+          c=json.loads(p.read_text(encoding='utf-8'))
+          assert c.get('validations',{}).get('damianink@gmail.com',{}).get('validated') is True
+          print('Confirmed sender cache restored')
+          PY
+      - name: Download exact DS-Estimate artifact 14233834321 and prepare ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p incoming outgoing
+          SRC="https://api.github.com/repos/damianink-png/DS-Estimate/actions/artifacts/14233834321/zip"
+          SHA="ad6af17e1023ab233018e71ea0ac3b663cca40d68ef132c142cb74e4362ddb35"
+          DEST="outgoing/DS-Estimate-0.7.1-OneEXE-Portable-43880142620.zip"
+          if curl -fsSL --retry 2 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$SRC" -o "$DEST" && echo "$SHA  $DEST" | sha256sum -c - ; then
+            echo "Exact original ZIP downloaded and sha256 verified"
+          else
+            rm -f "$DEST"
+            if gh run download 43880142620 --repo damianink-png/DS-Estimate --name DS-Estimate-0.7.1-OneEXE-Portable --dir incoming ; then
+              python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile,ZIP_STORED
+          root=Path('incoming')
+          files=[p for p in root.rglob('*') if p.is_file()]
+          assert files, 'Missing downloaded artifact files'
+          dest=Path('outgoing/DS-Estimate-0.7.1-OneEXE-Portable-43880142620.zip')
+          with ZipFile(dest,'w',compression=ZIP_STORED,allowZip64=True) as z:
+              for p in files: z.write(p,p.relative_to(root))
+          print('Downloaded extracted artifact files:',len(files))
+          PY
+            else
+              curl -fLsS --retry 3 "https://nightly.link/damianink-png/DS-Estimate/actions/artifacts/14233834321.zip" -o "$DEST"
+              echo "Downloaded public artifact via nightly.link proxy"
+            fi
+          fi
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          from pathlib import Path
+          f=Path('outgoing/DS-Estimate-0.7.1-OneEXE-Portable-43880142620.zip')
+          with ZipFile(f) as z:
+              bad=z.testzip()
+              assert bad is None, f'Corrupt entry: {bad}'
+              members=[i for i in z.infolist() if not i.is_dir()]
+              assert members, 'Empty OneEXE artifact'
+              assert any(i.filename.lower().endswith('.exe') and i.file_size>20_000_000 for i in members), 'No executable found'
+              print('Source ZIP:',f.stat().st_size,'bytes; files:',len(members))
+              print('Executable(s):',[(i.filename,i.file_size) for i in members if i.filename.lower().endswith('.exe')])
+          PY
+      - name: Upload exact ZIP to SwissTransfer
+        shell: bash
+        timeout-minutes: 18
+        run: |
+          set -euo pipefail
+          timeout 900s swissfer/target/release/swissfer outgoing/DS-Estimate-0.7.1-OneEXE-Portable-43880142620.zip \
+            --email damianink@gmail.com --duration 30 \
+            --message 'DS-Estimate 0.7.1 OneEXE exact artifact 14233834321' </dev/null > transfer.log 2>&1
+          cat transfer.log
+          link=$(grep -Eo 'https://(www\.)?swisstransfer\.com/dl/[a-zA-Z0-9-]+' transfer.log | tail -n 1 || true)
+          test -n "$link"
+          echo "SwissTransfer download: $link" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve sender verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swissfer-validation-state
+          path: /tmp/swissfer-config/swissfer/email-validations.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Preserve transfer log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swisstransfer-43880142620-diagnostics
+          path: transfer.log
+          retention-days: 7
+          if-no-files-found: warn
