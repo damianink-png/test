@@ -760,3 +760,15 @@ def test_invalid_nonnull_common_stays_uncertain_when_local_cad_also_fails(monkey
     assert all(r.status!='CHANGED' for r in out),out
     assert sum(r.status=='UNCERTAIN' for r in out)==2,out
     assert attempts['local_or_world']>=2
+
+
+def test_recenter_hint_reuses_existing_bounds_without_native_recalculation(monkeypatch):
+    import numpy as np
+    from types import SimpleNamespace
+    from dsac29 import revision_overlap as module
+    a,b=SimpleNamespace(shape=object()),SimpleNamespace(shape=object())
+    class Bounds:
+        def bounds(self,part):return np.array([1000,2000,3000,1010,2020,3030],float)
+    def forbidden(*args):raise AssertionError('Repeated precise bounds computation')
+    monkeypatch.setattr(module,'_precise_world_bounds',forbidden)
+    assert np.allclose(module._recenter_origin(a,b,.01,Bounds()),[1005,2010,3015])

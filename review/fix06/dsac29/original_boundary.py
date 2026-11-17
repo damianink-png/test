@@ -2,27 +2,43 @@
 import numpy as np
 
 
-def surface_equal(a,b,tolerance):
+def _surface_face(face):
     from OCP.BRep import BRep_Tool
     from OCP.BRepTools import BRepTools
     from OCP.Geom import Geom_RectangularTrimmedSurface
     from OCP.GeomConvert import GeomConvert
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+
+    bounds=BRepTools.UVBounds_s(face)
+    if not all(np.isfinite(v) for v in bounds):return None
+    if bounds[0]>=bounds[1] or bounds[2]>=bounds[3]:return None
+    # Convert the bounded underlying surface only. Never convert, sew,
+    # repair or replace the original face's edges/pcurves.
+    trimmed=Geom_RectangularTrimmedSurface(BRep_Tool.Surface_s(face),*bounds)
+    spline=GeomConvert.SurfaceToBSplineSurface_s(trimmed)
+    builder=BRepBuilderAPI_MakeFace(spline,1e-7)
+    if not builder.IsDone():return None
+    result=builder.Face();result.Orientation(face.Orientation())
+    return result
+
+class SurfaceCache:
+    """Operation-local cache, keyed by exact shape, placement and orientation."""
+    def __init__(self):self.entries={}
+    def get(self,face):
+        key=(hash(face),int(face.Orientation()))
+        bucket=self.entries.setdefault(key,[])
+        for saved,value in bucket:
+            if face.IsEqual(saved):return value
+        value=_surface_face(face)
+        bucket.append((face,value))
+        return value
+
+
+def surface_equal(a,b,tolerance,cache=None):
     from .nurbs_orientation import oriented_surface_equal
-    def surface_face(face):
-        bounds=BRepTools.UVBounds_s(face)
-        if not all(np.isfinite(v) for v in bounds):return None
-        if bounds[0]>=bounds[1] or bounds[2]>=bounds[3]:return None
-        # Convert the bounded underlying surface only. Never convert, sew,
-        # repair or replace the original face's edges/pcurves.
-        trimmed=Geom_RectangularTrimmedSurface(BRep_Tool.Surface_s(face),*bounds)
-        spline=GeomConvert.SurfaceToBSplineSurface_s(trimmed)
-        builder=BRepBuilderAPI_MakeFace(spline,1e-7)
-        if not builder.IsDone():return None
-        result=builder.Face();result.Orientation(face.Orientation())
-        return result
     try:
-        x,y=surface_face(a),surface_face(b)
+        convert=cache.get if cache is not None else _surface_face
+        x,y=convert(a),convert(b)
         return x is not None and y is not None and oriented_surface_equal(x,y,tolerance)
     except Exception:
         return False
@@ -46,6 +62,8 @@ def equivalent(a,b,tolerance,progress=None):
     centers=np.array([f[3] for f in fb]);boxes=np.array([f[4] for f in fb])
     faces_a=items(a,TopAbs_FACE,TopoDS.Face_s)
     faces_b=items(b,TopAbs_FACE,TopoDS.Face_s)
+    cache=SurfaceCache()
+    def cached_surface(a,b,tol):return surface_equal(a,b,tol,cache)
     options=[]
     for index,f in enumerate(fa):
         dc=np.linalg.norm(centers-f[3],axis=1);db=np.max(np.abs(boxes-f[4]),axis=1)
@@ -55,7 +73,7 @@ def equivalent(a,b,tolerance,progress=None):
         for j in sorted(map(int,candidates),key=lambda j:min(dc[j],db[j])):
             if prove(faces_a[index],faces_b[j],{0:0},[f],tolerance,
                      strict_repair=False,allow_original_micro_degenerate=True,
-                     surface_prover=surface_equal):verified.append(j)
+                     surface_prover=cached_surface):verified.append(j)
         if not verified:
             report('original_boundary_unproven_face_'+str(index));return False
         options.append(verified)

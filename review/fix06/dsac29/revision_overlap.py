@@ -186,15 +186,15 @@ def _translated_regions(regions, offset):
 
 
 
-def _recenter_origin(a,b,tolerance):
+def _recenter_origin(a,b,tolerance,bounds_cache=None):
     """Numerical stabilizer for whole-assembly bent/thin Boolean geometry.
 
     Bounding boxes are location hints only; they NEVER prove a material
     intersection. Both source solids are translated by the SAME rigid offset.
     Native Common/Cut and source-bound conservation still have to pass.
     """
-    bounds_a=np.asarray(_precise_world_bounds(a.shape),dtype=float)
-    bounds_b=np.asarray(_precise_world_bounds(b.shape),dtype=float)
+    bounds_a=np.asarray(bounds_cache.bounds(a) if bounds_cache is not None else _precise_world_bounds(a.shape),dtype=float)
+    bounds_b=np.asarray(bounds_cache.bounds(b) if bounds_cache is not None else _precise_world_bounds(b.shape),dtype=float)
     if (bounds_a.shape!=(6,) or bounds_b.shape!=(6,) or
             not np.isfinite(bounds_a).all() or not np.isfinite(bounds_b).all()):
         return None
@@ -571,7 +571,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                                 _topology_recenter_candidate(exc) and
                                 'Original STEP stored tolerance exceeds CAD budget'
                                 not in str(fresh_exc) and
-                                _recenter_origin(ref,b[j],tolerance) is not None)
+                                _recenter_origin(ref,b[j],tolerance,repeat_policy.world_bounds) is not None)
                             if not can_recenter:
                                 raise
                             stat['recentered_material_attempted']+=1
@@ -609,7 +609,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                         # local-coordinate attempt, keeping original operands
                         # and exact conservation checks.
                         use_local=(_topology_recenter_candidate(exc) and
-                                   _recenter_origin(ref,b[j],tolerance) is not None)
+                                   _recenter_origin(ref,b[j],tolerance,repeat_policy.world_bounds) is not None)
                         if use_local:
                             stat['recentered_material_attempted']+=1
                             try:
@@ -958,7 +958,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             # try exactly one translated, source-verified local frame.
             rescued=False
             if (_topology_recenter_candidate(exc) and
-                    _recenter_origin(a[i],b[j],tolerance) is not None):
+                    _recenter_origin(a[i],b[j],tolerance,repeat_policy.world_bounds) is not None):
                 stat['recentered_material_attempted']+=1
                 try:
                     reg=measured_brep('revision_material_regions_recentered',i,j,

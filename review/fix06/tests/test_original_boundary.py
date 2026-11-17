@@ -50,3 +50,27 @@ def test_nearby_faces_with_reversed_enumeration_match_by_proven_geometry():
     for face in reversed(items(exported,TopAbs_FACE,TopoDS.Face_s)):builder.Add(shell,face)
     b=TopoDS_Solid();builder.MakeSolid(b);builder.Add(b,shell)
     assert equivalent(a,b,.01)
+
+
+def test_surface_conversion_reused_without_reusing_movement_verdict(monkeypatch):
+    from dsac29 import original_boundary as module
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    from OCP.gp import gp_Trsf,gp_Vec
+    from OCP.TopLoc import TopLoc_Location
+    shape=BRepPrimAPI_MakeBox(10,20,30).Shape()
+    a=TopoDS.Face_s(TopExp_Explorer(shape,TopAbs_FACE).Current())
+    b=TopoDS.Face_s(TopExp_Explorer(BRepBuilderAPI_NurbsConvert(shape,True).Shape(),TopAbs_FACE).Current())
+    native=module._surface_face;calls=[]
+    def counted(face):calls.append(face);return native(face)
+    monkeypatch.setattr(module,'_surface_face',counted)
+    cache=module.SurfaceCache()
+    for _ in range(10):assert module.surface_equal(a,b,.01,cache)
+    assert len(calls)==2
+    tr=gp_Trsf();tr.SetTranslation(gp_Vec(1,2,3))
+    assert not module.surface_equal(a,TopoDS.Face_s(b.Moved(TopLoc_Location(tr))),.01,cache)
+    assert len(calls)==3
+    reversed_face=TopoDS.Face_s(b.Reversed())
+    assert not module.surface_equal(a,reversed_face,.01,cache)
+    assert len(calls)==4
