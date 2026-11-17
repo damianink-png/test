@@ -173,19 +173,12 @@ for case,new_shape,expected in [('changed_surface_frame',changed,{'CHANGED':8}),
     old.write(pa);new.write(pb);output=root/case
     proc=subprocess.Popen([exe,'--worker','compare','--a',str(pa),'--b',str(pb),
         '--output',str(output),'--revision-style','--no-bom','--generate-step','--align-auto'])
-    deadline=time.monotonic()+300;approved_tokens=set()
+    deadline=time.monotonic()+300
     try:
         while proc.poll() is None:
             if time.monotonic()>deadline:raise TimeoutError(case)
-            request=output/'_WYROWNANIE_PYTANIE.json'
-            if request.exists():
-                proposal=json.loads(request.read_text(encoding='utf-8'))
-                if proposal['token'] not in approved_tokens:
-                    assert not proposal.get('unresolved') and not proposal.get('unrelated'),proposal
-                    assert np.allclose(proposal['translation_mm'],-offset,atol=1e-5),proposal
-                    (output/'_WYROWNANIE_ODPOWIEDZ.json').write_text(json.dumps(
-                        dict(token=proposal['token'],decision='align')),encoding='utf-8')
-                    approved_tokens.add(proposal['token'])
+            if (output/'_WYROWNANIE_PYTANIE.json').exists():
+                raise AssertionError('Verified frame must be applied automatically without a dialog: '+case)
             time.sleep(.25)
         assert proc.returncode==0,(case,proc.returncode)
         summary=json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
@@ -194,7 +187,10 @@ for case,new_shape,expected in [('changed_surface_frame',changed,{'CHANGED':8}),
         assert np.allclose(summary['alignment']['translation_B_to_A_mm'],-offset,atol=1e-5)
         assert summary['main_step_ready'] and not summary.get('material_errors'),summary
         if case=='changed_surface_frame':
-            assert approved_tokens,'Surface-only placement must require explicit approval'
+            assert not (output/'_WYROWNANIE_PYTANIE.json').exists(), 'Unexpected alignment dialog'
+            assert summary['alignment']['approved_by_user'] is False,summary['alignment']
+            passes=json.loads((output/'UJEDNOLICENIE_STEP.json').read_text(encoding='utf-8'))
+            assert len(passes)==2, 'Both STEP models must be reimported after alignment'
             assert summary['alignment']['certified_pairs']==[],summary['alignment']
         print('Frozen comparison PASS: '+case,flush=True)
     finally:
@@ -251,25 +247,21 @@ for case,repeated,extra in [('repeated_local_moves',True,0),('sparse_six_local_m
     pa=root/(case+'_old.step');pb=root/(case+'_new.step');old.write(pa);new.write(pb);output=root/case
     proc=subprocess.Popen([exe,'--worker','compare','--a',str(pa),'--b',str(pb),'--output',str(output),
         '--revision-style','--no-bom','--generate-step','--align-auto'])
-    deadline=time.monotonic()+300;approved=set()
+    deadline=time.monotonic()+300
     try:
         while proc.poll() is None:
             if time.monotonic()>deadline:raise TimeoutError(case)
-            request=output/'_WYROWNANIE_PYTANIE.json'
-            if request.exists():
-                proposal=json.loads(request.read_text(encoding='utf-8'))
-                if proposal['token'] not in approved:
-                    assert not proposal.get('unresolved') and not proposal.get('unrelated'),proposal
-                    assert np.allclose(proposal['translation_mm'],-offset,atol=1e-5),proposal
-                    (output/'_WYROWNANIE_ODPOWIEDZ.json').write_text(json.dumps(dict(token=proposal['token'],decision='align')),encoding='utf-8')
-                    approved.add(proposal['token'])
+            if (output/'_WYROWNANIE_PYTANIE.json').exists():
+                raise AssertionError('Verified frame with local moves must not prompt: '+case)
             time.sleep(.25)
         assert proc.returncode==0,(case,proc.returncode)
         summary=json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
         expected={'SAME':6,'MOVED':2}
         if extra:expected.update(REMOVED=extra,ADDED=extra)
         assert summary['statuses']==expected,(case,summary['statuses'])
-        assert approved and summary['alignment']['applied']
+        assert summary['alignment']['applied']
+        assert summary['alignment']['approved_by_user'] is False
+        assert not (output/'_WYROWNANIE_PYTANIE.json').exists()
         assert summary['alignment']['votes']==6 and summary['alignment']['final_moved_count']==2
         assert len(summary['alignment']['certified_pairs'])==6
         assert summary['main_step_ready']
