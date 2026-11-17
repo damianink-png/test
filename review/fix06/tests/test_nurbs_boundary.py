@@ -74,9 +74,11 @@ def test_facewise_fallback_proves_complete_boundary_when_solid_conversion_fails(
     assert not module.equivalent(a,nurbs(BRepPrimAPI_MakeCylinder(5.1,10.).Shape()),.01)
 
 
-def test_facewise_fallback_never_accepts_missing_face(monkeypatch):
+def test_failed_conversion_and_failed_original_proof_remain_unverified(monkeypatch):
     from dsac29 import nurbs_boundary as module
     monkeypatch.setattr(module,'_convert',lambda shape:None)
+    from dsac29 import original_boundary
+    monkeypatch.setattr(original_boundary,'surface_equal',lambda *args:False)
     a=BRepPrimAPI_MakeCylinder(5.,10.).Shape()
     phases=[]
     assert not module.equivalent(a,nurbs(a),.01,phases.append)

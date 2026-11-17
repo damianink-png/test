@@ -115,7 +115,9 @@ def equivalent(a_shape,b_shape,tolerance,progress=None,*,properties=None):
                 report('nurbs_facewise_convert_'+label)
                 result=_facewise(shape,report)
                 if result is None:
-                    report('nurbs_rejected_conversion_'+label);return False
+                    report('nurbs_rejected_conversion_'+label)
+                    from .original_boundary import equivalent as original_equivalent
+                    return original_equivalent(a_shape,b_shape,tolerance,report)
         converted.append(describe_boundary(result,properties[len(converted)] if properties is not None else None))
     report('nurbs_boundary_surface_and_trim_proof')
     # Exact representation conversion spends no shape-repair displacement
@@ -124,4 +126,7 @@ def equivalent(a_shape,b_shape,tolerance,progress=None,*,properties=None):
     matched=bool(reexport_equivalent_world(*converted,tolerance,
         allow_boolean=False,_original_boundary_only=True,_nurbs_orientation=True,progress=report))
     report('nurbs_boundary_accepted' if matched else 'nurbs_boundary_rejected_surface_or_trim')
-    return matched
+    if not matched:
+        from .original_boundary import equivalent as original_equivalent
+        return original_equivalent(a_shape,b_shape,tolerance,report)
+    return True
