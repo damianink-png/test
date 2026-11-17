@@ -1,0 +1,63 @@
+name: Share exact DSCompare 0.6.26 OneEXE run 44078137209 via Gofile
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/transfer-dscompare-44078137209-gofile.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  share:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download and verify exact DSCompare OneEXE artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p outgoing
+          DEST="outgoing/DSCompare-0.6.26-OneEXE-44078137209.zip"
+          curl -fLsS --retry 2 --connect-timeout 25 --max-time 240 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/damianink-png/test/actions/artifacts/14327111783/zip" -o "$DEST"
+          echo "b2b037b2216d084594ce5860108f58d2bc9ed8df92102295ef82f50274f0ab1a  $DEST" | sha256sum -c -
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          dest=Path('outgoing/DSCompare-0.6.26-OneEXE-44078137209.zip')
+          assert dest.stat().st_size==525316102, "Artifact archive size mismatch"
+          with ZipFile(dest) as z:
+              names=[i.filename for i in z.infolist() if not i.is_dir()]
+              assert names==['DSCompare.exe'], names
+              assert z.getinfo(names[0]).file_size>500_000_000
+              assert z.testzip() is None
+          print('Verified original ZIP containing DSCompare.exe')
+          PY
+      - name: Upload verified ZIP to Gofile
+        shell: bash
+        timeout-minutes: 24
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sSL --retry 2 --retry-delay 4 \
+            --connect-timeout 30 --max-time 1300 \
+            -X POST "https://upload.gofile.io/uploadfile" \
+            -F "file=@outgoing/DSCompare-0.6.26-OneEXE-44078137209.zip" \
+            -o upload-response.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('upload-response.json').read_text())
+          assert data.get('status')=='ok',f"Gofile status: {data.get('status')}"
+          row=data['data']
+          url=row.get('downloadPage')
+          assert url and url.startswith('https://gofile.io/d/'),"Missing share URL"
+          assert row.get('size')==525316102, "Upload size mismatch"
+          print('Gofile download page:',url)
+          print('File bytes:',row['size'])
+          Path('/tmp/share-url.txt').write_text(url+'\n')
+          PY
+          echo "Gofile download: $(cat /tmp/share-url.txt)" >> "$GITHUB_STEP_SUMMARY"
