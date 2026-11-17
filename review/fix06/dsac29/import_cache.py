@@ -14,7 +14,7 @@ import shutil
 import tempfile
 import time
 
-SCHEMA = 'dscompare-step-occt-v2-xcaf-definitions'
+SCHEMA = 'dscompare-step-occt-v3-closed-shells'
 MIN_BYTES = 2 * 1024**2
 MAX_CACHE_BYTES = 3 * 1024**3
 

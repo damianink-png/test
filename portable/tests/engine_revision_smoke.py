@@ -189,8 +189,8 @@ for case,new_shape,expected in [('changed_surface_frame',changed,{'CHANGED':8}),
         if case=='changed_surface_frame':
             assert not (output/'_WYROWNANIE_PYTANIE.json').exists(), 'Unexpected alignment dialog'
             assert summary['alignment']['approved_by_user'] is False,summary['alignment']
-            passes=json.loads((output/'UJEDNOLICENIE_STEP.json').read_text(encoding='utf-8'))
-            assert len(passes)==2, 'Both STEP models must be reimported after alignment'
+            assert not (output/'UJEDNOLICENIE_STEP.json').exists(), 'Comparison must stay in memory'
+            assert not list(output.glob('STEP_DO_POROWNANIA_*')), 'Unexpected intermediate STEP export'
             assert summary['alignment']['certified_pairs']==[],summary['alignment']
         print('Frozen comparison PASS: '+case,flush=True)
     finally:

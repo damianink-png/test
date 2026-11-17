@@ -38,7 +38,8 @@ class WorldBoundsCache:
     def _bounds(self, part, *, precise):
         from .geometry import _precise_world_bounds
         shape = part.shape
-        handle = shape.TShape()
+        from OCP.TopLoc import TopLoc_Location
+        handle = shape.Located(TopLoc_Location())
         transform = shape.Location().Transformation()
         linear = tuple(transform.Value(i, j) for i in (1, 2, 3) for j in (1, 2, 3))
         offset = np.array([transform.Value(i, 4) for i in (1, 2, 3)])

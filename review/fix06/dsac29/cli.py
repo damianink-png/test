@@ -529,7 +529,7 @@ def main(argv=None):
     ns=p.parse_args(argv)
     try:
         if ns.density<=0 or ns.density>25000:raise ValueError('Nieprawidlowa gestosc')
-        folder,recs,err=process(ns.a,ns.b,ns.output,ns.tolerance,ns.density,not ns.no_step,normalize_steps=True)
+        folder,recs,err=process(ns.a,ns.b,ns.output,ns.tolerance,ns.density,not ns.no_step,normalize_steps=False)
         print('\nRAPORT:',folder/'RAPORT.html')
         return 0 if err is None else 2
     except Exception:

@@ -149,6 +149,7 @@ def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=Non
     from uuid import uuid4
     source_key=str(p.resolve())+'#'+uuid4().hex
     outside_counts={}
+    shell_definitions={}
     def label_entry(label):
         entry=TCollection_AsciiString()
         TDF_Tool.Entry_s(label,entry)
@@ -163,6 +164,16 @@ def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=Non
             outside_counts[definition_label]=count
         stats['faces_outside_solids']+=outside_counts[definition_label]
         solids=list(_solids(shape))
+        if not solids:
+            if definition_label not in shell_definitions:
+                from .closed_shell_import import recover
+                shell_definitions[definition_label]=recover(shape.Located(TopLoc_Location()))
+            recovered=shell_definitions[definition_label]
+            if recovered is not None:
+                solids=[recovered.Located(shape.Location())]
+                stats['recovered_closed_shell_occurrences']=stats.get('recovered_closed_shell_occurrences',0)+1
+                if progress:progress('Import: rozpoznano zamkniętą powłokę jako bryłę: '+hierarchy)
+
         for k,s in enumerate(solids,1):
             if len(out)>=max_solids: raise ValueError(f'Limit bezpieczenstwa: {max_solids} bryl na plik')
             name2=name if len(solids)==1 else f'{name}#{k}'
