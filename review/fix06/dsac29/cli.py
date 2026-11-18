@@ -78,7 +78,7 @@ def _reused_world_pairs(existing,stage1_records,proposal):
     return sorted(set(map(tuple,saved)))
 
 
-def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress=print,cancelled=None,colors=None,diff_step=True,preview3d=False,align=False,direct_scene=False,manual_review=None,revision_style=False,old_alpha=0.4,thumbnails=False,max_solids=20000,full_bom=True,bom_fast=False,bom_csv=True,auto_align=False,alignment_approval=None,force_unrelated=False,material_approval=None,normalize_steps=False,automatic_alignment=False):
+def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress=print,cancelled=None,colors=None,diff_step=True,preview3d=False,align=False,direct_scene=False,manual_review=None,revision_style=False,old_alpha=0.4,thumbnails=False,max_solids=20000,full_bom=True,bom_fast=False,bom_csv=True,auto_align=False,alignment_approval=None,force_unrelated=False,material_approval=None,automatic_alignment=False):
     # Both the desktop UI and CLI use this entrypoint. Reject NaN/Inf and
     # impossible settings before importing any CAD or touching output files.
     if not isfinite(float(tolerance)) or float(tolerance)<=0:
@@ -177,11 +177,6 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                      'sprawdzam, czy eksporter podzielił część na dodatkowe bryły.')
     trace.mark('import','END',solids_a=len(a),solids_b=len(b),
                step_ap_a=schema_a,step_ap_b=schema_b)
-    normalization_passes=[]
-    if normalize_steps:
-        from .step_roundtrip import normalize_pair
-        a,b,normalization=normalize_pair(a,b,output,max_solids,progress,cancelled)
-        normalization_passes.append(normalization)
     alignment={'requested':bool(align or auto_align),'enabled':False}
     alignment_started=perf_counter()
     (Path(output)/'OSTRZEZENIA.txt').unlink(missing_ok=True)
@@ -194,7 +189,6 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     tc=perf_counter()
     deferred_s=0.0
     final_comparison_s=0.0
-    post_alignment_normalization_s=0.0
     trace.mark('signatures','BEGIN',solids_a=len(a),solids_b=len(b))
     related_warning=None
     if not identical_sources and not manual_review:
@@ -394,16 +388,8 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             # The re-export rescue already proved EVERY CAD face of EVERY
             # occurrence. Avoid a redundant third native B-Rep pass, which can
             # hang on complex copied STEP edges with near-coincident trims.
-            if normalize_steps and alignment.get('applied'):
-                a,b,normalization=normalize_pair(a,b,output,max_solids,progress,cancelled)
-                normalization_passes.append(normalization)
-                post_alignment_normalization_s+=normalization['seconds']
-                geometry_context=GeometryRegistry()
-                certified_pairs=[]
-                step_reexport_tol=False
-                if progress: progress('Obie kopie STEP wczytane. Nowe porównanie bez wyszukiwania wyrównania.')
             proven=proposal.get('full_pair_map') or []
-            if not normalize_steps and alignment.get('applied') and len(proven)==len(a)==len(b):
+            if alignment.get('applied') and len(proven)==len(a)==len(b):
                 from .names import genuine_rename
                 from .compare import Record
                 rec=[]
@@ -436,7 +422,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             if progress:progress(f'Końcowa kontrola przesunięcia: {final_same} zgodnych brył.')
         trace.mark('alignment','END',applied=bool(alignment.get('applied')),certified_pairs=len(certified_pairs))
         deferred_s=perf_counter()-shift_start
-        alignment_s+=max(0.0,deferred_s-final_comparison_s-post_alignment_normalization_s)
+        alignment_s+=max(0.0,deferred_s-final_comparison_s)
     if manual_review:
         from .manual_pairs import apply_pairs
         rec=apply_pairs(a,b,rec,manual_review['pairs'],tolerance)
@@ -488,8 +474,6 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     # report.produce already wrote HTML and summary once using report_context.
     # Do not read/write multi-MB HTML again just to prepend the provenance.
     summary=json.loads((folder/'PODSUMOWANIE.json').read_text(encoding='utf8'))
-    if normalization_passes:
-        (folder/'UJEDNOLICENIE_STEP.json').write_text(json.dumps(normalization_passes,ensure_ascii=False,indent=2),encoding='utf8')
     if thumbnails:
         from .thumbnails46 import make_thumbnail
         for role,parts in [('A',a),('B',b)]:
@@ -510,7 +494,7 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
     timing={'import_A_including_fingerprint_s':import_a_s,'import_B_s':import_b_s,'import_mode':import_mode,'parallel_import_wall_s':import_parallel_wall_s,'parallel_worker_import_s':import_parallel_worker_s,'alignment_preflight_and_optional_registration_s':alignment_s,'alignment_status':alignment.get('status','not_requested'),'matching_and_classification_s':matching_s,'revision_occurrence_classification_s':revision_classification_s,'material_revision_matching_s':material_revision_matching_s,'bom_grouping_s':summary.get('bom_seconds',0),
          'step_and_reports_stage_s':output_stage_s,
          'final_comparison_after_alignment_s':final_comparison_s,
-         'step_normalization_s':sum(item['seconds'] for item in normalization_passes),
+         'comparison_pipeline':'single_import_in_memory',
          'total_s':perf_counter()-ts,'registry':dict(geometry_context.stats),'slowest_bom_or_population_checks':geometry_context.slow_checks}
     (folder/'CZASY_ANALIZY.json').write_text(json.dumps(timing,ensure_ascii=False,indent=2),encoding='utf-8')
     if progress:progress(f'Łączny czas przetwarzania: {perf_counter()-ts:.1f} s')
@@ -529,7 +513,7 @@ def main(argv=None):
     ns=p.parse_args(argv)
     try:
         if ns.density<=0 or ns.density>25000:raise ValueError('Nieprawidlowa gestosc')
-        folder,recs,err=process(ns.a,ns.b,ns.output,ns.tolerance,ns.density,not ns.no_step,normalize_steps=False)
+        folder,recs,err=process(ns.a,ns.b,ns.output,ns.tolerance,ns.density,not ns.no_step)
         print('\nRAPORT:',folder/'RAPORT.html')
         return 0 if err is None else 2
     except Exception:
