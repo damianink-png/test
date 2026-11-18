@@ -23,11 +23,15 @@ with sync_playwright() as p:
  page.get_by_role('button',name='Diagnostyka',exact=True).click()
  assert page.get_by_role('heading',name='Diagnostyka',exact=True).is_visible()
  assert page.get_by_role('button',name='Zapisz diagnostykę',exact=True).is_disabled()
+ page.get_by_text('Eksperymentalne opcje eksportu',exact=True).click()
+ assert page.locator('.advanced-export select').count()==2
+ assert all(control.is_visible() for control in page.locator('.advanced-export select').all())
  page.get_by_role('button',name='Porównanie',exact=True).click()
  assert page.locator('aside.rail nav button').count()==2
  assert page.get_by_label('Tolerancja geometryczna',exact=True).count()==1
  assert not page.get_by_label('Tolerancja geometryczna',exact=True).is_visible()
  page.get_by_role('button',name='Ustawienia',exact=True).click()
+ assert page.locator('.advanced-export').count()==0
  expected=['Bez zmian','Bez zmian w detalu','Dodany materiał','Usunięty materiał',
            'Nowe B','Usunięte A','Przesunięte — stare A','Przesunięte — nowe B',
            'Do sprawdzenia — A','Do sprawdzenia — B']
@@ -74,15 +78,17 @@ with sync_playwright() as p:
  page.evaluate("window.__job.question={token:'t',unresolved:true,material_unverified:false,translation_mm:[0,0,0],reason:'No anchor',unverified_A:0,unverified_B:0}")
  page.get_by_role('alertdialog').wait_for();assert 'Automatyczne wyrównanie niepotwierdzone' in page.get_by_role('alertdialog').inner_text();assert page.locator('.translation').count()==0
  page.screenshot(path=str(out/'alignment-unresolved.png'))
- page.get_by_role('button',name='Szukaj dokładniej',exact=True).click()
- page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='t'&&c.args.decision==='search')")
+ assert page.get_by_role('button',name='Szukaj dokładniej',exact=True).count()==0
+ assert page.get_by_role('button',name='Wyrównaj modele',exact=True).count()==0
+ page.get_by_role('button',name='Oryginalne położenie',exact=True).click()
+ page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='t'&&c.args.decision==='original')")
  page.get_by_role('alertdialog').wait_for(state='hidden')
  page.evaluate("window.__job.question={token:'t-final',unresolved:true,search_failed:true,material_unverified:false,translation_mm:[0,0,0],reason:'Expanded search unverified',unverified_A:0,unverified_B:0}")
  page.get_by_role('alertdialog').wait_for()
  assert page.get_by_role('button',name='Szukaj dokładniej',exact=True).count()==0
  page.get_by_role('button',name='Oryginalne położenie',exact=True).click()
- # A surface-proven pose after Search must show its concrete placement and
- # still wait for approval. Include rotation-only poses (zero translation).
+ # Unconfirmed surface evidence remains visible for diagnosis, but cannot
+ # bypass engine validation. Include rotation-only poses (zero translation).
  page.get_by_role('alertdialog').wait_for(state='hidden')
  page.evaluate("window.__job.question={token:'surface-pose',unresolved:false,translation_mm:[0,0,0],rotation_deg:90,surface_anchor_count:16,surface_parts_a:8,surface_parts_b:8,reason:'preserved_native_faces'}")
  page.get_by_role('alertdialog').wait_for()
@@ -91,8 +97,9 @@ with sync_playwright() as p:
  assert page.locator('.translation').count()==1
  assert not page.evaluate("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='surface-pose')")
  page.screenshot(path=str(out/'alignment-surface-rotation.png'))
- page.get_by_role('button',name='Wyrównaj modele',exact=True).click()
- page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='surface-pose'&&c.args.decision==='align')")
+ assert page.get_by_role('button',name='Wyrównaj modele',exact=True).count()==0
+ page.get_by_role('button',name='Przerwij',exact=True).click()
+ page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='surface-pose'&&c.args.decision==='cancel')")
  page.get_by_role('alertdialog').wait_for(state='hidden')
  # Material uncertainty must never require a user decision or show the old modal.
  page.evaluate("window.__job.question={token:'material-case',unresolved:false,material_unverified:true,translation_mm:[0,0,0],reason:'INVALID_BREP_AFTER_REPAIR',unverified_A:2,unverified_B:2}")
