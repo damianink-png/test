@@ -66,11 +66,11 @@ def place_for_proof(part,rotation,translation):
 
 
 def _sampled_frame_decision(checked,positive,candidate_count,certified,a,tolerance,
-                            pre_checked,pre_positive,baseline,population):
+                            pre_checked,pre_positive,baseline,population,unknown=0):
     """Distinguish changed parts from a false global frame without certifying
     any untested part. Strict 90% policy remains first choice. A bounded
     recovery needs independently proven, diverse, spatially spread solids
-    and must be confirmed before the full per-part revision comparison.
+    followed by the full per-part revision comparison.
     """
     strict_required=max(24,ceil(.90*checked))
     if checked<min(40,candidate_count):
@@ -79,9 +79,16 @@ def _sampled_frame_decision(checked,positive,candidate_count,certified,a,toleran
         return True,False,f'Próg standardowy: {positive}/{checked}, wymagane {strict_required}'
     # The independent larger sample below is the decisive evidence. Allow
     # the preliminary sample to contain up to 20% changed/unknown pairs;
-    # they are never certified, and this recovery always asks the user.
-    if (checked<40 or pre_checked<20 or pre_positive<ceil(.80*pre_checked)
-            or positive<max(32,ceil(.80*checked))):
+    # they are never certified by the frame decision.
+    if not 0<=unknown<=checked-positive:
+        return False,False,'Niespójna liczba nieukończonych prób'
+    completed=checked-unknown
+    # Unknown is not a disagreement. Still require >=75% of the ENTIRE
+    # sample positively proven, >=80% of completed checks, >=40 completed
+    # checks, and at most 20% unknown. Diversity/spread/rival gates below stay.
+    recovery_required=max(32,ceil(.80*completed),ceil(.75*checked))
+    if (completed<40 or unknown>.20*checked or pre_checked<20
+            or pre_positive<ceil(.80*pre_checked) or positive<recovery_required):
         return False,False,f'Próbka poniżej progów: {positive}/{checked}, standard {strict_required}'
     pairs=sorted(set((int(i),int(j)) for i,j in certified))
     if len(pairs)<positive or len({i for i,j in pairs})<32 or len({j for i,j in pairs})<32:
@@ -97,7 +104,7 @@ def _sampled_frame_decision(checked,positive,candidate_count,certified,a,toleran
     if projected<=baseline+max(3,ceil(.05*population)):
         return False,False,f'Wzrost poparcia za mały wobec bazowych {baseline} części'
     return True,True,(f'Warunkowy konsensus: {positive}/{checked} pełnych B-Rep, '
-                      f'{diverse} różnych geometrii; pozostałe części wymagają końcowego porównania')
+                      f'{diverse} różnych geometrii, {unknown} nieukończonych prób; pozostałe części wymagają końcowego porównania')
 
 
 def strong_incomplete_hypotheses(state,population):
@@ -253,7 +260,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                     certified=sorted(cache.results)
                     votes=int(proof['count']);volume=pose.volume
                     accepted,recovered_sample,sample_reason=_sampled_frame_decision(
-                        n,positive,votes,certified,a,tolerance,checked,int(pre['proofs']),baseline,population)
+                        n,positive,votes,certified,a,tolerance,checked,int(pre['proofs']),baseline,population,unknown=int(proof.get('unknown_sample_count',0)))
                     # A borderline sample can include changed parts and native
                     # timeouts. Add at most 16 independent tests to the SAME
                     # nested sample; retain every negative/unknown observation.
@@ -267,11 +274,12 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                         n=int(proof['checked']);positive=int(proof['proofs'])
                         certified=sorted(cache.results)
                         accepted,recovered_sample,sample_reason=_sampled_frame_decision(
-                            n,positive,votes,certified,a,tolerance,checked,int(pre['proofs']),baseline,population)
+                            n,positive,votes,certified,a,tolerance,checked,int(pre['proofs']),baseline,population,unknown=int(proof.get('unknown_sample_count',0)))
                     state.sample_history[-1].update(
                         expanded_checked=n,expanded_proofs=positive,
                         accepted=bool(accepted),requires_confirmation=bool(recovered_sample),
-                        decision=sample_reason,unknown_pair_count=len(cache.failed_pairs))
+                        decision=sample_reason,unknown_pair_count=len(cache.failed_pairs),
+                        unknown_sample_count=int(proof.get('unknown_sample_count',0)))
                     if progress:progress('Wyrównanie: '+sample_reason)
                 else:
                     proof=native(a,placed,tolerance,verify_all=True,progress=progress,cancelled=cancelled,proof_cache=cache)

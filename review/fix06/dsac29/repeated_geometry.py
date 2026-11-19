@@ -79,11 +79,10 @@ class RepeatedMaterialPolicy:
 Every admitted pair still requires the unchanged spatial and native Common/
 Cut checks. Equal names or quantities never prove that geometry is unchanged.
 """
-    def __init__(self,a,b,tolerance=.01,geometry_context=None,cancelled=None,*,old_ids=None,new_ids=None,progress=None,survivor_old_ids=()):
+    def __init__(self,a,b,tolerance=.01,geometry_context=None,cancelled=None,*,old_ids=None,new_ids=None,progress=None,survivor_old_ids=(),proven_name_pairs=()):
         from collections import Counter
-        from .material_names import material_name_key
-        self.keys_a=[material_name_key(p.name) for p in a]
-        self.keys_b=[material_name_key(p.name) for p in b]
+        from .material_names import material_name_keys
+        self.keys_a,self.keys_b=material_name_keys(a,b,proven_name_pairs)
         totals_a=Counter(self.keys_a)
         totals_b=Counter(self.keys_b)
         self.scope_a=set(range(len(a))) if old_ids is None else set(old_ids)

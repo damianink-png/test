@@ -386,7 +386,10 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     }
     repeat_policy=RepeatedMaterialPolicy(a,b,tolerance,geometry_context,cancelled,
         old_ids=original_old_ids,new_ids=original_new_ids,progress=progress,
-        survivor_old_ids=proven_old_survivors)
+        survivor_old_ids=proven_old_survivors,
+        proven_name_pairs=[(r.a_index,r.b_index) for r in records
+            if r.status in ('SAME','RENAMED','UNCHANGED')
+            and r.a_index is not None and r.b_index is not None])
     stat['population_scope_old']=len(original_old_ids)
     stat['population_scope_new']=len(original_new_ids)
     stat['population_statistics_scope']='families_touching_common_operands'

@@ -320,7 +320,9 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
   confirmed+=bool(proven(i,j))
  if progress:progress(f'Próbka B-Rep: {confirmed}/{n} rzeczywistych dowodów; {len(pairs)} kandydatów położenia.')
  return dict(count=len(pairs),ratio=len(pairs)/max(1,min(len(a),len(b))),
-             proofs=confirmed,checked=n)
+             proofs=confirmed,checked=n,unknown_sample_count=sum(
+                 pair in unverified or (proof_cache is not None and pair in proof_cache.failed_pairs)
+                 for pair in selection))
 
 def already_world_aligned(a,b,tolerance):
  r=frame_support(a,b,tolerance)

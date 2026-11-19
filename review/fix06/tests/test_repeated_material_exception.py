@@ -284,3 +284,46 @@ def test_disjoint_repeated_families_skip_precise_extrema(monkeypatch):
         raise AssertionError('Disjoint families must not need precise spline bounds')
     monkeypatch.setattr(WorldBoundsCache, 'bounds', forbidden)
     assert policy.eligible(set(range(8)), set(range(7))) == (set(), set())
+
+
+@pytest.mark.parametrize('old,new',[
+    ('04244035_PRT','04244035_AF0'),
+    ('04244035_AF0_PRT','04244035_AF1'),
+])
+def test_zw3d_object_suffix_allows_repeated_common(old,new):
+    assert material_name_key(old)==material_name_key(new)
+    a=named(10,2,old);b=named(11,2,new)
+    result,regions,stat=merge_material_revisions(a,b,leftovers(a,b))
+    assert Counter(r.status for r in result)=={'CHANGED':2}
+    assert len(regions)==2 and stat['boolean_checks']>=1
+
+
+def test_numeric_prefix_requires_distinct_verified_families_and_no_collision():
+    from types import SimpleNamespace as P
+    from dsac29.material_names import material_name_keys
+    a=[P(name=x) for x in ('100001_PRT','100002_PRT','100003_PRT','04321964_PRT')]
+    b=[P(name=x) for x in ('C100001','C100002','C100003','C04321964')]
+    assert material_name_keys(a,b,[(0,0)]*3)[1][-1]=='c04321964'
+    assert material_name_keys(a,b,[(0,0),(1,1)])[1][-1]=='c04321964'
+    evidence=[(i,i) for i in range(3)]
+    ka,kb=material_name_keys(a,b,evidence)
+    assert ka==kb
+    assert b[-1].name=='C04321964'
+    assert material_name_keys(a,b+[P(name='04321964')],evidence)[1][3]=='c04321964'
+    assert material_name_keys(b,a,evidence)==(kb,ka)
+
+
+def test_verified_export_prefix_enables_common_without_certifying_changed_parts():
+    a=named(10,5,'placeholder');b=named(11,5,'placeholder')
+    for i in range(3):
+        a[i]=replace(a[i],name=f'{100001+i}_PRT')
+        b[i]=replace(a[i],name=f'C{100001+i}')
+    for i in (3,4):
+        a[i]=replace(a[i],name='04321964_PRT')
+        b[i]=replace(b[i],name='C04321964')
+    records=[Record(i,i,'SAME','native proof') for i in range(3)]
+    records += [Record(i,None,'REMOVED','') for i in (3,4)]
+    records += [Record(None,i,'ADDED','') for i in (3,4)]
+    result,regions,stat=merge_material_revisions(a,b,records)
+    assert Counter(r.status for r in result)=={'SAME':3,'CHANGED':2}
+    assert len(regions)==2 and stat['boolean_checks']>=1

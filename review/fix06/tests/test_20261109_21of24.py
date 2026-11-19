@@ -76,3 +76,19 @@ def test_conditional_consensus_is_not_discarded_by_legacy_weak_sample_veto():
     import inspect
     code=inspect.getsource(cad_registration.propose)
     assert 'if weak and not recovered_sample and (sampled or len(certified)!=votes):' in code
+
+
+
+def test_reported_50_of_64_distinguishes_unknown_from_completed_checks(monkeypatch):
+    monkeypatch.setattr(geometry,'signature',lambda p:p.kind)
+    pairs=[(i,i) for i in range(50)]
+    def decide(parts,unknown,baseline=0):
+        return cad_registration._sampled_frame_decision(
+            64,50,243,pairs,parts,.01,24,20,baseline,380,unknown=unknown)[0]
+    assert decide(_parts(),8)
+    assert not decide(_parts(),0)
+    assert not decide(_parts(),14)
+    assert not decide(_parts(types=1),8)
+    assert not decide(_parts(collinear=True),8)
+    assert not decide(_parts(),8,baseline=200)
+    assert pairs==[(i,i) for i in range(50)]

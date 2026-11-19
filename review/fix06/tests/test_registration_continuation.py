@@ -142,7 +142,11 @@ def test_native_timeout_is_not_restarted_in_same_pose_sample_and_full_pass(monke
         return True
     monkeypatch.setattr(native_guard,'guarded_world_reexport',proof)
     cache=FrameProofCache()
-    assert frame_support(a,b,.01,proofs=2,proof_cache=cache)['proofs']==1
+    sample=frame_support(a,b,.01,proofs=2,proof_cache=cache)
+    assert sample['proofs']==1
+    assert sample['unknown_sample_count']==1
+    repeat=frame_support(a,b,.01,proofs=2,proof_cache=cache)
+    assert repeat['unknown_sample_count']==1
     full=frame_support(a,b,.01,verify_all=True,proof_cache=cache)
     assert full['count']==79 and calls.count(id(a[0]))==1
     assert (0,0) not in cache.results and cache.skipped_timeouts>=1
