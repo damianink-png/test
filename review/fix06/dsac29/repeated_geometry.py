@@ -126,6 +126,8 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
         self.world_bounds=WorldBoundsCache.shared(geometry_context)
         self._bbox_cache_a={}
         self._bbox_cache_b={}
+        self._broad_cache_a={}
+        self._broad_cache_b={}
 
     def allows(self,i,j):
         if i not in self.scope_a or j not in self.scope_b:return False
@@ -166,10 +168,23 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
                 box=self.world_bounds.bounds(part)
                 cache[index]=box if box.shape==(6,) and np.isfinite(box).all() else None
             return cache[index]
+        def broad_bbox(part,index,cache):
+            if index not in cache:
+                cache[index]=self.world_bounds.broad_bounds(part)
+            return cache[index]
+        def disjoint(i,j):
+            x=broad_bbox(self._parts_a[i],i,self._broad_cache_a)
+            y=broad_bbox(self._parts_b[j],j,self._broad_cache_b)
+            return bool(np.any(x[3:] < y[:3]) or np.any(y[3:] < x[:3]))
         for name,ids in by_old.items():
             others=by_new.get(name,())
             if not others or not (any(i in self.repeated_a for i in ids)
                                   or any(j in self.repeated_b for j in others)):
+                continue
+            # Every pair in this family is already admitted by the full
+            # population token. Residual bbox work cannot add eligibility.
+            tokens={self.tokens_a[i] for i in ids}|{self.tokens_b[j] for j in others}
+            if len(tokens)==1 and None not in tokens:
                 continue
             # 30k nearby-name candidates is already far too ambiguous to
             # justify a new Cartesian Boolean search.
@@ -178,14 +193,8 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
                 continue
             deg_a=defaultdict(list);deg_b=defaultdict(list)
             for i in ids:
-                coarse_x=self.world_bounds.broad_bounds(self._parts_a[i])
                 for j in others:
-                    coarse_y=self.world_bounds.broad_bounds(self._parts_b[j])
-                    # Cheap conservative rejection before expensive extrema on
-                    # spline surfaces. Overlap is never a geometry certificate.
-                    if (np.any(coarse_x[3:] < coarse_y[:3]) or
-                            np.any(coarse_y[3:] < coarse_x[:3])):
-                        continue
+                    if disjoint(i,j):continue
                     x=world_bbox(self._parts_a[i],i,bbox_a)
                     if x is None:continue
                     vol_x=float(np.prod(np.maximum(0.,x[3:]-x[:3])))
@@ -235,12 +244,6 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
                 deg_a=defaultdict(list);deg_b=defaultdict(list)
                 for i in pending_old:
                     left=self._parts_a[i]
-                    x=world_bbox(left,i,bbox_a)
-                    if x is None:continue
-                    xv=float(np.prod(np.maximum(0.,x[3:]-x[:3])))
-                    if xv<=0:continue
-                    xc=(x[:3]+x[3:])*.5
-                    xd=float(np.linalg.norm(x[3:]-x[:3]))
                     for j in pending_new:
                         right=self._parts_b[j]
                         self._unnamed_survivor_candidates_scanned+=1
@@ -249,6 +252,13 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
                         if (min(left.volume,right.volume)/
                             max(left.volume,right.volume))<.72:
                             continue
+                        if disjoint(i,j):continue
+                        x=world_bbox(left,i,bbox_a)
+                        if x is None:continue
+                        xv=float(np.prod(np.maximum(0.,x[3:]-x[:3])))
+                        if xv<=0:continue
+                        xc=(x[:3]+x[3:])*.5
+                        xd=float(np.linalg.norm(x[3:]-x[:3]))
                         y=world_bbox(right,j,bbox_b)
                         if y is None:continue
                         yv=float(np.prod(np.maximum(0.,y[3:]-y[:3])))

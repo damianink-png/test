@@ -1,0 +1,56 @@
+[
+  {
+    "old": 120,
+    "new": 120,
+    "before": {
+      "eligibility_s": 0.243467,
+      "bounds": {
+        "calculations": 2,
+        "hits": 238,
+        "calculation_seconds": 5.5e-05,
+        "broad_calculations": 2,
+        "broad_hits": 14518,
+        "broad_seconds": 7e-05
+      }
+    },
+    "after": {
+      "eligibility_s": 0.000241,
+      "bounds": {
+        "calculations": 0,
+        "hits": 0,
+        "calculation_seconds": 0.0,
+        "broad_calculations": 0,
+        "broad_hits": 0,
+        "broad_seconds": 0.0
+      }
+    },
+    "identical_eligibility_and_pairs": true
+  },
+  {
+    "old": 120,
+    "new": 110,
+    "before": {
+      "eligibility_s": 0.283415,
+      "bounds": {
+        "calculations": 2,
+        "hits": 218,
+        "calculation_seconds": 3.9e-05,
+        "broad_calculations": 2,
+        "broad_hits": 13318,
+        "broad_seconds": 4.9e-05
+      }
+    },
+    "after": {
+      "eligibility_s": 0.069474,
+      "bounds": {
+        "calculations": 2,
+        "hits": 218,
+        "calculation_seconds": 3.6e-05,
+        "broad_calculations": 2,
+        "broad_hits": 228,
+        "broad_seconds": 8.8e-05
+      }
+    },
+    "identical_eligibility_and_pairs": true
+  }
+]

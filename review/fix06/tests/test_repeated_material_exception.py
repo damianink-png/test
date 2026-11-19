@@ -327,3 +327,27 @@ def test_verified_export_prefix_enables_common_without_certifying_changed_parts(
     result,regions,stat=merge_material_revisions(a,b,records)
     assert Counter(r.status for r in result)=={'SAME':3,'CHANGED':2}
     assert len(regions)==2 and stat['boolean_checks']>=1
+
+
+
+def test_equal_family_eligibility_does_not_compute_redundant_bounds(monkeypatch):
+    from dsac29.world_bounds import WorldBoundsCache
+    old=named(10,120,'DRAWING_123_REV_A')
+    new=named(11,120,'DRAWING_123_REV_B')
+    policy=RepeatedMaterialPolicy(old,new)
+    def forbidden(*args):raise AssertionError('Already admitted family needs no residual bounds')
+    monkeypatch.setattr(WorldBoundsCache,'bounds',forbidden)
+    monkeypatch.setattr(WorldBoundsCache,'broad_bounds',forbidden)
+    ids=set(range(120))
+    assert policy.eligible(ids,ids)==(ids,ids)
+    assert policy.allows(0,119)
+
+
+def test_generated_disjoint_survivors_skip_precise_bounds(monkeypatch):
+    from dsac29.world_bounds import WorldBoundsCache
+    old=named(10,8,'Element_0001')
+    new=[replace(p,name='Element_0002') for p in parts(width=11,count=8,shift=10000)]
+    policy=RepeatedMaterialPolicy(old,new,survivor_old_ids={0},old_ids={7},new_ids={7})
+    def forbidden(*args):raise AssertionError('Disjoint generated family needs no exact bounds')
+    monkeypatch.setattr(WorldBoundsCache,'bounds',forbidden)
+    assert policy.eligible({7},{7})==(set(),set())
