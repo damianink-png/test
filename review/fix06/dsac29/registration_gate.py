@@ -25,6 +25,7 @@ class FrameProofCache:
   self._binding=None
   self.hits=0;self.proof_calls=0
   self.completed_negative_pairs=set()
+  self.completed_negative_anchors={}
   self.negative_cache_hits=0
 
  def bind(self,a,b,tolerance):
@@ -217,6 +218,16 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
    # NEVER transferred to another candidate translation/rotation.
    proof_cache.negative_cache_hits+=1
    return False
+  definition_pair=(registry.definition(a[i]),registry.definition(b[j]))
+  if proof_cache is not None:
+   for ii,jj in proof_cache.completed_negative_anchors.get(definition_pair,()):
+    # Reuse only a COMPLETED non-proving check at the identical relative
+    # placement of the same native definitions, not a timeout or mismatch
+    # inferred from numeric signatures. A changed pose needs its own proof.
+    if _relative_location_is_same(a[i],a[ii],b[j],b[jj],1e-8):
+     proof_cache.completed_negative_pairs.add(pair)
+     proof_cache.negative_cache_hits+=1
+     return False
   if proof_cache is not None:proof_cache.proof_calls+=1
   same=bool(prove_uncached(i,j))
   # False can mean an inconclusive analytic proof, so retry it in the full
@@ -228,6 +239,7 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
     # Only a finished native/analytic test. Timeout/exception remains
     # retryable in a future search pass, never cached as negative evidence.
     proof_cache.completed_negative_pairs.add(pair)
+    proof_cache.completed_negative_anchors.setdefault(definition_pair,[]).append(pair)
   return same
  if not a or not b:return dict(count=0,ratio=0.,proofs=0,checked=0,pairs=[])
  tol=max(tolerance,1.e-6);radius=search_radius(tol);cell_size=max(radius*2,.002)

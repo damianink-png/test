@@ -222,3 +222,26 @@ def test_small_unresolved_search_continues_once_without_proof_threshold(monkeypa
     for _ in range(2):
         proposal=cli._continue_strong_incomplete_frame([None]*2,[None]*2,.01,state,proposal)
     assert len(calls)==1 and proposal['search_failed']
+
+
+def test_completed_unproven_repeats_reuse_only_same_relative_pose(monkeypatch):
+    from dsac29.registration_gate import FrameProofCache,frame_support
+    from dsac29.geometry_registry import GeometryRegistry
+    a,b=parts(count=80),parts(count=80)
+    # Separate native definitions; same shape properties alone prove nothing.
+    monkeypatch.setattr(GeometryRegistry,'same_definition',lambda *args:False)
+    calls=[]
+    def proof(left,right,*args,**kwargs):
+        calls.append((left,right));return False
+    monkeypatch.setattr(native_guard,'guarded_world_reexport',proof)
+    cache=FrameProofCache()
+    result=frame_support(a,b,.01,proofs=24,proof_cache=cache)
+    assert result['proofs']==0
+    assert len(calls)==1
+    assert cache.negative_cache_hits==23
+    assert not cache.results
+    # Local movement must not inherit the prior failed world-position check.
+    b[0]=alignment._relocate(b[0],np.eye(3),np.array([.1,0.,0.]))
+    calls.clear();cache=FrameProofCache()
+    frame_support(a,b,.01,verify_all=True,proof_cache=cache)
+    assert len(calls)==2
