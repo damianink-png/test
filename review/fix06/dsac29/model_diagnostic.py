@@ -142,6 +142,7 @@ def run(paths, folder, max_solids, progress):
     output=Path(folder)/'DIAGNOSTYKA_MODELI.txt'
     output.parent.mkdir(parents=True, exist_ok=True)
     data={'report_schema': 2, 'complete': False,
+          'mass_properties_method': 'adaptive_gauss_eps_1e-12',
           'description':'Dane diagnostyczne CAD, nie dowód zgodności. Bez B-Rep, siatki i współrzędnych biegunów spline. Nazwy, wymiary i położenia mogą być poufne.',
           'non_finite_values':'Non-finite numerical values are written as null.', 'models':reports}
     build=Path(__file__).resolve().parent.parent/'build_info.json'
