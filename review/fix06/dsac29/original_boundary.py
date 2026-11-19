@@ -47,7 +47,7 @@ def surface_equal(a,b,tolerance,cache=None):
 def equivalent(a,b,tolerance,progress=None):
     from types import SimpleNamespace
     from .brep_safety import is_valid
-    from .step_reexport_tolerance import _faces,_perfect_face_owner
+    from .step_reexport_tolerance import _faces
     from .parametric_identity import prove
     from OCP.TopAbs import TopAbs_SOLID,TopAbs_FACE
     from OCP.TopoDS import TopoDS
@@ -57,7 +57,10 @@ def equivalent(a,b,tolerance,progress=None):
     if not all(is_valid(s) and _count(s,TopAbs_SOLID)==1 for s in (a,b)):return False
     report=progress or (lambda phase:None)
     report('original_boundary_surface_candidates')
-    fa,fb=(_faces(SimpleNamespace(shape=s)) for s in (a,b))
+    report('original_boundary_face_descriptors_A')
+    fa=_faces(SimpleNamespace(shape=a))
+    report('original_boundary_face_descriptors_B')
+    fb=_faces(SimpleNamespace(shape=b))
     if not fa or len(fa)!=len(fb):return False
     centers=np.array([f[3] for f in fb]);boxes=np.array([f[4] for f in fb])
     faces_a=items(a,TopAbs_FACE,TopoDS.Face_s)
@@ -69,15 +72,18 @@ def equivalent(a,b,tolerance,progress=None):
         dc=np.linalg.norm(centers-f[3],axis=1);db=np.max(np.abs(boxes-f[4]),axis=1)
         candidates=np.flatnonzero(np.minimum(dc,db)<=max(.03,3*tolerance))
         if not len(candidates):return False
-        verified=[]
-        for j in sorted(map(int,candidates),key=lambda j:min(dc[j],db[j])):
-            if prove(faces_a[index],faces_b[j],{0:0},[f],tolerance,
+        options.append(sorted(map(int,candidates),key=lambda j:min(dc[j],db[j])))
+    from .boundary_work import verified_face_owner
+    attempted=0
+    def verify(i,j):
+        nonlocal attempted
+        attempted+=1
+        if attempted==1 or attempted%16==0:
+            report(f'original_boundary_face_{i+1}_of_{len(fa)}_candidate_{j+1}_attempt_{attempted}')
+        return prove(faces_a[i],faces_b[j],{0:0},[fa[i]],tolerance,
                      strict_repair=False,allow_original_micro_degenerate=True,
-                     surface_prover=cached_surface):verified.append(j)
-        if not verified:
-            report('original_boundary_unproven_face_'+str(index));return False
-        options.append(verified)
-    owner=_perfect_face_owner(options)
+                     surface_prover=cached_surface)
+    owner=verified_face_owner(options,verify)
     if owner is None:return False
     # Matching uses only fully verified face/wire pairs. A greedy geometric
     # choice cannot hide a valid alternate correspondence between near faces.
