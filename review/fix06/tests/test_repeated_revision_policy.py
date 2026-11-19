@@ -114,7 +114,7 @@ def test_local_move_does_not_shift_assembly():
     new[-1]=_relocate(new[-1],np.eye(3),np.array([5.,0,0]))
     records=compare(old,new,revision_only=True,exact_serialization=True,
                     stage1_check=lambda rec,fa,fb:propose_from_stage1(old,new,rec,fa,fb,.01))
-    assert Counter(r.status for r in records)=={'SAME':7,'MOVED':1}
+    assert Counter(r.status for r in records)=={'SAME':7,'REMOVED':1,'ADDED':1}
 
 
 def test_periodic_pitch_shift_cannot_hide_in_world_overlap():
@@ -214,3 +214,35 @@ def test_unequal_repeated_family_keeps_proven_stationary_copy():
     assert Counter(row.status for row in result) == {'SAME': 2, 'REMOVED': 1}
     assert {row.a_index for row in result if row.status == 'SAME'} == {0, 1}
     assert not any(row.status == 'MOVED' for row in result)
+
+
+@pytest.mark.parametrize('mode',['native','separate','baked'])
+def test_large_repeated_population_preserves_stationary_and_skips_individual_motion(monkeypatch,mode):
+    old=parts(count=120,separate=mode=='separate',baked=mode=='baked')
+    new=parts(count=135,separate=mode=='separate',baked=mode=='baked')
+    old=[replace(p,name='04156745_PRT') for p in old]
+    new=[replace(p,name='C04156745') for p in new]
+    for i in range(60,135):
+        new[i]=_relocate(new[i],np.eye(3),np.array([100000.,0.,0.]))
+    def forbidden(*args,**kw):
+        raise AssertionError('Repeated parts must not enter individual rigid search')
+    monkeypatch.setattr('dsac29.compare.equivalent_rigid',forbidden)
+    monkeypatch.setattr('dsac29.native_guard.guarded_rigid',forbidden)
+    rows=compare(old,new,revision_only=True,exact_serialization=True)
+    rows=classify_revisions(old,new,rows,geometry_first=True)
+    assert Counter(r.status for r in rows)=={'SAME':60,'REMOVED':60,'ADDED':75}
+    assert {(r.a_index,r.b_index) for r in rows if r.status=='SAME'}=={(i,i) for i in range(60)}
+
+
+def test_repeated_policy_does_not_hide_stationary_native_failure(monkeypatch):
+    from dsac29 import compare as engine,native_guard
+    old=parts(count=2);new=parts(count=2,separate=True)
+    for p in old+new:p.name='04156745'
+    new[1]=_relocate(new[1],np.eye(3),np.array([1000.,0.,0.]))
+    def fail(*args,**kw):raise native_guard.NativeGeometryFailure('world proof timeout')
+    monkeypatch.setattr(engine,'guarded_world_reexport',fail)
+    monkeypatch.setattr(engine,'guarded_world_equivalent',fail)
+    monkeypatch.setattr(engine,'guarded_registered_world',fail)
+    monkeypatch.setattr(engine,'equivalent_world',fail)
+    rows=compare(old,new,revision_only=True,exact_serialization=False,step_reexport_tolerance=True)
+    assert Counter(r.status for r in rows)=={'UNCERTAIN':2,'REMOVED':1,'ADDED':1}

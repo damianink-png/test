@@ -116,7 +116,7 @@ def test_small_local_outliers_do_not_bias_final_global_vector_or_motion(tmp_path
     cli.process(pa,pb,tmp_path/'result',step=False,diff_step=False,full_bom=False,
                 revision_style=True,auto_align=True,alignment_approval=lambda p:'align',progress=None)
     data=json.loads((tmp_path/'result/PODSUMOWANIE.json').read_text())
-    assert data['statuses']=={'SAME':6,'MOVED':2,'REMOVED':72,'ADDED':72}
+    assert data['statuses']=={'SAME':6,'REMOVED':74,'ADDED':74}
     assert data['alignment']['translation_B_to_A_mm']==pytest.approx(-t,abs=1e-6)
-    assert data['alignment']['final_moved_count']==2
-    assert all(r['delta_y']==pytest.approx(.04,abs=1e-6) for r in data['records'] if r['status']=='MOVED')
+    assert data['alignment']['final_moved_count']==0
+    assert not any(r['status']=='MOVED' for r in data['records'])

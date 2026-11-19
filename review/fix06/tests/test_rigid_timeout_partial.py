@@ -13,8 +13,10 @@ def test_rigid_timeout_retains_verified_parts_and_bounds_repeat_attempts(monkeyp
     left=BRepPrimAPI_MakeCylinder(5,10).Shape()
     right=BRepPrimAPI_MakeCylinder(5,10).Shape()
     for i in range(2):
-        old.append(describe(transform(left,np.eye(3),np.array([i*30.,0.,0.])),'repeat',str(i)))
-        part=describe(transform(right,np.eye(3),np.array([1000.+i*30.,0.,0.])),'repeat',str(i))
+        left=BRepPrimAPI_MakeCylinder(5+i,10).Shape()
+        right=BRepPrimAPI_MakeCylinder(5+i,10).Shape()
+        old.append(describe(transform(left,np.eye(3),np.array([i*30.,0.,0.])),'unique'+str(i),str(i)))
+        part=describe(transform(right,np.eye(3),np.array([1000.+i*30.,0.,0.])),'unique'+str(i),str(i))
         new.append(replace(part,area=part.area+.01))
     moved=BRepPrimAPI_MakeBox(7,8,9).Shape()
     old.append(describe(moved,'moved','moved'))
@@ -26,7 +28,7 @@ def test_rigid_timeout_retains_verified_parts_and_bounds_repeat_attempts(monkeyp
     monkeypatch.setattr(native_guard,'guarded_rigid',timeout)
     result=compare(old,new,revision_only=True)
     assert Counter(r.status for r in result)=={'SAME':80,'MOVED':1,'UNCERTAIN':4}
-    assert len(calls)==1
+    assert len(calls)==2
     assert all(r.status!='SAME' for r in result if r.a_index in (80,81))
 
 
