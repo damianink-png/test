@@ -231,7 +231,8 @@ finally:
 
 # Identical geometry/count does not make every peer a global-frame witness.
 # Two parts move locally by 220 mm after a global translation. Exercise both
-# repeated geometry and a six-anchor sparse frame in an otherwise changed model.
+# repeated geometry (removed/added occurrences) and unique parts (MOVED).
+# Both cases must preserve the same six-anchor global frame.
 for case,repeated,extra in [('repeated_local_moves',True,0),('sparse_six_local_moves',False,72)]:
     old=ColoredDocument();new=ColoredDocument();offset=np.array([1700.,-250.,90.])
     for i in range(8):
@@ -256,17 +257,24 @@ for case,repeated,extra in [('repeated_local_moves',True,0),('sparse_six_local_m
             time.sleep(.25)
         assert proc.returncode==0,(case,proc.returncode)
         summary=json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
-        expected={'SAME':6,'MOVED':2}
+        expected=({'SAME':6,'REMOVED':2,'ADDED':2} if repeated
+                  else {'SAME':6,'MOVED':2})
         if extra:expected.update(REMOVED=extra,ADDED=extra)
         assert summary['statuses']==expected,(case,summary['statuses'])
         assert summary['alignment']['applied']
         assert summary['alignment']['approved_by_user'] is False
         assert not (output/'_WYROWNANIE_PYTANIE.json').exists()
-        assert summary['alignment']['votes']==6 and summary['alignment']['final_moved_count']==2
+        assert summary['alignment']['votes']==6
+        assert summary['alignment']['final_moved_count']==(0 if repeated else 2)
         assert len(summary['alignment']['certified_pairs'])==6
         assert summary['main_step_ready']
         moved=[r for r in summary['records'] if r['status']=='MOVED']
-        assert len(moved)==2 and all(abs(r['delta_y']-220.)<1e-5 for r in moved),moved
+        if repeated:
+            assert not moved
+            assert {r['a_index'] for r in summary['records'] if r['status']=='REMOVED'}=={6,7}
+            assert {r['b_index'] for r in summary['records'] if r['status']=='ADDED'}=={6,7}
+        else:
+            assert len(moved)==2 and all(abs(r['delta_y']-220.)<1e-5 for r in moved),moved
         print('Frozen comparison PASS: '+case,flush=True)
     finally:
         if proc.poll() is None:proc.kill();proc.wait()
