@@ -254,6 +254,20 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                     votes=int(proof['count']);volume=pose.volume
                     accepted,recovered_sample,sample_reason=_sampled_frame_decision(
                         n,positive,votes,certified,a,tolerance,checked,int(pre['proofs']),baseline,population)
+                    # A borderline sample can include changed parts and native
+                    # timeouts. Add at most 16 independent tests to the SAME
+                    # nested sample; retain every negative/unknown observation.
+                    # Neither the acceptance thresholds nor deadline is relaxed.
+                    if (not accepted and n==48 and votes>n and
+                        positive>=ceil(.75*n) and int(pre['proofs'])>=ceil(.80*checked)
+                        and monotonic()<body_deadline):
+                        if progress:progress('Wyrównanie: graniczna próbka; dodaję do 16 par B-Rep bez powtarzania poprzednich testów.')
+                        proof=native(a,placed,tolerance,proofs=min(64,votes),progress=progress,
+                                     cancelled=cancelled,proof_cache=cache)
+                        n=int(proof['checked']);positive=int(proof['proofs'])
+                        certified=sorted(cache.results)
+                        accepted,recovered_sample,sample_reason=_sampled_frame_decision(
+                            n,positive,votes,certified,a,tolerance,checked,int(pre['proofs']),baseline,population)
                     state.sample_history[-1].update(
                         expanded_checked=n,expanded_proofs=positive,
                         accepted=bool(accepted),requires_confirmation=bool(recovered_sample),
