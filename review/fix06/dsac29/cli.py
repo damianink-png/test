@@ -440,7 +440,9 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
         revision_classification_s=perf_counter()-revision_started
         material_started=perf_counter()
         from .revision_overlap import merge_material_revisions
-        rec,precomputed_regions,overlap_diagnostics=merge_material_revisions(a,b,rec,tolerance,progress,cancelled,review_approval=material_approval,geometry_context=geometry_context)
+        from .common_history import CommonHistory
+        with CommonHistory() as common_history:
+            rec,precomputed_regions,overlap_diagnostics=merge_material_revisions(a,b,rec,tolerance,progress,cancelled,review_approval=material_approval,geometry_context=geometry_context,common_history=common_history)
         material_revision_matching_s=perf_counter()-material_started
         trace.mark('revision_classification','END',pairs=len(rec),boolean_checks=(overlap_diagnostics or {}).get('boolean_checks'))
         if alignment.get('applied'):
@@ -492,6 +494,8 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
             (folder/'UWAGI_SCENA.txt').write_text(str(exc),encoding='utf-8')
             if progress:progress('Podgląd niedostępny: '+str(exc))
     timing={'import_A_including_fingerprint_s':import_a_s,'import_B_s':import_b_s,'import_mode':import_mode,'parallel_import_wall_s':import_parallel_wall_s,'parallel_worker_import_s':import_parallel_worker_s,'alignment_preflight_and_optional_registration_s':alignment_s,'alignment_status':alignment.get('status','not_requested'),'matching_and_classification_s':matching_s,'revision_occurrence_classification_s':revision_classification_s,'material_revision_matching_s':material_revision_matching_s,'bom_grouping_s':summary.get('bom_seconds',0),
+         'slowest_common_pairs':(overlap_diagnostics or {}).get('slowest_common_pairs',[]),
+         'persistent_common_hits':(overlap_diagnostics or {}).get('persistent_common_hits',0),
          'step_and_reports_stage_s':output_stage_s,
          'final_comparison_after_alignment_s':final_comparison_s,
          'comparison_pipeline':'single_import_in_memory',

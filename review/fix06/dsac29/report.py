@@ -435,6 +435,22 @@ def produce(folder,a,b,records,density=7850.,generate_step=True,colors=None,
     # final write, rather than reopening and rewriting the whole HTML 1-3x.
     context_info=report_context or {}
     notices=[]
+    overlap=context_info.get('revision_overlap') or {}
+    slow_pairs=overlap.get('slowest_common_pairs',[])
+    if slow_pairs:
+        rows=[]
+        for pair in slow_pairs:
+            old=html.escape(str(pair['old_name']))
+            new=html.escape(str(pair['new_name']))
+            reason=html.escape(' / '.join(pair['reasons']))
+            rows.append(f"<tr><td>A[{pair['a_index']}] {old}</td><td>B[{pair['b_index']}] {new}</td>"
+                        f"<td>{pair['first_common_s']:.2f}</td><td>{pair['retry_s']:.2f}</td>"
+                        f"<td>{pair['total_s']:.2f}</td><td>{reason}</td></tr>")
+        notices.append('<details class="panel"><summary>Najwolniejsze pary Common/Cut</summary>'
+                       '<table><thead><tr><th>Stara rewizja</th><th>Nowa rewizja</th>'
+                       '<th>Pierwszy Common [s]</th><th>Dodatkowe próby [s]</th>'
+                       '<th>Łączny czas operacji [s]</th><th>Uwagi</th></tr></thead><tbody>'
+                       + ''.join(rows) + '</tbody></table></details>')
     partial_material=bool((context_info.get('revision_overlap') or {}).get('incomplete') or counts.get('UNCERTAIN') or material_errors)
     if partial_material:
         reason=(context_info.get('revision_overlap') or {}).get('reason','Niepotwierdzone pozycje lub niepełne obliczenia materiału.')

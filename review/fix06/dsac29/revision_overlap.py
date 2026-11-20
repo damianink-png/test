@@ -244,14 +244,14 @@ def _recentered_regions(a,b,tolerance):
     return restored
 
 
-def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=None,review_approval=None,geometry_context=None):
+def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=None,review_approval=None,geometry_context=None,common_history=None):
     """Strict by default; an explicit review choice may preserve unknowns."""
     records=list(records)
     # In the interactive workflow isolate failed B-Rep pairs, preserving all
     # independent verified results. Strict non-interactive callers stay fail-closed.
     result,regions,stat=_merge_material_revisions_strict(
         a,b,records,tolerance,progress,cancelled,geometry_context=geometry_context,
-        recover_failures=review_approval is not None)
+        recover_failures=review_approval is not None,common_history=common_history)
     if not stat.get('incomplete'):
         return result,regions,stat
     proposal={'status':'material_unverified','reason':stat['reason'],
@@ -268,7 +268,7 @@ def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=
     return result,regions,stat
 
 
-def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,cancelled=None,geometry_context=None,recover_failures=False):
+def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,cancelled=None,geometry_context=None,recover_failures=False,common_history=None):
     old_ids={r.a_index for r in records if r.status=='REMOVED' and r.a_index is not None and r.b_index is None}
     new_ids={r.b_index for r in records if r.status=='ADDED' and r.b_index is not None and r.a_index is None}
     original_old_ids=set(old_ids)
@@ -279,23 +279,34 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
               invalid_overlap_evidence=0,retry_budget_attempted=0,retry_budget_recovered=0,
               min_common_larger_same_name=SAME_NAME_MIN,
               min_common_larger_different_name=OTHER_NAME_MIN,min_iou=MIN_IOU,
-               brep_calls_total=0,brep_calls_by_phase={},
+               slowest_common_pairs=[],persistent_common_hits=0,brep_calls_total=0,brep_calls_by_phase={},
                brep_failures_by_phase={},brep_seconds_by_phase={})
+    pair_costs={}
     def measured_brep(phase,i,j,fn,*args,**kwargs):
         """Record every native attempt, even errors and timeouts."""
+        pair=pair_costs.setdefault((i,j),dict(a_index=i,b_index=j,old_name=a[i].name,new_name=b[j].name,
+                                              total_s=0.,first_common_s=0.,retry_s=0.,attempts=[],reasons=[]))
         started=perf_counter()
         stat['brep_calls_total']+=1
         calls=stat['brep_calls_by_phase']
         calls[phase]=calls.get(phase,0)+1
         try:
             return trace.brep_call(phase,i,j,fn,*args,**kwargs)
-        except BaseException:
+        except Exception as exc:
+            pair['reasons'].append(str(exc))
             failures=stat['brep_failures_by_phase']
             failures[phase]=failures.get(phase,0)+1
             raise
         finally:
             elapsed=stat['brep_seconds_by_phase']
-            elapsed[phase]=round(elapsed.get(phase,0.)+perf_counter()-started,4)
+            seconds=perf_counter()-started
+            elapsed[phase]=round(elapsed.get(phase,0.)+seconds,4)
+            pair['total_s']+=seconds
+            if phase in ('revision_common','revision_common_isolated'):
+                pair['first_common_s']+=seconds
+            elif phase!='revision_material_regions':
+                pair['retry_s']+=seconds
+            pair['attempts'].append(dict(phase=phase,seconds=round(seconds,4)))
     if not old_ids or not new_ids:return list(records),{},stat
     if progress:progress(f'Zmiany materiału: przygotowanie Common — {len(old_ids)} starych i {len(new_ids)} nowych pozycji; sprawdzam wystąpienia w całych rewizjach.')
     # A removed occurrence of a repeated, still-present definition is not
@@ -438,6 +449,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     stat['fingerprint_surface_analyses']=0
     stat['fingerprint_surface_rankings']=0
     stat['fingerprint_surface_reuses']=0
+    history_hits=set()
     edges={}
     best_common={}
     # Store verified reusable Common proofs for large assemblies, not only the first 128.
@@ -446,6 +458,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     def mark_failure(i,j,error,code='BOOLEAN_FAILED'):
         failed_old.add(i);failed_new.add(j)
         message=str(error)
+        if (i,j) in pair_costs:pair_costs[i,j]['reasons'].append(message)
         # A fatal input-tolerance mismatch is an input invariant, not a
         # transient numerical operation. Two native timeouts on the same
         # unchanged operands likewise cannot be repaired by repeating the
@@ -526,6 +539,14 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             # A cached, independently verified geometric proof does not run
             # another native operation, even if the scan reached MAX_CHECKS.
             cached=common_cache.find(ref,b[j])
+            evidence=None
+            if cached is None and common_history is not None:
+                saved=common_history.load(ref,b[j],tolerance)
+                if saved is not None:
+                    common,evidence=saved
+                    cached=(ref,b[j],common)
+                    history_hits.add((i,j))
+                    stat['persistent_common_hits']+=1
             if cached is None and stat['boolean_checks']>=MAX_CHECKS:
                 stat['budget_exceeded']=True
                 if not recover_failures:
@@ -533,7 +554,6 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 mark_failure(i,j,'Nie wykonano testu: przekroczony limit liczby operacji',code='BUDGET_EXCEEDED')
                 continue
             shape=None
-            evidence=None
             recovered_regions=None
             terminal_partition_failure=False
             if cached is not None:
@@ -556,6 +576,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                         # Serialization may invalidate OCCT topology even when
                         # the child validated it. Recompute all three regions
                         # independently; never use the invalid shape or its volume.
+                        pair_costs[i,j]['reasons'].append(str(exc))
                         stat['invalid_boolean']+=1
                         trace.mark('revision_common_cache','RECOMPUTE',a_index=i,b_index=j,error=str(exc))
                         if progress:progress(f'Zmiany materiału: ponowne obliczenie podziału A[{i}] ↔ B[{j}] po odrzuceniu pomocniczego Common')
@@ -717,6 +738,8 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 valid_boolean=True,name_matches=_name_eq(ref,b[j]))
             if candidate_decision.action=='SEARCH_ALTERNATIVES':
                 stat['low_overlap_rejected_pairs']+=1
+                if (i,j) in pair_costs:
+                    pair_costs[i,j]['reasons'].append('Za mała wspólna objętość do powiązania rewizji.')
                 continue
             if candidate_decision.action=='RETRY_ISOLATED':
                 stat['invalid_overlap_evidence']+=1
@@ -1051,6 +1074,8 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             float(np.linalg.norm(d)),float(d[0]),float(d[1]),float(d[2]),
             float(b[j].volume-a[i].volume),None,'Zweryfikowano OCC Common i Cut',name_changed=rename)
         accepted[i]=(j,record);regions[i]=bound
+        if common_history is not None and (i,j) not in history_hits:
+            common_history.save(a[i],b[j],tolerance,reg)
         # Cache only complete, source-bound material partitions. An unverified
         # result must NEVER be reused by a later occurrence.
         if reuse is None:
@@ -1100,6 +1125,22 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     stat['common_cache_candidates_checked']=common_cache.candidates_checked
     stat['region_cache_entries']=region_cache.saved
     stat['region_cache_candidates_checked']=region_cache.candidates_checked
+    for pair in sorted(pair_costs.values(),key=lambda item:-item['total_s'])[:5]:
+        for field in ('first_common_s','retry_s','total_s'):
+            pair[field]=round(pair[field],4)
+        i,j=pair['a_index'],pair['b_index']
+        if i in accepted and accepted[i][0]==j:
+            pair['outcome']='CHANGED'
+        elif (i,j) in edges:
+            pair['outcome']='NOT_SELECTED'
+        elif i in failed_old or j in failed_new:
+            pair['outcome']='UNVERIFIED'
+        else:
+            pair['outcome']='REJECTED'
+        if not pair['reasons'] and pair['outcome'] in ('NOT_SELECTED','REJECTED'):
+            pair['reasons'].append('Para nie spełniła warunków jednoznacznego dopasowania rewizji.')
+        pair['reasons']=list(dict.fromkeys(pair['reasons']))
+        stat['slowest_common_pairs'].append(pair)
     stat['accepted']=len(accepted)
     stat['incomplete']=bool(failures)
     if failures:

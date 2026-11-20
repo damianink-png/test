@@ -783,3 +783,29 @@ def test_recenter_hint_reuses_existing_bounds_without_native_recalculation(monke
     def forbidden(*args):raise AssertionError('Repeated precise bounds computation')
     monkeypatch.setattr(module,'_precise_world_bounds',forbidden)
     assert np.allclose(module._recenter_origin(a,b,.01,Bounds()),[1005,2010,3015])
+
+
+def test_common_history_warm_moved_corrupt_and_report(tmp_path,monkeypatch):
+    from dsac29.common_history import CommonHistory
+    import sqlite3
+    monkeypatch.setenv('DSCOMPARE_CACHE_DIR',str(tmp_path))
+    def run(x=0,tol=.01):
+        old=[part(0,10,'part')]
+        new=[part(x,11,'part')]
+        with CommonHistory() as history:
+            rows,regions,stats=revision_overlap.merge_material_revisions(
+                old,new,records(old,new),tol,common_history=history)
+        assert [r.status for r in rows]==['CHANGED'] and len(regions)==1
+        entry,=stats['slowest_common_pairs']
+        assert entry['outcome']=='CHANGED' and entry['old_name']=='part'
+        assert entry['attempts'] and entry['total_s']>=entry['first_common_s']
+        return stats['persistent_common_hits'],stats['boolean_checks']
+    assert run()==(0,1)
+    assert run()==(1,0)
+    assert run(.2)==(0,1)
+    assert run(tol=.005)==(0,1)
+    db=sqlite3.connect(tmp_path/'common-v1.sqlite')
+    with db:
+        db.execute("UPDATE proofs SET digest=x'00'")
+    db.close()
+    assert run()==(0,1)
