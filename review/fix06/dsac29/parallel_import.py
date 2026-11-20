@@ -69,7 +69,7 @@ def should_parallel(a_path, b_path):
 def write_cache(path, solids, diagnostics):
     """Write every exact native shape in occurrence order, preserving BREP sharing."""
     from OCP.BRep import BRep_Builder
-    from OCP.BRepTools import BRepTools
+    from .brep_transport import write_brep
     from OCP.TopoDS import TopoDS_Compound
     folder = Path(path)
     folder.mkdir(parents=True, exist_ok=True)
@@ -84,24 +84,20 @@ def write_cache(path, solids, diagnostics):
                              eigenvalues=item.eigenvalues.tolist(), axes=item.axes.tolist(),
                              bbox=list(item.bbox), source=item.source, name_origin=item.name_origin,
                              step_definition_key=getattr(item,'step_definition_key',None)))
-    if not BRepTools.Write_s(compound, str(folder / 'shapes.brep')):
-        raise RuntimeError('Nie udało się zapisać pośredniego BREP')
+    write_brep(compound, folder / 'shapes.brep')
     (folder / 'shapes.json').write_text(json.dumps({'schema': 2, 'solids': metadata,
                                                        'diagnostics': diagnostics}, ensure_ascii=False), encoding='utf-8')
 
 
 def read_cache(path):
-    from OCP.BRep import BRep_Builder
-    from OCP.BRepTools import BRepTools
-    from OCP.TopoDS import TopoDS_Shape, TopoDS_Iterator
+    from .brep_transport import read_brep
+    from OCP.TopoDS import TopoDS_Iterator
     from OCP.TopAbs import TopAbs_SOLID
     folder = Path(path)
     meta = json.loads((folder / 'shapes.json').read_text(encoding='utf-8'))
     if meta.get('schema') != 2:
         raise RuntimeError('Nieobsługiwana wersja bufora BREP')
-    compound = TopoDS_Shape()
-    if not BRepTools.Read_s(compound, str(folder / 'shapes.brep'), BRep_Builder()):
-        raise RuntimeError('Błąd odczytu pośredniego BREP')
+    compound = read_brep(folder / 'shapes.brep')
     it = TopoDS_Iterator(compound, True, True)
     solids = []
     for item in meta['solids']:

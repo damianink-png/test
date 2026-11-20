@@ -326,11 +326,11 @@ class ColoredDocument:
         import hashlib
         import os
         import tempfile
-        from OCP.BRepTools import BRepTools
+        from .brep_transport import write_brep
         fd,filename=tempfile.mkstemp(prefix='dscompare_exact_',suffix='.brep')
         os.close(fd)
         try:
-            if not BRepTools.Write_s(shape,filename):return None
+            write_brep(shape,filename)
             size=os.path.getsize(filename)
             # Four MiB discarded exact grouping for larger repeated parts.
             # Hash incrementally and support up to 32 MiB per definition.
@@ -341,7 +341,7 @@ class ColoredDocument:
                 for chunk in iter(lambda:handle.read(1024*1024),b''):
                     digest.update(chunk)
             return size,digest.digest()
-        except (OSError,RuntimeError,TypeError):
+        except (OSError,RuntimeError,TypeError,ValueError):
             return None
         finally:
             try:os.unlink(filename)

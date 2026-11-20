@@ -6,29 +6,27 @@ from dsac29.geometry import describe
 from dsac29.native_guard import NativeGeometryFailure
 
 
-@pytest.mark.parametrize('bytes_count,expected', [
-    (0,60),(256*1024-1,60),(256*1024,120),
-    (2*1024*1024-1,120),(2*1024*1024,180),
-    (8*1024*1024-1,180),(8*1024*1024,240),(128*1024*1024,240),
-])
-def test_brep_size_selects_bounded_timeout(bytes_count, expected):
-    assert material_guard.material_operation_timeout(bytes_count) == expected
+def test_reexport_pair_receives_same_deadline_after_binary_transfer(tmp_path):
+    from pathlib import Path
+    from dsac29.brep_transport import read_brep, write_brep
+    folder = Path(__file__).parent / 'fixtures/volume_reexport'
+    originals = [read_brep(folder / name) for name in ('A.brep','B.brep')]
+    for i, shape in enumerate(originals):
+        write_brep(shape,tmp_path / str(i))
+    restored = [read_brep(tmp_path / str(i)) for i in range(2)]
+    assert material_guard.material_operation_timeout(*originals) >= 180
+    assert material_guard.material_operation_timeout(*originals) == material_guard.material_operation_timeout(*restored)
 
 
 @pytest.mark.parametrize('override',[.5,35,90,150,240])
 def test_explicit_timeout_is_preserved(override):
-    assert material_guard.material_operation_timeout(2*1024*1024, override) == override
+    assert material_guard.material_operation_timeout(None,None,override) == override
 
 
 @pytest.mark.parametrize('invalid',[0,-1,float('inf'),float('nan'),901])
 def test_bad_explicit_timeout_rejected(invalid):
     with pytest.raises(ValueError):
-        material_guard.material_operation_timeout(100,invalid)
-
-
-def test_negative_brep_size_rejected():
-    with pytest.raises(ValueError):
-        material_guard.material_operation_timeout(-1)
+        material_guard.material_operation_timeout(None,None,invalid)
 
 
 def test_worker_receives_deadline_and_keeps_fail_closed(monkeypatch):

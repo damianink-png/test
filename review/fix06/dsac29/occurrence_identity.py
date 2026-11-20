@@ -26,7 +26,7 @@ def _canonical(part,directory):
     from OCP.Bnd import Bnd_Box
     from OCP.BRepBndLib import BRepBndLib
     from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
-    from OCP.BRepTools import BRepTools
+    from .brep_transport import write_brep
     from OCP.TopLoc import TopLoc_Location
     from OCP.gp import gp_Trsf,gp_Vec
     local=part.shape.Located(TopLoc_Location())
@@ -42,8 +42,7 @@ def _canonical(part,directory):
     normalized=BRepBuilderAPI_Transform(local,transform,True).Shape().Located(TopLoc_Location())
     path=directory/'normalized.brep'
     try:
-        if not BRepTools.Write_s(normalized,str(path)):
-            return None
+        write_brep(normalized,path)
         digest=sha256()
         with path.open('rb') as f:
             for chunk in iter(lambda:f.read(1024*1024),b''):

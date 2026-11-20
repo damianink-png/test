@@ -59,14 +59,13 @@ native_guard.worker(__import__('sys').argv[1],__import__('sys').argv[2])
 
 def test_material_result_transport_preserves_curved_geometry(tmp_path):
     from dsac29.brep_transport import read_brep, write_brep
-    from dsac29.material_transport import read_result, write_result
     from dsac29.brep_safety import is_valid
     from dsac29.material_deltas import volume
     from pathlib import Path
     shape = read_brep(Path(__file__).parent / 'fixtures/volume_reexport/A.brep')
     path = tmp_path / 'część.brep'
-    for writer in (write_brep, write_result):
-        writer(shape, path)
-        restored = read_result(path)
-        assert is_valid(restored)
-        assert abs(volume(shape) - volume(restored)) < 1e-9
+    write_brep(shape, path)
+    assert path.read_bytes().lstrip().startswith(b"Open CASCADE Topology ")
+    restored = read_brep(path)
+    assert is_valid(restored)
+    assert abs(volume(shape) - volume(restored)) < 1e-9
