@@ -18,5 +18,7 @@ new='''                    except NativeGeometryFailure as exc:
                         else:
 '''+''.join('    '+l+'\n' for l in body.splitlines())
 s=s[:start]+new+s[end:]
+s=s.replace("if world_probe_failures[family]>=2:",
+            "if world_probe_failures[family]>=2 or (i,j) in repeated_world_recovery.exhausted_pairs:")
 compile(s,str(p),'exec');p.write_text(s)
 print('REPEATED_FIXED_WORLD_RECOVERY_PASS')

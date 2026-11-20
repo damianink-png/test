@@ -15,6 +15,7 @@ class RepeatedWorldRecovery:
         self.counts_a,self.counts_b=Counter(groups_a),Counter(groups_b)
         self.tolerance=tolerance
         self.attempts=defaultdict(list)
+        self.exhausted_pairs=set()
 
     def recover(self,i,j,error,progress=None):
         from .compare import _relative_location_is_same
@@ -25,6 +26,15 @@ class RepeatedWorldRecovery:
         if min(self.counts_a[family[0]],self.counts_b[family[1]])<2:
             return None
         if 'timeout' not in str(error).casefold() and 'limit' not in str(error).casefold():
+            return None
+        # The full registered proof has already reached (and timed out in)
+        # its final solid subtraction. Recentring and replaying that same
+        # pipeline consumed another 75 s without new evidence in 0.6.39.
+        # Keep UNKNOWN, and avoid another copy at the same relative pose.
+        if 'validated_solid_symmetric_difference' in str(error):
+            self.exhausted_pairs.add((i,j))
+            trace.mark('repeated_world_local_recovery','SKIP_EXHAUSTED_SOLID_DIFFERENCE',
+                       a_id=i,b_id=j,error=str(error))
             return None
         if any(_relative_location_is_same(self.a[i],self.a[x],self.b[j],self.b[y],1e-8)
                for x,y in self.attempts[family]):

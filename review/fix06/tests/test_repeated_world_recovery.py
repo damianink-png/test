@@ -70,3 +70,40 @@ def test_real_analytic_and_nurbs_pair_keeps_local_motion_visible():
     moved=[_relocate(p,np.eye(3),np.array([0.,.2,0.])) for p in b]
     recovery=RepeatedWorldRecovery(a,moved,[0,0],[1,1],.01)
     assert recovery.recover(0,0,'timeout') is not True
+
+
+
+def test_exhausted_solid_difference_is_not_replayed_on_other_copies(monkeypatch):
+    import dsac29.compare as engine
+    a=parts(count=120,shift=2000);b=parts(count=120,shift=2000)
+    b[-1]=_relocate(b[-1],np.eye(3),np.array([1000.,0.,0.]))
+    calls=[]
+    def timeout(*args,**kw):
+        calls.append(1)
+        raise native_guard.NativeGeometryFailure(
+            'Timeout odizolowanej weryfikacji STEP; etap: validated_solid_symmetric_difference')
+    def forbidden(*args,**kw):raise AssertionError('Do not restart exhausted solid subtraction')
+    monkeypatch.setattr(engine,'guarded_world_equivalent',timeout)
+    monkeypatch.setattr(engine,'guarded_world_reexport',timeout)
+    monkeypatch.setattr(engine,'guarded_registered_world',timeout)
+    monkeypatch.setattr(native_guard,'guarded_registered_world',forbidden)
+    rows=compare(a,b,revision_only=True,exact_serialization=False)
+    assert Counter(r.status for r in rows)=={'UNCERTAIN':238,'REMOVED':1,'ADDED':1}
+    assert len(calls)==1
+
+
+def test_failed_relative_pose_does_not_block_an_independent_pose(monkeypatch):
+    import dsac29.compare as engine
+    a=parts(count=120,shift=2000);b=parts(count=120,shift=2000)
+    b[1]=_relocate(b[1],np.eye(3),np.array([.1,0.,0.]))
+    calls=[]
+    def proof(left,right,*args,**kw):
+        calls.append(float(right.center[0]-left.center[0]))
+        if abs(calls[-1])<.01:
+            raise native_guard.NativeGeometryFailure('Timeout; etap: validated_solid_symmetric_difference')
+        return False
+    monkeypatch.setattr(engine,'guarded_world_equivalent',proof)
+    monkeypatch.setattr(engine,'guarded_world_reexport',proof)
+    rows=compare(a,b,revision_only=True,exact_serialization=False)
+    assert any(abs(x-.1)<1e-6 for x in calls)
+    assert not any(r.status in ('SAME','RENAMED') for r in rows)
