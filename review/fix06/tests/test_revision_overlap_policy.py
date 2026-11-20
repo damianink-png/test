@@ -5,6 +5,7 @@ from dsac29.compare import Record
 from dsac29.geometry import describe
 from dsac29 import revision_overlap
 from types import SimpleNamespace
+import pytest
 
 def test_nonfinite_common_never_becomes_revision_match():
     ref=SimpleNamespace(volume=1000.0)
@@ -731,7 +732,8 @@ def test_invalid_nonnull_common_recovers_local_brep_only_after_source_validation
     assert 0 in regions
 
 
-def test_invalid_nonnull_common_stays_uncertain_when_local_cad_also_fails(monkeypatch):
+@pytest.mark.parametrize('terminal',[True,False])
+def test_invalid_nonnull_common_stays_uncertain_when_local_cad_also_fails(monkeypatch,terminal):
     """Never infer a revision from a valid shift guess or invalid Boolean."""
     from OCP.BRepPrimAPI import BRepPrimAPI_MakeTorus
     from dsac29 import native_guard
@@ -745,7 +747,8 @@ def test_invalid_nonnull_common_stays_uncertain_when_local_cad_also_fails(monkey
     def fail_regions(*_args,**_kwargs):
         attempts['local_or_world']+=1
         raise native_guard.NativeGeometryFailure(
-            'MATERIAL_BOOLEAN_UNVERIFIED: OCCT Boolean returned invalid or null topology')
+            'MATERIAL_BOOLEAN_UNVERIFIED: OCCT Boolean returned invalid or null topology'
+            if terminal else 'Temporary worker transport failure')
     monkeypatch.setattr(native_guard,'guarded_common',lambda *_args,**_kwargs:a[0].shape)
     monkeypatch.setattr(revision_overlap,'bind_common',
                         lambda *_args,**_kwargs: (_ for _ in ()).throw(
@@ -759,7 +762,15 @@ def test_invalid_nonnull_common_stays_uncertain_when_local_cad_also_fails(monkey
     assert stats['recentered_material_failed']==1
     assert all(r.status!='CHANGED' for r in out),out
     assert sum(r.status=='UNCERTAIN' for r in out)==2,out
-    assert attempts['local_or_world']>=2
+    if terminal:
+        assert attempts['local_or_world']==2
+        assert stats['retry_failure_attempted']==0
+        assert stats['retry_skipped_unproductive']==1
+        assert stats['failed_pairs'][0]['code']=='DETERMINISTIC_NATIVE_FAILURE'
+    else:
+        assert attempts['local_or_world']>2
+        assert stats['retry_failure_attempted']==1
+        assert stats['retry_skipped_unproductive']==0
 
 
 def test_recenter_hint_reuses_existing_bounds_without_native_recalculation(monkeypatch):

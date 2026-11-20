@@ -534,6 +534,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             shape=None
             evidence=None
             recovered_regions=None
+            terminal_partition_failure=False
             if cached is not None:
                 common=cached[2]
                 stat['common_proof_reuse']+=1
@@ -575,7 +576,13 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                                 'Original STEP stored tolerance exceeds CAD budget'
                                 not in str(fresh_exc) and
                                 _recenter_origin(ref,b[j],tolerance,repeat_policy.world_bounds) is not None)
+                            def deterministic(error):
+                                return any(marker in str(error) for marker in (
+                                    'OCCT Boolean returned invalid or null topology',
+                                    'MATERIAL_BOOLEAN_UNVERIFIED:',
+                                    'INVALID_BREP_AFTER_REPAIR:'))
                             if not can_recenter:
+                                terminal_partition_failure=deterministic(fresh_exc)
                                 raise
                             stat['recentered_material_attempted']+=1
                             if progress:
@@ -587,8 +594,10 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                                     'revision_invalid_common_recentered_regions',
                                     i,j,_recentered_regions,ref,b[j],tolerance)
                                 bind_regions(recovered_regions,ref,b[j],tolerance)
-                            except Exception:
+                            except Exception as local_exc:
                                 stat['recentered_material_failed']+=1
+                                terminal_partition_failure=(deterministic(fresh_exc)
+                                                            and deterministic(local_exc))
                                 raise
                             stat['recentered_material_recovered']+=1
                             trace.mark('revision_invalid_common_recentered_regions',
@@ -689,12 +698,16 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                         continue
                 else:
                     if not recover_failures:raise failure from exc
-                    mark_failure(i,j,failure)
+                    mark_failure(i,j,failure,code=(
+                        'DETERMINISTIC_NATIVE_FAILURE' if terminal_partition_failure
+                        else 'BOOLEAN_FAILED'))
                     continue
             except Exception as exc:
                 failure=NativeGeometryFailure('Niekompletna analiza wspólnego materiału: '+str(exc))
                 if not recover_failures:raise failure from exc
-                mark_failure(i,j,failure)
+                mark_failure(i,j,failure,code=(
+                    'DETERMINISTIC_NATIVE_FAILURE' if terminal_partition_failure
+                    else 'BOOLEAN_FAILED'))
                 continue
             # Size/position alone never establishes a revision. The candidate
             # policy only filters independently validated low-overlap pairs;
