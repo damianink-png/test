@@ -120,12 +120,14 @@ def test_representative_rigid_witness_requires_original_pose(monkeypatch,rotatio
     calls=[]
     def witness(*args,**kw):
         calls.append(1)
+        if kw.get("repeated_cells"):
+            return False,None,None
         return True,rotation,translation
     monkeypatch.setattr(native_guard,'guarded_rigid',witness)
     policy=RepeatedWorldRecovery(a,b,[0]*3,[1]*3,.01)
     assert policy.recover(0,0,'Timeout original_equivalent_world') is expected
     assert policy.recover(1,1,'Timeout original_equivalent_world') is None
-    assert len(calls)==1
+    assert len(calls)==(1 if expected else 2)
 
 def test_real_rigid_witness_for_stationary_repeated_boxes():
     a=parts(count=3); b=parts(count=3,separate=True)
@@ -144,3 +146,36 @@ def test_shared_material_cells_at_fixed_pose():
                 BRepPrimAPI_MakeBox(10.,20.,7.).Shape(),
                 BRepPrimAPI_MakeBox(20.,10.,6.9).Shape()]:
         assert not same_material_cells(old,new,.01)
+
+
+def test_rigid_timeout_leaves_time_for_fixed_cells(monkeypatch):
+    a,b=parts(count=3),parts(count=3)
+    calls=[]
+    def witness(*args,**kw):
+        calls.append(kw)
+        if not kw.get('repeated_cells'):
+            raise native_guard.NativeGeometryFailure('timeout')
+        return True,np.eye(3),np.zeros(3)
+    monkeypatch.setattr(native_guard,'guarded_rigid',witness)
+    policy=RepeatedWorldRecovery(a,b,[0]*3,[1]*3,.01)
+    assert policy.recover(0,0,'Timeout original_equivalent_world')
+    assert len(calls)==2 and calls[0]['timeout_s']==40.
+    assert 0<calls[1]['timeout_s']<=20.
+
+
+def test_rigid_motion_shares_shape_proof_without_confirming_pose(monkeypatch):
+    from dsac29.geometry_registry import GeometryRegistry
+    a,b=parts(count=3),parts(count=3,separate=True)
+    registry=GeometryRegistry()
+    monkeypatch.setattr(native_guard,'guarded_rigid',
+                        lambda *args,**kw:(not kw.get("repeated_cells"),np.eye(3),np.array([1.,0.,0.])))
+    policy=RepeatedWorldRecovery(a,b,[0]*3,[1]*3,.01,registry)
+    assert policy.recover(0,0,'Timeout original_equivalent_world') is False
+    assert registry.has_rigid_proof(a[0],b[0],.01)
+
+
+def test_cells_worker_proves_only_fixed_placement():
+    a,b=parts(count=2),parts(count=2,separate=True)
+    assert native_guard.guarded_rigid(a[0],b[0],.01,repeated_cells=True)[0]
+    moved=_relocate(b[0],np.eye(3),np.array([.2,0.,0.]))
+    assert not native_guard.guarded_rigid(a[0],moved,.01,repeated_cells=True)[0]

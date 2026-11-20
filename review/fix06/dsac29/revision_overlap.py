@@ -492,14 +492,15 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 target[5]+tolerance<bounds[2] or bounds[5]+tolerance<target[2]):
                 continue
             other=b[j]
-            common_limit=SAME_NAME_MIN if _name_eq(ref,other) else OTHER_NAME_MIN
+            same_name=_name_eq(ref,other)
+            common_limit=SAME_NAME_MIN if same_name else OTHER_NAME_MIN
             if min(ref.volume,other.volume)/max(ref.volume,other.volume)<common_limit:continue
             boxvol=_bbox_intersect(bounds,bb[j])
             if boxvol+max(1e-3,tolerance**3)<common_limit*max(ref.volume,other.volume):continue
             bbox_larger=max(float(np.prod(np.maximum(bounds[3:]-bounds[:3],0))),
                             float(np.prod(np.maximum(bb[j][3:]-bb[j][:3],0))),1e-6)
             distance=np.linalg.norm(ref.center-other.center)/max(1.,sqrt(sum(d*d for d in ref.bbox)))
-            priority=boxvol/bbox_larger+0.035*int(_name_eq(ref,other))-0.08*distance
+            priority=boxvol/bbox_larger+0.035*int(same_name)-0.08*distance
             candidates.append((-priority,j))
         candidates.sort()
         # Priority-only: all eligible pairs still get the same strict native
@@ -593,7 +594,6 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                                 recovered_regions=measured_brep(
                                     'revision_invalid_common_recentered_regions',
                                     i,j,_recentered_regions,ref,b[j],tolerance)
-                                bind_regions(recovered_regions,ref,b[j],tolerance)
                             except Exception as local_exc:
                                 stat['recentered_material_failed']+=1
                                 terminal_partition_failure=(deterministic(fresh_exc)
@@ -604,7 +604,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                                        'RECOVERED',a_index=i,b_index=j,
                                        initial_error=str(exc),fallback_error=str(fresh_exc))
                         shape=recovered_regions.common
-                    common=volume(shape)
+                    common=(recovered_regions.common_mm3 if recovered_regions is not None else volume(shape))
                     common_cache.save(ref,b[j],common)
             except NativeGeometryFailure as exc:
                 failure=NativeGeometryFailure(f'Para A[{i}] „{ref.name}” / B[{j}] „{b[j].name}”: '+str(exc))
@@ -641,8 +641,8 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                                 retry_options['timeout_s']=30.0
                                 stat['bounded_timeout_recoveries']=stat.get('bounded_timeout_recoveries',0)+1
                             recovered_regions=measured_brep('revision_common_alternative_regions',i,j,calculate,ref,b[j],tolerance,**retry_options)
-                        bind_regions(recovered_regions,ref,b[j],tolerance)
-                        common=volume(recovered_regions.common)
+                            bind_regions(recovered_regions,ref,b[j],tolerance)
+                        common=recovered_regions.common_mm3
                         stat['alternative_region_recovery']+=1
                         trace.mark('revision_common_alternative_regions','RECOVERED',a_index=i,b_index=j,
                                    common_mm3=common,reason=str(exc))

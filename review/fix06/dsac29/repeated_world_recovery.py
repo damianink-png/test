@@ -4,12 +4,14 @@ Both operands receive the same translation. A rigid congruence witness must
 also preserve the original placement to certify a stationary occurrence.
 """
 from collections import Counter
+from time import monotonic
 import numpy as np
 from .native_guard import NativeGeometryFailure
 
 
 class RepeatedWorldRecovery:
-    def __init__(self, a, b, groups_a, groups_b, tolerance):
+    def __init__(self, a, b, groups_a, groups_b, tolerance, geometry_context=None):
+        self.geometry_context=geometry_context
         self.a,self.b=a,b
         self.groups_a,self.groups_b=groups_a,groups_b
         self.counts_a,self.counts_b=Counter(groups_a),Counter(groups_b)
@@ -45,26 +47,42 @@ class RepeatedWorldRecovery:
         right=_relocate(self.b[j],np.eye(3),-origin)
         if progress:
             progress(f'Powtórzenia: pełna weryfikacja pary A[{i}] / B[{j}] '
-                     'we wspólnym lokalnym układzie, limit {60 if rigid_witness else 75} s.')
+                     f'we wspólnym lokalnym układzie, limit {60 if rigid_witness else 75} s.')
         try:
             if rigid_witness:
-                # Prove congruence once. Only an effectively identity witness
-                # certifies the current placement of this representative.
-                match, rotation, translation = trace.brep_call(
-                    'repeated_rigid_placement_witness', i, j, guarded_rigid,
-                    left, right, self.tolerance, timeout_s=60., repeated_cells=True,
-                    registered_reexport=not candidate(left,right,self.tolerance))
-                if not match:
-                    return None
-                from .world_bounds import WorldBoundsCache
-                box = WorldBoundsCache().broad_bounds(right)
-                radius = np.linalg.norm(np.maximum(np.abs(box[:3]), np.abs(box[3:])))
-                displacement = (np.linalg.norm(translation) +
-                                radius * np.linalg.norm(rotation - np.eye(3), ord=2))
-                stationary = bool(displacement <= min(1e-6, self.tolerance * .001))
-                trace.mark('repeated_rigid_placement_witness', 'PLACEMENT', a_id=i, b_id=j,
-                           displacement_bound_mm=float(displacement), stationary=stationary)
-                return stationary
+                deadline = monotonic() + 60.
+                try:
+                    match, rotation, translation = trace.brep_call(
+                        'repeated_rigid_placement_witness', i, j, guarded_rigid,
+                        left, right, self.tolerance, timeout_s=40.,
+                        registered_reexport=not candidate(left,right,self.tolerance))
+                except NativeGeometryFailure as exc:
+                    trace.mark('repeated_rigid_placement_witness','UNVERIFIED',a_id=i,b_id=j,error=str(exc))
+                    match = False
+                if match:
+                    if self.geometry_context is not None:
+                        self.geometry_context.remember_equivalence(self.a[i],self.b[j],self.tolerance)
+                    from .world_bounds import WorldBoundsCache
+                    box = WorldBoundsCache().broad_bounds(right)
+                    radius = np.linalg.norm(np.maximum(np.abs(box[:3]), np.abs(box[3:])))
+                    displacement = (np.linalg.norm(translation) +
+                                    radius * np.linalg.norm(rotation - np.eye(3), ord=2))
+                    stationary = bool(displacement <= min(1e-6, self.tolerance * .001))
+                    trace.mark('repeated_rigid_placement_witness', 'PLACEMENT', a_id=i, b_id=j,
+                               displacement_bound_mm=float(displacement), stationary=stationary)
+                    if stationary:
+                        return True
+                remaining = min(20., deadline - monotonic())
+                if remaining <= 0:
+                    return False if match else None
+                cells_match, _, _ = trace.brep_call(
+                    'repeated_fixed_cells', i, j, guarded_rigid,
+                    left, right, self.tolerance, timeout_s=remaining, repeated_cells=True)
+                if cells_match:
+                    if not match and self.geometry_context is not None:
+                        self.geometry_context.remember_equivalence(self.a[i],self.b[j],self.tolerance)
+                    return True
+                return False if match else None
             return bool(trace.brep_call('repeated_world_local_recovery',i,j,
                 guarded_registered_world,left,right,self.tolerance,timeout_s=75.0))
         except NativeGeometryFailure as exc:

@@ -6,7 +6,7 @@ a="    trace.mark('signature_cache','END',definitions_a=len(set(group_a)),defini
 assert s.count(a)==1
 s=s.replace(a,a+'''
     from .repeated_world_recovery import RepeatedWorldRecovery
-    repeated_world_recovery=RepeatedWorldRecovery(a,b,group_a,group_b,tolerance)''')
+    repeated_world_recovery=RepeatedWorldRecovery(a,b,group_a,group_b,tolerance,geometry_context)''')
 start=s.index('                    except NativeGeometryFailure as exc:',s.index("trace.mark('world_matching_pair','BEGIN'"))
 end=s.index('                    except Exception as exc:',start)
 old=s[start:end]
@@ -29,19 +29,15 @@ changes=[
     ('process_args=None, registered_reexport=False):',
      'process_args=None, registered_reexport=False, repeated_cells=False):'),
     ("'operation':'registered_rigid' if registered_reexport else 'rigid',",
-     "'operation':'registered_rigid' if registered_reexport else 'rigid', 'repeated_cells':repeated_cells,"),
-    ("        if req.get('operation') == 'registered_rigid':",
-     """        cells_match=False
-        if req.get('repeated_cells'):
-            from .shared_cells import same_material_cells
-            try:
-                cells_match=same_material_cells(a_shape,b_shape,float(req['tolerance']))
-            except (ValueError, RuntimeError):
-                pass
-        if cells_match:
-            import numpy
-            match,r,t=True,numpy.eye(3),numpy.zeros(3)
-        elif req.get('operation') == 'registered_rigid':""")]
+     "'operation':'repeated_cells' if repeated_cells else ('registered_rigid' if registered_reexport else 'rigid'),"),
+    ("    elif req.get('operation') == 'common':",
+     """    elif req.get('operation') == 'repeated_cells':
+        from .shared_cells import same_material_cells
+        match=bool(same_material_cells(a_shape,b_shape,float(req['tolerance'])))
+        response=dict(ok=True,match=match,
+                      rotation=[[1,0,0],[0,1,0],[0,0,1]] if match else None,
+                      translation=[0,0,0] if match else None)
+    elif req.get('operation') == 'common':""")]
 for old,new in changes:
     assert s.count(old)==1
     s=s.replace(old,new)
