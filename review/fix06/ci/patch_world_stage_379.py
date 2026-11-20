@@ -79,9 +79,6 @@ s=once(s,
 s=once(s,
 "    failed_groups = set()",
 """    failed_groups = set()
-    # Preserve unknown native outcomes for identical definition pairs; never
-    # restart the same hung OCCT operation on every duplicated occurrence.
-    unknown_world_groups=set()
     # Native negative/incomplete proofs are not proof that 150 copies differ.
     # Probe independent occurrences a bounded number of times.
     world_probe_failures={}

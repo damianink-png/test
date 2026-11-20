@@ -13,31 +13,31 @@ s=s.replace(anchor,'''    # Count the FULL revisions, not the leftovers after st
     # Names here only disable heuristic motion search, never prove equality.
     from collections import Counter
     from .material_names import material_name_key
-    counts_a,counts_b=Counter(group_a),Counter(group_b)
-    keys_a=[material_name_key(p.name) for p in a]
-    keys_b=[material_name_key(p.name) for p in b]
-    names_a,names_b=Counter(keys_a),Counter(keys_b)
-    repeated_motion_a={i for i,g in enumerate(group_a)
-        if counts_a[g]>1 or (keys_a[i] and names_a[keys_a[i]]>1)} if revision_only else set()
-    repeated_motion_b={j for j,g in enumerate(group_b)
-        if counts_b[g]>1 or (keys_b[j] and names_b[keys_b[j]]>1)} if revision_only else set()
+    def motion_exclusions(parts, groups):
+        if not revision_only:
+            return set()
+        counts=Counter(groups)
+        keys=[material_name_key(p.name) for p in parts]
+        names=Counter(keys)
+        return {i for i,group in enumerate(groups)
+                if counts[group]>1 or (keys[i] and names[keys[i]]>1)}
+    repeated_motion_a=motion_exclusions(a,group_a)
+    repeated_motion_b=motion_exclusions(b,group_b)
+    motion_old=sorted(free_a-repeated_motion_a)
+    motion_new=sorted(free_b-repeated_motion_b)
     trace.mark('repeated_motion_policy','EXCLUDED',
         old_occurrences=len(free_a & repeated_motion_a),
         new_occurrences=len(free_b & repeated_motion_b))
 '''+anchor)
 anchor='    volume_index = _VolumeIndex(b, free_b)'
 assert s.count(anchor)==1
-s=s.replace(anchor,'    volume_index = _VolumeIndex(b, free_b - repeated_motion_b)')
+s=s.replace(anchor,'    volume_index = _VolumeIndex(b, motion_new)')
 anchor='''        for idx,i in enumerate(sorted(free_a)):
             if i not in free_a:continue'''
 assert s.count(anchor)==1
-s=s.replace(anchor,'''        for idx,i in enumerate(sorted(free_a)):
-            if i not in free_a or i in repeated_motion_a:continue''')
-anchor='''                  if j in free_b
-                  and (norm_a[i] == norm_b[j]) == names_equal'''
-assert s.count(anchor)==2
-head,tail=s.split("    trace.mark('rigid_candidates','BEGIN'",1)
-s=head+"    trace.mark('rigid_candidates','BEGIN'"+tail.replace(anchor,'''                  if j in free_b and j not in repeated_motion_b
-                  and (norm_a[i] == norm_b[j]) == names_equal''')
+s=s.replace(anchor,'''        for idx,i in enumerate(motion_old):''')
+anchor='lookup=(sorted(free_b) if use_native_guard else'
+assert s.count(anchor)==1
+s=s.replace(anchor,'lookup=(motion_new if use_native_guard else')
 compile(s,str(p),'exec');p.write_text(s)
 print('REPEATED_REVISION_MOTION_POLICY_PASS')

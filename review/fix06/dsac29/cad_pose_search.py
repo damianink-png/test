@@ -8,7 +8,6 @@ See docs/registration-audit-0.6.5.md for sources, limits and design choices.
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from itertools import product, permutations
-from math import floor
 import numpy as np
 
 

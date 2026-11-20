@@ -192,13 +192,18 @@ Cut checks. Equal names or quantities never prove that geometry is unchanged.
                 self._residual_spatial_ambiguous+=len(ids)+len(others)
                 continue
             deg_a=defaultdict(list);deg_b=defaultdict(list)
+            broad_new=np.stack([broad_bbox(self._parts_b[j],j,self._broad_cache_b) for j in others])
             for i in ids:
-                for j in others:
-                    if disjoint(i,j):continue
-                    x=world_bbox(self._parts_a[i],i,bbox_a)
-                    if x is None:continue
-                    vol_x=float(np.prod(np.maximum(0.,x[3:]-x[:3])))
-                    if vol_x<=0:continue
+                broad_old=broad_bbox(self._parts_a[i],i,self._broad_cache_a)
+                overlaps=np.flatnonzero(np.all(broad_new[:,:3]<=broad_old[3:],axis=1)
+                                        & np.all(broad_new[:,3:]>=broad_old[:3],axis=1))
+                if not overlaps.size:continue
+                x=world_bbox(self._parts_a[i],i,bbox_a)
+                if x is None:continue
+                vol_x=float(np.prod(np.maximum(0.,x[3:]-x[:3])))
+                if vol_x<=0:continue
+                for index in overlaps:
+                    j=others[index]
                     y=world_bbox(self._parts_b[j],j,bbox_b)
                     if y is None:continue
                     vol_y=float(np.prod(np.maximum(0.,y[3:]-y[:3])))

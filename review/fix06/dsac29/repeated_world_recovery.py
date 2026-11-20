@@ -3,7 +3,7 @@
 Both operands receive the same translation. A rigid congruence witness must
 also preserve the original placement to certify a stationary occurrence.
 """
-from collections import Counter, defaultdict
+from collections import Counter
 import numpy as np
 from .native_guard import NativeGeometryFailure
 
@@ -14,7 +14,7 @@ class RepeatedWorldRecovery:
         self.groups_a,self.groups_b=groups_a,groups_b
         self.counts_a,self.counts_b=Counter(groups_a),Counter(groups_b)
         self.tolerance=tolerance
-        self.attempts=defaultdict(list)
+        self.attempts=set()
         self.exhausted_pairs=set()
 
     def recover(self,i,j,error,progress=None):
@@ -37,8 +37,8 @@ class RepeatedWorldRecovery:
             self.exhausted_pairs.add((i,j))
         # Cap attempts per native family too: different relative placements
         # must not launch an unbounded search through its Cartesian pairs.
-        if self.attempts[family]:return None
-        self.attempts[family].append((i,j))
+        if family in self.attempts:return None
+        self.attempts.add(family)
         origin=(np.asarray(self.a[i].center)+np.asarray(self.b[j].center))*.5
         if not np.isfinite(origin).all():return None
         left=_relocate(self.a[i],np.eye(3),-origin)

@@ -4,8 +4,6 @@ Feature extraction and original surface/wire proofs execute in isolated native
 workers. A frame proven this way ALWAYS needs explicit placement approval.
 Its faces are never placed in the body's certified_pairs map.
 """
-from collections import defaultdict
-from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from types import SimpleNamespace

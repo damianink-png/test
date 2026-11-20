@@ -4,7 +4,6 @@ A pair may be classified as REMOVED+ADDED only when the caller has exhausted
 other plausible matches. Similar size alone is never positive evidence.
 """
 from dataclasses import dataclass
-from math import isfinite
 from .overlap_evidence import classify_overlap
 
 @dataclass(frozen=True)
