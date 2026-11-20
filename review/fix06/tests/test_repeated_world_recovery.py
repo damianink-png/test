@@ -87,6 +87,7 @@ def test_exhausted_solid_difference_is_not_replayed_on_other_copies(monkeypatch)
     monkeypatch.setattr(engine,'guarded_world_reexport',timeout)
     monkeypatch.setattr(engine,'guarded_registered_world',timeout)
     monkeypatch.setattr(native_guard,'guarded_registered_world',forbidden)
+    monkeypatch.setattr(native_guard,'guarded_rigid',lambda *args,**kw:(False,None,None))
     rows=compare(a,b,revision_only=True,exact_serialization=False)
     assert Counter(r.status for r in rows)=={'UNCERTAIN':238,'REMOVED':1,'ADDED':1}
     assert len(calls)==1
@@ -104,6 +105,29 @@ def test_failed_relative_pose_does_not_block_an_independent_pose(monkeypatch):
         return False
     monkeypatch.setattr(engine,'guarded_world_equivalent',proof)
     monkeypatch.setattr(engine,'guarded_world_reexport',proof)
+    monkeypatch.setattr(native_guard,'guarded_rigid',lambda *args,**kw:(False,None,None))
     rows=compare(a,b,revision_only=True,exact_serialization=False)
     assert any(abs(x-.1)<1e-6 for x in calls)
     assert not any(r.status in ('SAME','RENAMED') for r in rows)
+
+@pytest.mark.parametrize('rotation,translation,expected',[
+    (np.eye(3),np.zeros(3),True),
+    (np.eye(3),np.array([0.,.04,0.]),False),
+    (np.diag([-1.,-1.,1.]),np.zeros(3),False),
+])
+def test_representative_rigid_witness_requires_original_pose(monkeypatch,rotation,translation,expected):
+    a=parts(count=3); b=parts(count=3)
+    calls=[]
+    def witness(*args,**kw):
+        calls.append(1)
+        return True,rotation,translation
+    monkeypatch.setattr(native_guard,'guarded_rigid',witness)
+    policy=RepeatedWorldRecovery(a,b,[0]*3,[1]*3,.01)
+    assert policy.recover(0,0,'Timeout original_equivalent_world') is expected
+    assert policy.recover(1,1,'Timeout original_equivalent_world') is None
+    assert len(calls)==1
+
+def test_real_rigid_witness_for_stationary_repeated_boxes():
+    a=parts(count=3); b=parts(count=3,separate=True)
+    policy=RepeatedWorldRecovery(a,b,[0]*3,[1]*3,.01)
+    assert policy.recover(0,0,'Timeout original_equivalent_world') is True
