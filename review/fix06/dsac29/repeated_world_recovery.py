@@ -52,7 +52,7 @@ class RepeatedWorldRecovery:
                 # certifies the current placement of this representative.
                 match, rotation, translation = trace.brep_call(
                     'repeated_rigid_placement_witness', i, j, guarded_rigid,
-                    left, right, self.tolerance, timeout_s=60.,
+                    left, right, self.tolerance, timeout_s=60., repeated_cells=True,
                     registered_reexport=not candidate(left,right,self.tolerance))
                 if not match:
                     return None

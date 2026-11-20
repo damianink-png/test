@@ -131,3 +131,16 @@ def test_real_rigid_witness_for_stationary_repeated_boxes():
     a=parts(count=3); b=parts(count=3,separate=True)
     policy=RepeatedWorldRecovery(a,b,[0]*3,[1]*3,.01)
     assert policy.recover(0,0,'Timeout original_equivalent_world') is True
+
+
+def test_shared_material_cells_at_fixed_pose():
+    from dsac29.shared_cells import same_material_cells
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
+    from OCP.gp import gp_Pnt
+    old=BRepPrimAPI_MakeBox(20.,10.,7.).Shape()
+    assert same_material_cells(old,BRepBuilderAPI_NurbsConvert(old,True).Shape(),.01)
+    for new in [BRepPrimAPI_MakeBox(gp_Pnt(.04,0,0),20.,10.,7.).Shape(),
+                BRepPrimAPI_MakeBox(10.,20.,7.).Shape(),
+                BRepPrimAPI_MakeBox(20.,10.,6.9).Shape()]:
+        assert not same_material_cells(old,new,.01)
