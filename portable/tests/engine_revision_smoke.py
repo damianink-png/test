@@ -1,5 +1,7 @@
 """Exercise the exact CAD engine embedded in the current Tauri portable delivery."""
 import json
+import os
+import tempfile
 from pathlib import Path
 import subprocess
 import sys
@@ -14,6 +16,13 @@ from dsac29.material_deltas import volume
 exe = str(Path(sys.argv[1]).resolve())
 root = Path(sys.argv[2]).resolve()
 root.mkdir(parents=True, exist_ok=True)
+# Share history between scenarios, but never inherit proofs from another run.
+cache_dir = tempfile.TemporaryDirectory(prefix='dscompare-smoke-')
+os.environ['DSCOMPARE_CACHE_DIR'] = cache_dir.name
+
+
+def assert_common_proof_used(stats):
+    assert stats['boolean_checks'] > 0 or stats['persistent_common_hits'] > 0, stats
 
 
 def model(path, width=10, shift=0, count=8, name="PLATE_123_REV_A"):
@@ -65,17 +74,21 @@ for case, width, shift, count, name, expected in (
         assert not summary.get('material_errors'), summary.get('material_errors')
         if case in ('repeated_named_revision','repeated_afm_revision'):
             assert summary['revision_overlap']['accepted']==8
+            if case=='repeated_named_revision':
+                assert summary['revision_overlap']['boolean_checks']>=1
+                assert summary['revision_overlap']['persistent_common_hits']==0
         elif case == 'repeated_unequal_count':
             # The current material policy admits seven individually unique,
             # spatially aligned revisions even if an eighth copy disappeared.
             # Require completed native Common/Cut evidence for every CHANGED
             # pair; never weaken this test to accept a heuristic classification.
             assert summary['revision_overlap']['accepted']==7, summary['revision_overlap']
-            assert summary['revision_overlap']['boolean_checks']>=1, summary['revision_overlap']
+            assert_common_proof_used(summary['revision_overlap'])
             changed=[r for r in summary['records'] if r['status']=='CHANGED']
             assert len(changed)==7 and all('Common' in r['confidence'] for r in changed), changed
         elif case == 'repeated_other_name':
             assert summary['revision_overlap']['boolean_checks']==0
+            assert summary['revision_overlap']['persistent_common_hits']==0
         if shift:
             assert summary['alignment']['applied'], summary['alignment']
             assert np.allclose(summary['alignment']['translation_B_to_A_mm'], [-1000, 0, 0])
@@ -107,7 +120,7 @@ try:
     assert proc.returncode==0,proc.returncode
     summary=json.loads((output/'PODSUMOWANIE.json').read_text(encoding='utf-8'))
     assert summary['statuses']=={'SAME':6,'CHANGED':1,'REMOVED':1},summary['statuses']
-    assert summary['revision_overlap']['boolean_checks']>=1,summary['revision_overlap']
+    assert_common_proof_used(summary['revision_overlap'])
     assert all('Common' in r['confidence'] for r in summary['records']
                if r['status']=='CHANGED'),summary['records']
     assert summary['main_step_ready'] and not summary.get('material_errors'),summary
