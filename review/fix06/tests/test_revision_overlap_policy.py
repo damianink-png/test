@@ -809,3 +809,15 @@ def test_common_history_warm_moved_corrupt_and_report(tmp_path,monkeypatch):
         db.execute("UPDATE proofs SET digest=x'00'")
     db.close()
     assert run()==(0,1)
+
+
+def test_large_assembly_single_revision_uses_one_partition(monkeypatch):
+    # All other occurrences were already classified before material matching.
+    filler=part(500,5,'unchanged')
+    a=[part(0,10,'04244017')]+[filler]*99
+    b=[part(0,11,'04244017_AF0')]+[filler]*99
+    rows=records(a[:1],b[:1])+[Record(i,i,'SAME','proof') for i in range(1,100)]
+    result,regions,stats=revision_overlap.merge_material_revisions(a,b,rows)
+    assert sum(r.status=='CHANGED' for r in result)==1
+    assert len(regions)==1
+    assert stats['brep_calls_by_phase']=={'revision_direct_material_regions':1}

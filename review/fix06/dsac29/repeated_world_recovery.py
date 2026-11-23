@@ -52,13 +52,23 @@ class RepeatedWorldRecovery:
             if rigid_witness:
                 deadline = monotonic() + 60.
                 try:
-                    match, rotation, translation = trace.brep_call(
-                        'repeated_rigid_placement_witness', i, j, guarded_rigid,
-                        left, right, self.tolerance, timeout_s=40.,
-                        registered_reexport=not candidate(left,right,self.tolerance))
+                    fixed, _, _ = trace.brep_call(
+                        'repeated_fixed_cells', i, j, guarded_rigid,
+                        left, right, self.tolerance, timeout_s=45., repeated_cells=True)
                 except NativeGeometryFailure as exc:
-                    trace.mark('repeated_rigid_placement_witness','UNVERIFIED',a_id=i,b_id=j,error=str(exc))
-                    match = False
+                    trace.mark('repeated_fixed_cells','UNVERIFIED',a_id=i,b_id=j,error=str(exc))
+                    fixed = False
+                if fixed:
+                    if self.geometry_context is not None:
+                        self.geometry_context.remember_equivalence(self.a[i],self.b[j],self.tolerance)
+                    return True
+                remaining = min(40., deadline - monotonic())
+                if remaining <= 0:
+                    return None
+                match, rotation, translation = trace.brep_call(
+                    'repeated_rigid_placement_witness', i, j, guarded_rigid,
+                    left, right, self.tolerance, timeout_s=remaining,
+                    registered_reexport=not candidate(left,right,self.tolerance))
                 if match:
                     if self.geometry_context is not None:
                         self.geometry_context.remember_equivalence(self.a[i],self.b[j],self.tolerance)
@@ -70,19 +80,8 @@ class RepeatedWorldRecovery:
                     stationary = bool(displacement <= min(1e-6, self.tolerance * .001))
                     trace.mark('repeated_rigid_placement_witness', 'PLACEMENT', a_id=i, b_id=j,
                                displacement_bound_mm=float(displacement), stationary=stationary)
-                    if stationary:
-                        return True
-                remaining = min(20., deadline - monotonic())
-                if remaining <= 0:
-                    return False if match else None
-                cells_match, _, _ = trace.brep_call(
-                    'repeated_fixed_cells', i, j, guarded_rigid,
-                    left, right, self.tolerance, timeout_s=remaining, repeated_cells=True)
-                if cells_match:
-                    if not match and self.geometry_context is not None:
-                        self.geometry_context.remember_equivalence(self.a[i],self.b[j],self.tolerance)
-                    return True
-                return False if match else None
+                    return stationary
+                return None
             return bool(trace.brep_call('repeated_world_local_recovery',i,j,
                 guarded_registered_world,left,right,self.tolerance,timeout_s=75.0))
         except NativeGeometryFailure as exc:

@@ -127,7 +127,7 @@ def test_representative_rigid_witness_requires_original_pose(monkeypatch,rotatio
     policy=RepeatedWorldRecovery(a,b,[0]*3,[1]*3,.01)
     assert policy.recover(0,0,'Timeout original_equivalent_world') is expected
     assert policy.recover(1,1,'Timeout original_equivalent_world') is None
-    assert len(calls)==(1 if expected else 2)
+    assert len(calls)==2
 
 def test_real_rigid_witness_for_stationary_repeated_boxes():
     a=parts(count=3); b=parts(count=3,separate=True)
@@ -148,19 +148,19 @@ def test_shared_material_cells_at_fixed_pose():
         assert not same_material_cells(old,new,.01)
 
 
-def test_rigid_timeout_leaves_time_for_fixed_cells(monkeypatch):
+def test_fixed_cells_timeout_leaves_time_for_rigid_witness(monkeypatch):
     a,b=parts(count=3),parts(count=3)
     calls=[]
     def witness(*args,**kw):
         calls.append(kw)
-        if not kw.get('repeated_cells'):
+        if kw.get('repeated_cells'):
             raise native_guard.NativeGeometryFailure('timeout')
         return True,np.eye(3),np.zeros(3)
     monkeypatch.setattr(native_guard,'guarded_rigid',witness)
     policy=RepeatedWorldRecovery(a,b,[0]*3,[1]*3,.01)
     assert policy.recover(0,0,'Timeout original_equivalent_world')
-    assert len(calls)==2 and calls[0]['timeout_s']==40.
-    assert 0<calls[1]['timeout_s']<=20.
+    assert len(calls)==2 and calls[0]['timeout_s']==45.
+    assert 0<calls[1]['timeout_s']<=40.
 
 
 def test_rigid_motion_shares_shape_proof_without_confirming_pose(monkeypatch):
@@ -179,3 +179,34 @@ def test_cells_worker_proves_only_fixed_placement():
     assert native_guard.guarded_rigid(a[0],b[0],.01,repeated_cells=True)[0]
     moved=_relocate(b[0],np.eye(3),np.array([.2,0.,0.]))
     assert not native_guard.guarded_rigid(a[0],moved,.01,repeated_cells=True)[0]
+
+
+def test_successful_fixed_cells_skips_rigid_search_and_preserves_missing_copy(monkeypatch):
+    import dsac29.compare as engine
+    a=parts(count=54,shift=2000)
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from dsac29.geometry import describe
+    new=describe(BRepBuilderAPI_NurbsConvert(BRepPrimAPI_MakeBox(20,10,7).Shape(),True).Shape(),'new','new')
+    b=[replace(_relocate(new,np.eye(3),part.center-new.center),name=part.name) for part in a]
+    b[-1]=_relocate(b[-1],np.eye(3),np.array([1000.,0.,0.]))
+    # Use the isolated verification path of a large assembly.
+    others=parts(width=15,count=26,shift=50000)
+    a.extend(others)
+    b.extend(others)
+    def timeout(*args,**kw):
+        raise native_guard.NativeGeometryFailure('Timeout validated_solid_symmetric_difference')
+    for name in ('guarded_world_equivalent','guarded_world_reexport','guarded_registered_world'):
+        monkeypatch.setattr(engine,name,timeout)
+    original=native_guard.guarded_rigid
+    calls=[]
+    def fixed(*args,**kw):
+        assert kw.get('repeated_cells')
+        calls.append(1)
+        return original(*args,**kw)
+    monkeypatch.setattr(native_guard,'guarded_rigid',fixed)
+    rows=compare(a,b,revision_only=True,exact_serialization=False)
+    assert Counter(r.status for r in rows)=={'SAME':79,'REMOVED':1,'ADDED':1}
+    assert {r.a_index for r in rows if r.status=='REMOVED'}=={53}
+    assert {r.b_index for r in rows if r.status=='ADDED'}=={53}
+    assert len(calls)==1

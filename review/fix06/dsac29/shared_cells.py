@@ -13,6 +13,7 @@ def same_material_cells(a, b, tolerance):
         partition.AddArgument(solid)
     partition.SetNonDestructive(True)
     partition.SetUseOBB(True)
+    partition.SetRunParallel(True)
     partition.Perform()
     if partition.HasErrors() or partition.HasWarnings():
         return False

@@ -304,7 +304,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             pair['total_s']+=seconds
             if phase in ('revision_common','revision_common_isolated'):
                 pair['first_common_s']+=seconds
-            elif phase!='revision_material_regions':
+            elif phase not in ('revision_material_regions','revision_direct_material_regions'):
                 pair['retry_s']+=seconds
             pair['attempts'].append(dict(phase=phase,seconds=round(seconds,4)))
     if not old_ids or not new_ids:return list(records),{},stat
@@ -562,6 +562,22 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             else:
                 stat['boolean_checks']+=1
                 if progress:progress(f'Zmiany materiału: Common A[{i}] ↔ B[{j}], test {stat["boolean_checks"]}; limit 90 s')
+            # A singleton revision candidate needs all three regions for export.
+            # Compute their intersection once with the common pave filler.
+            # Scores and competing claims still pass through normal assignment.
+            if (cached is None and max(len(a),len(b))>=100 and len(candidates)==1
+                    and i not in repeat_policy.repeated_a and j not in repeat_policy.repeated_b
+                    and _name_eq(ref,b[j]) and abs(ref.volume-b[j].volume)>max(1e-3,ref.volume*1e-7)):
+                try:
+                    partition=measured_brep('revision_direct_material_regions',i,j,calculate,ref,b[j],tolerance)
+                    bind_regions(partition,ref,b[j],tolerance)
+                except (NativeGeometryFailure,RuntimeError,ValueError,OSError) as exc:
+                    pair_costs[i,j]['reasons'].append(str(exc))
+                else:
+                    recovered_regions=partition
+                    common=partition.common_mm3
+                    cached=(ref,b[j],common)
+                    common_cache.save(ref,b[j],common)
             try:
                 if cached is None and guarded_large:
                     from .native_guard import guarded_common
