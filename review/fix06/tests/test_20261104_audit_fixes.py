@@ -35,30 +35,31 @@ def test_registry_streams_brep_digest_without_read_bytes(monkeypatch):
     assert registry.stats['digest_cache_hits']==1
 
 
+def mock_brep_size(monkeypatch, size_mib):
+    from dsac29 import brep_transport
+    writes=[]
+    def write_brep(shape,path):
+        block=b'X'*(1024*1024)
+        with open(path,'wb') as output:
+            for _ in range(size_mib):
+                output.write(block)
+        writes.append(path)
+    monkeypatch.setattr(brep_transport,'write_brep',write_brep)
+    return writes
+
+
 def test_export_fingerprint_allows_large_exact_brep(monkeypatch):
-    from OCP import BRepTools as native
-    class Serializer:
-        @staticmethod
-        def Write_s(shape,path):
-            with open(path,'wb') as output:
-                for _ in range(5):output.write(b'X'*1024*1024)
-            return True
-    monkeypatch.setattr(native,'BRepTools',Serializer)
+    writes=mock_brep_size(monkeypatch,5)
     size,digest=ColoredDocument._serialized_brep_signature(object())
+    assert len(writes)==1
     assert size==5*1024*1024
     assert digest==hashlib.sha256(b'X'*(5*1024*1024)).digest()
 
 
 def test_export_fingerprint_refuses_unbounded_brep(monkeypatch):
-    from OCP import BRepTools as native
-    class Serializer:
-        @staticmethod
-        def Write_s(shape,path):
-            with open(path,'wb') as output:
-                for _ in range(33):output.write(b'X'*1024*1024)
-            return True
-    monkeypatch.setattr(native,'BRepTools',Serializer)
+    writes=mock_brep_size(monkeypatch,33)
     assert ColoredDocument._serialized_brep_signature(object()) is None
+    assert len(writes)==1
 
 
 def test_cli_rejects_nonfinite_inputs_before_touching_files(tmp_path):
