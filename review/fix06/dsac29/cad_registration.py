@@ -412,7 +412,12 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                     frame['search_diagnostics']=state.summary()
                     return frame
     state.checkpoint()
-    if not complete and not winners:
+    # An unfinished search can expose a well-supported proposal for manual
+    # confirmation. A sparse solution cannot stand in for untested rivals.
+    winners.sort(key=lambda w:(-w['votes'],-w['_volume']))
+    if not complete and (not winners or not (
+            (winners[0]['checked_sample_count']>=40 and winners[0]['verified_sample_count']>=32)
+            or len(winners[0]['certified_pairs'])==population)):
         return {'status':'unresolved','reason':'Osiągnięto limit czasu lub hipotez wyrównania; nie przyjęto niejednoznacznego wyniku.',
                 'search_diagnostics':state.summary()}
     if not winners:
@@ -425,7 +430,6 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                 'search_diagnostics':state.summary()}
         return {'status':'unresolved','reason':f'Brak potwierdzonego położenia: najlepsza próbka {best_sample[0]}/{best_sample[1]} B-Rep, {best_sample[2]} kandydatów.',
                 'search_diagnostics':state.summary()}
-    winners.sort(key=lambda w:(-w['votes'],-w['_volume']))
     best=winners[0];t=np.asarray(best['translation_B_to_A_mm']);r=np.asarray(best['rotation_B_to_A'])
     margin=max(1,ceil(.1*best['votes'])) if best['votes']<ceil(.5*population) else 0
     def different(rr,tt):return search.pose_distance(rr,tt,r,t,state.features[1],radius)>tolerance
