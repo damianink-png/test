@@ -1,11 +1,13 @@
 """Verify fixed placement through one shared, validated OCCT partition."""
 from OCP.BOPAlgo import BOPAlgo_PaveFiller
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut
-from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
+from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy, BRepBuilderAPI_Transform
 from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.Message import Message_Fail, Message_Warning
 from OCP.Precision import Precision
 from OCP.ShapeFix import ShapeFix_ShapeTolerance
 from OCP.TopAbs import TopAbs_SOLID
+from OCP.TopLoc import TopLoc_Location
 from OCP.TopTools import TopTools_ListOfShape
 
 from .brep_safety import is_valid, topology_tolerances
@@ -54,6 +56,37 @@ def _bounded_source(shape, stored, limit, progress):
     return bounded
 
 
+def _intersections(left, right, fuzzy, progress, *, parallel):
+    arguments = TopTools_ListOfShape()
+    arguments.Append(left)
+    arguments.Append(right)
+    filler = BOPAlgo_PaveFiller()
+    filler.SetArguments(arguments)
+    filler.SetNonDestructive(True)
+    filler.SetRunParallel(parallel)
+    filler.SetUseOBB(True)
+    filler.SetFuzzyValue(fuzzy)
+    filler.Perform()
+    if filler.HasErrors() or filler.HasWarnings():
+        report = filler.GetReport()
+        for gravity, level in ((Message_Fail, 'error'), (Message_Warning, 'warning')):
+            codes = dict.fromkeys(alert.GetMessageKey() for alert in report.GetAlerts(gravity))
+            if codes:
+                progress(f'fixed_partition_{level} ' + ', '.join(codes))
+        return None
+    return filler
+
+
+def _bake_location(shape):
+    # Copy the same world geometry into the surfaces/curves themselves so
+    # intersection does not depend on a chain of STEP assembly locations.
+    if shape.Location().IsIdentity():
+        return shape
+    return BRepBuilderAPI_Transform(
+        shape.Located(TopLoc_Location()), shape.Location().Transformation(), True, False
+    ).Shape()
+
+
 def same_partition(left, right, tolerance, progress):
     """Require two near-empty Cuts and a balanced Common in the original pose."""
     progress('fixed_partition_validate_sources')
@@ -87,20 +120,22 @@ def same_partition(left, right, tolerance, progress):
     if right is None:
         return False
 
-    arguments = TopTools_ListOfShape()
-    arguments.Append(left)
-    arguments.Append(right)
-    filler = BOPAlgo_PaveFiller()
-    filler.SetArguments(arguments)
-    filler.SetNonDestructive(True)
-    filler.SetRunParallel(True)
-    filler.SetUseOBB(True)
-    filler.SetFuzzyValue(fuzzy)
     progress('fixed_partition_intersections')
-    filler.Perform()
-    if filler.HasErrors() or filler.HasWarnings():
-        progress('fixed_partition_unverified_intersections')
-        return False
+    filler = _intersections(left, right, fuzzy, progress, parallel=True)
+    if filler is None:
+        progress('fixed_partition_retry_baked')
+        left, right = _bake_location(left), _bake_location(right)
+        fuzzy = minimum_fuzzy
+        for shape in (left, right):
+            if (not is_valid(shape)
+                    or max(topology_tolerances(shape).values()) > tolerance - fuzzy):
+                progress('fixed_partition_retry_source_unverified')
+                return False
+        progress('fixed_partition_retry_intersections')
+        filler = _intersections(left, right, fuzzy, progress, parallel=False)
+        if filler is None:
+            progress('fixed_partition_unverified_intersections')
+            return False
 
     residual_limit = tolerance**3
     residuals = []

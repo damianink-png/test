@@ -331,3 +331,53 @@ def test_small_repeat_family_keeps_short_partition_deadline(monkeypatch):
     policy = RepeatedWorldRecovery(a, b, [0]*8, [1]*8, .01)
     assert policy.verify_alternative(0, 0)
     assert calls == [30.]
+
+
+@pytest.mark.parametrize('local_shift,expected', [(0., True), (.2, False)])
+def test_fixed_partition_retries_a_native_warning_at_same_pose(monkeypatch, local_shift, expected):
+    from types import SimpleNamespace
+
+    from OCP.Message import Message_Warning
+    from OCP.Precision import Precision
+    from dsac29 import fixed_pose_partition as partition
+    from dsac29.geometry import _precise_world_bounds
+
+    a = parts(count=1, shift=2000)[0]
+    b = parts(count=1, shift=2000+local_shift, separate=True)[0]
+    native_filler = partition.BOPAlgo_PaveFiller
+    run_intersections = partition._intersections
+    calls = []
+
+    class WarningFiller:
+        def __init__(self):
+            self.options = native_filler()
+
+        def __getattr__(self, name):
+            return getattr(self.options, name)
+
+        def Perform(self):
+            pass
+
+        def HasWarnings(self):
+            return True
+
+        def GetReport(self):
+            alert = SimpleNamespace(GetMessageKey=lambda: 'BOPAlgo_AlertBadPositioning')
+            return SimpleNamespace(GetAlerts=lambda level: [alert] if level == Message_Warning else [])
+
+    def intersections(left, right, fuzzy, progress, *, parallel):
+        calls.append((parallel, fuzzy))
+        if not parallel:
+            assert left.Location().IsIdentity() and right.Location().IsIdentity()
+            np.testing.assert_allclose(_precise_world_bounds(left), _precise_world_bounds(a.shape))
+            np.testing.assert_allclose(_precise_world_bounds(right), _precise_world_bounds(b.shape))
+        return run_intersections(left, right, fuzzy, progress, parallel=parallel)
+
+    fillers = iter((WarningFiller(), native_filler()))
+    monkeypatch.setattr(partition, 'BOPAlgo_PaveFiller', lambda: next(fillers))
+    monkeypatch.setattr(partition, '_intersections', intersections)
+    phases = []
+    assert partition.same_partition(a.shape, b.shape, .01, phases.append) is expected
+    assert calls == [(True, .0001), (False, Precision.Confusion_s())]
+    assert 'fixed_partition_warning BOPAlgo_AlertBadPositioning' in phases
+    assert not a.shape.Location().IsIdentity()

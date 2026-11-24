@@ -814,11 +814,17 @@ def test_common_history_warm_moved_corrupt_and_report(tmp_path,monkeypatch):
     assert run()==(0,1)
 
 
-def test_large_assembly_single_revision_uses_one_partition(monkeypatch):
-    # All other occurrences were already classified before material matching.
+@pytest.mark.parametrize('name_b', ['04244017_AF0', 'C04244017'])
+def test_large_assembly_single_revision_uses_one_partition(name_b):
+    # Independent SAME records establish the C-prefix export convention.
+    a = [part(0,10,'04244017')]
+    b = [part(0,11,name_b)]
+    for i, draw in enumerate(('04321964', '04321965', '04321966'), start=1):
+        a.append(part(100*i,5,draw))
+        b.append(part(100*i,5,'C'+draw))
     filler=part(500,5,'unchanged')
-    a=[part(0,10,'04244017')]+[filler]*99
-    b=[part(0,11,'04244017_AF0')]+[filler]*99
+    a.extend([filler]*96)
+    b.extend([filler]*96)
     rows=records(a[:1],b[:1])+[Record(i,i,'SAME','proof') for i in range(1,100)]
     result,regions,stats=revision_overlap.merge_material_revisions(a,b,rows)
     assert sum(r.status=='CHANGED' for r in result)==1

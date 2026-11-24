@@ -594,7 +594,9 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             # Scores and competing claims still pass through normal assignment.
             if (cached is None and max(len(a),len(b))>=100 and len(candidates)==1
                     and i not in repeat_policy.repeated_a and j not in repeat_policy.repeated_b
-                    and _name_eq(ref,b[j]) and abs(ref.volume-b[j].volume)>max(1e-3,ref.volume*1e-7)):
+                    and (_name_eq(ref,b[j])
+                         or bool(repeat_policy.keys_a[i] and repeat_policy.keys_a[i]==repeat_policy.keys_b[j]))
+                    and abs(ref.volume-b[j].volume)>max(1e-3,ref.volume*1e-7)):
                 try:
                     partition=measured_brep('revision_direct_material_regions',i,j,calculate,ref,b[j],tolerance)
                     bind_regions(partition,ref,b[j],tolerance)
