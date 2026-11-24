@@ -73,13 +73,16 @@ def test_real_analytic_and_nurbs_pair_keeps_local_motion_visible():
 
 
 
-def test_exhausted_solid_difference_is_not_replayed_on_other_copies(monkeypatch):
+@pytest.mark.parametrize("alternate_proves", [False, True])
+def test_exhausted_solid_difference_has_one_alternate_copy(monkeypatch, alternate_proves):
     import dsac29.compare as engine
     a=parts(count=120,shift=2000);b=parts(count=120,shift=2000)
     b[-1]=_relocate(b[-1],np.eye(3),np.array([1000.,0.,0.]))
     calls=[]
     def timeout(*args,**kw):
         calls.append(1)
+        if len(calls)==2 and alternate_proves:
+            return True
         raise native_guard.NativeGeometryFailure(
             'Timeout odizolowanej weryfikacji STEP; etap: validated_solid_symmetric_difference')
     def forbidden(*args,**kw):raise AssertionError('Do not restart exhausted solid subtraction')
@@ -89,8 +92,9 @@ def test_exhausted_solid_difference_is_not_replayed_on_other_copies(monkeypatch)
     monkeypatch.setattr(native_guard,'guarded_registered_world',forbidden)
     monkeypatch.setattr(native_guard,'guarded_rigid',lambda *args,**kw:(False,None,None))
     rows=compare(a,b,revision_only=True,exact_serialization=False)
-    assert Counter(r.status for r in rows)=={'UNCERTAIN':238,'REMOVED':1,'ADDED':1}
-    assert len(calls)==1
+    expected={'SAME':119} if alternate_proves else {'UNCERTAIN':238}
+    assert Counter(r.status for r in rows)==dict(expected,REMOVED=1,ADDED=1)
+    assert len(calls)==2
 
 
 def test_failed_relative_pose_does_not_block_an_independent_pose(monkeypatch):

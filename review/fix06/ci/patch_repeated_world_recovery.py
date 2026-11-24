@@ -20,6 +20,21 @@ new='''                    except NativeGeometryFailure as exc:
 s=s[:start]+new+s[end:]
 s=s.replace("if world_probe_failures[family]>=2:",
             "if world_probe_failures[family]>=2 or (i,j) in repeated_world_recovery.exhausted_pairs:")
+# Allow one independent copy after the first expensive proof failed.
+# Keep the existing per-pose guard once that bounded alternative is consumed.
+anchor="for aa,bb in world_probe_pairs.get((gs,gt),()))):"
+assert s.count(anchor)==1
+s=s.replace(anchor,"""for aa,bb in world_probe_pairs.get((gs,gt),()))
+                      and not (retry_pair := repeated_world_recovery.alternative(
+                          i,j,world_probe_pairs[(gs,gt)]))):""")
+anchor="                gs, gt = group_a[i], group_b[j]"
+assert s.count(anchor)==1
+s=s.replace(anchor,anchor+"\n                retry_pair = None")
+anchor="                    except NativeGeometryFailure as exc:"
+i=s.index(anchor,s.index("trace.mark('world_matching_pair','BEGIN'"))
+s=s[:i]+"""                        if retry_pair == (i,j) and not same:
+                            raise NativeGeometryFailure('Druga para reprezentatywna: brak dowodu B-Rep')
+"""+s[i:]
 compile(s,str(p),'exec');p.write_text(s)
 print('REPEATED_FIXED_WORLD_RECOVERY_PASS')
 

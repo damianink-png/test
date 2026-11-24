@@ -40,7 +40,7 @@ class FrameProofCache:
       or any(p is not old or not p.shape.IsEqual(shape) for p,old,shape in zip(b,bb,sb))):
    raise ValueError('Frame proof cache belongs to a different placement or tolerance')
 
-def _select_diverse_proof_pairs(pairs, parts, limit):
+def _select_diverse_proof_pairs(pairs, parts, limit, represented=()):
  """Choose independent geometry witnesses, not evenly spaced repeated screws.
 
  A centroid/descriptor match is a proposal only. This function neither
@@ -59,13 +59,12 @@ def _select_diverse_proof_pairs(pairs, parts, limit):
   return value if np.isfinite(value) else 0.
  ranked=sorted(range(total),key=lambda k:(
   frequency[descriptors[k]],-volume(k),pairs[k]))
- selected=[];used=set();seen_keys=set()
- # Reserve half the proof budget for geometrically DISTINCT definitions.
- # The old uniform index sample could check 24 copies of one repeated part.
+ selected=[];used=set();seen_keys=set(represented)
+ # Give each unseen definition a place before spending the sample on copies.
  for k in ranked:
   if descriptors[k] in seen_keys:continue
   selected.append(k);used.add(k);seen_keys.add(descriptors[k])
-  if len(selected)>=max(1,n//2):break
+  if len(selected)>=n:break
  centers=np.asarray([parts[i].center for i,j in pairs],dtype=float)
  distances=np.full(total,np.inf)
  def include(k):
@@ -81,7 +80,7 @@ def _select_diverse_proof_pairs(pairs, parts, limit):
 
 
 
-def _select_retry_proof_pairs(pairs, parts, limit, deferred):
+def _select_retry_proof_pairs(pairs, parts, limit, deferred, represented=()):
  """Keep sample size/diversity; try other witnesses before previous timeouts.
 
  A deferred pair is not rejected or proven. If alternatives are exhausted it
@@ -90,10 +89,11 @@ def _select_retry_proof_pairs(pairs, parts, limit, deferred):
  """
  n=min(max(0,int(limit)),len(pairs))
  fresh=[pair for pair in pairs if pair not in deferred]
- selection=_select_diverse_proof_pairs(fresh,parts,n)
+ selection=_select_diverse_proof_pairs(fresh,parts,n,represented)
  if len(selection)<n:
   selection.extend(_select_diverse_proof_pairs(
-      [pair for pair in pairs if pair in deferred],parts,n-len(selection)))
+      [pair for pair in pairs if pair in deferred],parts,n-len(selection),
+      set(represented)|{signature(parts[i]) for i,j in selection}))
  return selection
 
 
@@ -312,7 +312,8 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
  selection=[pair for pair in previous if pair in available][:n]
  selected=set(selection)
  selection.extend(_select_retry_proof_pairs(
-     [pair for pair in pairs if pair not in selected],a,n-len(selection),deferred))
+     [pair for pair in pairs if pair not in selected],a,n-len(selection),deferred,
+     {signature(a[i]) for i,j in selection}))
  if proof_cache is not None:proof_cache.sample_pairs=list(selection)
  confirmed=0
  for number,(i,j) in enumerate(selection,1):

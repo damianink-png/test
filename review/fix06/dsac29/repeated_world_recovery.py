@@ -18,6 +18,19 @@ class RepeatedWorldRecovery:
         self.tolerance=tolerance
         self.attempts=set()
         self.exhausted_pairs=set()
+        self.alternatives=set()
+
+    def alternative(self,i,j,failed):
+        family=(self.groups_a[i],self.groups_b[j])
+        if family in self.alternatives or not failed:
+            return None
+        from .compare import _relative_location_is_same
+        for aa,bb in failed:
+            if ((aa,bb) in self.exhausted_pairs and i!=aa and j!=bb
+                    and _relative_location_is_same(self.a[i],self.a[aa],self.b[j],self.b[bb],self.tolerance)):
+                self.alternatives.add(family)
+                return (i,j)
+        return None
 
     def recover(self,i,j,error,progress=None):
         from .geometry import candidate

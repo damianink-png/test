@@ -440,6 +440,7 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
     x_index=_XIntervalIndex(bb)
     stat['spatial_index_build_seconds']=round(perf_counter()-index_started,5)
     stat['spatial_candidates_scanned']=0
+    stat['impossible_overlap_skipped']=0
     # Fingerprint is only a candidate-order accelerator, never a veto.
     # It computes no geometry: volume/area/central inertia are already loaded.
     from .fingerprint_priority import FingerprintPriority
@@ -509,7 +510,10 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             common_limit=SAME_NAME_MIN if same_name else OTHER_NAME_MIN
             if min(ref.volume,other.volume)/max(ref.volume,other.volume)<common_limit:continue
             boxvol=_bbox_intersect(bounds,bb[j])
-            if boxvol+max(1e-3,tolerance**3)<common_limit*max(ref.volume,other.volume):continue
+            upper_common=min(ref.volume,other.volume,boxvol+max(1e-3,tolerance**3))
+            if _score(upper_common,ref,other,same_name) is None:
+                stat['impossible_overlap_skipped']+=1
+                continue
             bbox_larger=max(float(np.prod(np.maximum(bounds[3:]-bounds[:3],0))),
                             float(np.prod(np.maximum(bb[j][3:]-bb[j][:3],0))),1e-6)
             distance=np.linalg.norm(ref.center-other.center)/max(1.,sqrt(sum(d*d for d in ref.bbox)))
@@ -540,10 +544,12 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             # another native operation, even if the scan reached MAX_CHECKS.
             cached=common_cache.find(ref,b[j])
             evidence=None
+            recovered_regions=None
             if cached is None and common_history is not None:
                 saved=common_history.load(ref,b[j],tolerance)
                 if saved is not None:
-                    common,evidence=saved
+                    recovered_regions=saved
+                    common=saved.common_mm3
                     cached=(ref,b[j],common)
                     history_hits.add((i,j))
                     stat['persistent_common_hits']+=1
@@ -554,7 +560,6 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
                 mark_failure(i,j,'Nie wykonano testu: przekroczony limit liczby operacji',code='BUDGET_EXCEEDED')
                 continue
             shape=None
-            recovered_regions=None
             terminal_partition_failure=False
             if cached is not None:
                 common=cached[2]

@@ -796,15 +796,18 @@ def test_common_history_warm_moved_corrupt_and_report(tmp_path,monkeypatch):
             rows,regions,stats=revision_overlap.merge_material_revisions(
                 old,new,records(old,new),tol,common_history=history)
         assert [r.status for r in rows]==['CHANGED'] and len(regions)==1
-        entry,=stats['slowest_common_pairs']
-        assert entry['outcome']=='CHANGED' and entry['old_name']=='part'
-        assert entry['attempts'] and entry['total_s']>=entry['first_common_s']
+        if stats['persistent_common_hits']:
+            assert not stats['brep_calls_by_phase']
+        else:
+            entry,=stats['slowest_common_pairs']
+            assert entry['outcome']=='CHANGED' and entry['old_name']=='part'
+            assert entry['attempts'] and entry['total_s']>=entry['first_common_s']
         return stats['persistent_common_hits'],stats['boolean_checks']
     assert run()==(0,1)
     assert run()==(1,0)
     assert run(.2)==(0,1)
     assert run(tol=.005)==(0,1)
-    db=sqlite3.connect(tmp_path/'common-v1.sqlite')
+    db=sqlite3.connect(tmp_path/'common-v2.sqlite')
     with db:
         db.execute("UPDATE proofs SET digest=x'00'")
     db.close()
@@ -821,3 +824,15 @@ def test_large_assembly_single_revision_uses_one_partition(monkeypatch):
     assert sum(r.status=='CHANGED' for r in result)==1
     assert len(regions)==1
     assert stats['brep_calls_by_phase']=={'revision_direct_material_regions':1}
+
+
+def test_impossible_overlap_skips_native_common(monkeypatch):
+    from dsac29 import native_guard
+    a=[part(0,10,'part')]
+    b=[part(2.15,10,'part')]
+    def unexpected(*args,**kwargs):
+        pytest.fail('The bounding boxes cap overlap below the required 80%')
+    monkeypatch.setattr(native_guard,'guarded_common',unexpected)
+    result,regions,stats=revision_overlap.merge_material_revisions(a,b,records(a,b))
+    assert {row.status for row in result}=={'REMOVED','ADDED'}
+    assert not regions and stats['impossible_overlap_skipped']==1
