@@ -101,6 +101,13 @@ with sync_playwright() as p:
  page.get_by_role('button',name='Przerwij',exact=True).click()
  page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='surface-pose'&&c.args.decision==='cancel')")
  page.get_by_role('alertdialog').wait_for(state='hidden')
+ # A B-Rep proposal retained when the search budget expires can be applied.
+ page.evaluate("window.__job.question={token:'budget-pose',unresolved:false,search_budget_exhausted:true,translation_mm:[-130,-280,-410],reason:'42/48 par B-Rep'}")
+ page.get_by_role('alertdialog').wait_for()
+ assert '-410.0000' in page.locator('.translation').inner_text()
+ page.get_by_role('button',name='Wyrównaj modele',exact=True).click()
+ page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='budget-pose'&&c.args.decision==='align')")
+ page.get_by_role('alertdialog').wait_for(state='hidden')
  # Material uncertainty must never require a user decision or show the old modal.
  page.evaluate("window.__job.question={token:'material-case',unresolved:false,material_unverified:true,translation_mm:[0,0,0],reason:'INVALID_BREP_AFTER_REPAIR',unverified_A:2,unverified_B:2}")
  page.wait_for_function("window.__calls.some(c=>c.cmd==='answer_question'&&c.args.token==='material-case'&&c.args.decision==='review')",timeout=5000)

@@ -110,6 +110,8 @@ def main(argv=None):
                     'unrelated':proposal.get('status')=='unrelated',
                     'reason':proposal.get('reason',''),
                     'search_failed':proposal.get('search_failed',False),
+                    'search_budget_exhausted':(proposal.get('status')=='registered'
+                                               and bool(proposal.get('search_budget_exhausted'))),
                     'search_diagnostics':proposal.get('search_diagnostics',{}),
                     'material_unverified':proposal.get('status')=='material_unverified',
                     'unverified_A':int(proposal.get('unverified_A',0)),
