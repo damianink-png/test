@@ -1,6 +1,9 @@
 """Verify fixed placement through one shared, validated OCCT partition."""
 from OCP.BOPAlgo import BOPAlgo_PaveFiller
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut
+from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
+from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.ShapeFix import ShapeFix_ShapeTolerance
 from OCP.TopAbs import TopAbs_SOLID
 from OCP.TopTools import TopTools_ListOfShape
 
@@ -31,21 +34,49 @@ def _operation(kind, filler, left, right, fuzzy):
         del operation
 
 
+def _bounded_source(shape, limit, progress):
+    stored = max(topology_tolerances(shape).values())
+    if stored <= limit:
+        return shape
+    progress(f'fixed_partition_limit_stored_tolerances {stored:.9g} mm to {limit:.9g} mm')
+    # LimitTolerance changes only subshape tolerances on a detached copy.
+    # The exact analyzer checks the unchanged curves, surfaces and topology
+    # with the new limits before the copy can be used in a Boolean.
+    bounded = BRepBuilderAPI_Copy(shape, True, False).Shape()
+    if bounded.IsNull() or bounded.IsPartner(shape):
+        return None
+    ShapeFix_ShapeTolerance().LimitTolerance(bounded, 0., limit)
+    if (max(topology_tolerances(bounded).values()) > limit
+            or not BRepCheck_Analyzer(bounded, True, False, True).IsValid()):
+        progress('fixed_partition_tightened_source_unverified')
+        return None
+    progress('fixed_partition_tightened_source_valid')
+    return bounded
+
+
 def same_partition(left, right, tolerance, progress):
-    """Require two near-empty Cuts and a balanced Common on original solids."""
+    """Require two near-empty Cuts and a balanced Common in the original pose."""
     progress('fixed_partition_validate_sources')
     fuzzy = max(tolerance / 100, 1e-7)
     for shape in (left, right):
         if shape.ShapeType() != TopAbs_SOLID or not is_valid(shape):
             progress('fixed_partition_invalid_source')
             return False
-        if max(topology_tolerances(shape).values()) + fuzzy > tolerance:
-            progress('fixed_partition_source_tolerance')
-            return False
 
     left_volume, right_volume = volume(left), volume(right)
     if min(left_volume, right_volume) <= 0:
         progress('fixed_partition_invalid_source_volume')
+        return False
+
+    limit = tolerance - fuzzy
+    if limit <= 0:
+        progress('fixed_partition_source_tolerance')
+        return False
+    left = _bounded_source(left, limit, progress)
+    if left is None:
+        return False
+    right = _bounded_source(right, limit, progress)
+    if right is None:
         return False
 
     arguments = TopTools_ListOfShape()

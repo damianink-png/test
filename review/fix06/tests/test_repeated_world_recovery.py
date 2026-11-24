@@ -234,3 +234,35 @@ def test_fixed_partition_worker_accepts_reexport_and_rejects_changes():
     assert not native_guard.guarded_world_reexport(a,moved,.01,**kw)
     modified=describe(BRepPrimAPI_MakeBox(20.,10.,6.9).Shape(),'modified','modified')
     assert not native_guard.guarded_world_reexport(a,modified,.01,**kw)
+
+
+def test_fixed_partition_rechecks_inflated_tolerances_without_changing_source():
+    from OCP.BRep import BRep_Builder, BRep_Tool
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from OCP.ShapeFix import ShapeFix_ShapeTolerance
+    from OCP.TopAbs import TopAbs_VERTEX
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    from dsac29.brep_safety import is_valid, topology_tolerances
+    from dsac29.fixed_pose_partition import same_partition
+
+    left = BRepPrimAPI_MakeBox(20., 10., 7.).Shape()
+    right = BRepPrimAPI_MakeBox(20., 10., 7.).Shape()
+    ShapeFix_ShapeTolerance().SetTolerance(right, .1, TopAbs_VERTEX)
+    original_tolerances = topology_tolerances(right)
+    phases = []
+    assert same_partition(left, right, .01, phases.append)
+    assert 'fixed_partition_tightened_source_valid' in phases
+    assert topology_tolerances(right) == original_tolerances
+
+    # A geometric inconsistency accepted at 0.1 mm must fail the same check.
+    vertex = TopoDS.Vertex_s(TopExp_Explorer(right, TopAbs_VERTEX).Current())
+    point = BRep_Tool.Pnt_s(vertex)
+    point.SetX(point.X() + .04)
+    BRep_Builder().UpdateVertex(vertex, point, .1)
+    assert is_valid(right)
+    phases.clear()
+    assert not same_partition(left, right, .01, phases.append)
+    assert phases[-1] == 'fixed_partition_tightened_source_unverified'
+    assert 'fixed_partition_intersections' not in phases
+    assert topology_tolerances(right) == original_tolerances

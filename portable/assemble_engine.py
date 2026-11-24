@@ -36,7 +36,7 @@ def assemble(target):
         raise RuntimeError('CAD source syntax failed')
     info_path=target/'build_info.json'
     info=json.loads(info_path.read_text(encoding='utf-8-sig'))
-    info.update(revision='Portable 0.6.52 — równoległa weryfikacja położenia powtórzeń 2026-11-24',
+    info.update(revision='Portable 0.6.53 — weryfikacja powtórzeń z tolerancjami STEP 2026-11-24',
                 source_commit=os.environ.get('GITHUB_SHA','local_uncommitted'),
                 source_assembly='portable/prepare_source.py + portable/assemble_engine.py')
     info_path.write_text(json.dumps(info,indent=2,ensure_ascii=False),encoding='utf-8')
