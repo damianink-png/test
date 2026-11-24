@@ -836,3 +836,23 @@ def test_impossible_overlap_skips_native_common(monkeypatch):
     result,regions,stats=revision_overlap.merge_material_revisions(a,b,records(a,b))
     assert {row.status for row in result}=={'REMOVED','ADDED'}
     assert not regions and stats['impossible_overlap_skipped']==1
+
+
+def test_disjoint_removed_part_stays_out_of_population_work(monkeypatch):
+    from dsac29 import repeated_geometry
+    filler=part(500,5,'unchanged')
+    a=[part(0,10,'04244017'),part(200,15,'removed')]+[filler]*98
+    b=[part(0,11,'04244017_AF0')]+[filler]*99
+    rows=records(a[:2],b[:1])+[Record(i,i-1,'SAME','proof') for i in range(2,100)]
+    rows.append(Record(None,99,'ADDED',''))
+    original=repeated_geometry.geometry_populations
+    scopes=[]
+    def populations(parts,*args,**kw):
+        scopes.append((parts,kw['relevant_ids']))
+        return original(parts,*args,**kw)
+    monkeypatch.setattr(repeated_geometry,'geometry_populations',populations)
+    result,_,stats=revision_overlap.merge_material_revisions(a,b,rows)
+    assert [(r.a_index,r.b_index) for r in result if r.status=='CHANGED']==[(0,0)]
+    assert any(r.a_index==1 and r.status=='REMOVED' for r in result)
+    assert all(1 not in scope for parts,scope in scopes if parts is a)
+    assert stats['disjoint_operands_skipped']>=1

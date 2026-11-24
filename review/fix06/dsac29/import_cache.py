@@ -171,7 +171,7 @@ def _prune(root, limit=MAX_CACHE_BYTES):
         pass
 
 
-def load_step_persistent(path, max_solids=20000, progress=None, diagnostics=None, precomputed_sha256=None, source_stat=None):
+def load_step_persistent(path, max_solids=20000, progress=None, diagnostics=None, precomputed_sha256=None, source_stat=None, *, partial_mass=False):
     """Drop-in serial importer; exact fallback on cache miss or corruption."""
     key = cache_key(path, source_sha256=precomputed_sha256, source_stat=source_stat)
     shapes = try_load(path, max_solids, progress, diagnostics, precomputed=key)
@@ -179,8 +179,9 @@ def load_step_persistent(path, max_solids=20000, progress=None, diagnostics=None
         return shapes
     from .step_io import load_step
     actual_diagnostics = diagnostics if diagnostics is not None else {}
-    shapes = load_step(path, max_solids=max_solids, progress=progress, diagnostics=actual_diagnostics)
-    if key:
+    options = {'partial_mass': True} if partial_mass else {}
+    shapes = load_step(path, max_solids=max_solids, progress=progress, diagnostics=actual_diagnostics, **options)
+    if key and not actual_diagnostics.get('invalid_mass_solids'):
         publish(path, shapes, actual_diagnostics, precomputed=key)
         if diagnostics is not None:
             diagnostics['persistent_cache'] = 'MISS'

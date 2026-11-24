@@ -169,3 +169,42 @@ def test_mass_worker_preserves_calculated_summary_when_optional_html_fails(tmp_p
     assert result['materials_editable'] is False
     assert (folder/'MASY_CZESCI.csv').exists()
     assert (folder/'UWAGI_RAPORT_MASY.txt').exists()
+
+
+def test_mass_report_continues_after_one_unmeasurable_solid(tmp_path,monkeypatch):
+    from pathlib import Path
+    import json
+    import pytest
+    pytest.importorskip('OCP')
+    pytest.importorskip('dsac29.process_lifetime')
+    from dsac29.geometry import DescriptionCache
+    from dsac29.import_validation import InvalidStepSolid
+    from dsac29.mass_batch import analyze_many
+    from dsac29.step_io import load_step
+
+    sample=Path(__file__).resolve().parents[1]/'samples'/'MODEL_A.step'
+    original=DescriptionCache.describe
+    first_name=load_step(str(sample))[0].name
+    def describe(self,shape,name,path,source):
+        if name==first_name:
+            raise ValueError('Bryla ma zerowa/ujemna objetosc')
+        return original(self,shape,name,path,source)
+
+    def zero_volume(shape,path):
+        raise InvalidStepSolid(f'{path}\nBryła ma zerową objętość (0 mm³). Napraw tę część.')
+
+    monkeypatch.setattr(DescriptionCache,'describe',describe)
+    monkeypatch.setattr('dsac29.import_validation.orient_positive_solid',zero_volume)
+    with pytest.raises(InvalidStepSolid):
+        load_step(str(sample))
+    folder,summary=analyze_many([str(sample)],tmp_path)
+    assert summary['analysis_complete'] is False
+    assert summary['invalid_mass_solid_count']==1
+    assert summary['liczba_bryl']==3 and summary['masa_calosci_kg']>0
+    detail=next(folder.glob('MODELE/*/POMINIETE_BRYLY_MASY.json'))
+    excluded,=json.loads(detail.read_text(encoding='utf-8'))
+    assert first_name in excluded['sciezka']
+    assert '0 mm³' in excluded['powod']
+    assert enhance_mass_html(folder,7850)
+    assert 'Wynik częściowy' in (folder/'RAPORT_MASY.html').read_text(encoding='utf-8')
+    assert 'Wynik częściowy' in (detail.parent/'RAPORT_MASY.html').read_text(encoding='utf-8')

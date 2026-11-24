@@ -271,8 +271,6 @@ def merge_material_revisions(a,b,records,tolerance=0.01,progress=None,cancelled=
 def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,cancelled=None,geometry_context=None,recover_failures=False,common_history=None):
     old_ids={r.a_index for r in records if r.status=='REMOVED' and r.a_index is not None and r.b_index is None}
     new_ids={r.b_index for r in records if r.status=='ADDED' and r.b_index is not None and r.a_index is None}
-    original_old_ids=set(old_ids)
-    original_new_ids=set(new_ids)
     stat=dict(candidate_pairs=0,boolean_checks=0,accepted=0,ambiguous=0,invalid_boolean=0,
               budget_exceeded=False,rigid_pairs_excluded=0,low_overlap_rejected_pairs=0,
               intermediate_overlap_reviewed_pairs=0,mutual_overlap_candidate_pairs=0,
@@ -309,6 +307,30 @@ def _merge_material_revisions_strict(a,b,records,tolerance=0.01,progress=None,ca
             pair['attempts'].append(dict(phase=phase,seconds=round(seconds,4)))
     if not old_ids or not new_ids:return list(records),{},stat
     if progress:progress(f'Zmiany materiału: przygotowanie Common — {len(old_ids)} starych i {len(new_ids)} nowych pozycji; sprawdzam wystąpienia w całych rewizjach.')
+    if max(len(a),len(b))>=100:
+        from .world_bounds import WorldBoundsCache
+        bounds=WorldBoundsCache.shared(geometry_context)
+        try:
+            old_bounds={i:bounds.broad_bounds(a[i]) for i in old_ids}
+            new_bounds={j:bounds.broad_bounds(b[j]) for j in new_ids}
+        except (ValueError, RuntimeError):
+            pass  # Preserve the regular path when a bound is unavailable.
+        else:
+            spatial=_XIntervalIndex(new_bounds)
+            possible_old,possible_new=set(),set()
+            for i, old_box in old_bounds.items():
+                if cancelled and cancelled():raise InterruptedError('Anulowano porównywanie rewizji')
+                for j in spatial.candidates(old_box,tolerance):
+                    new_box=new_bounds[j]
+                    if (np.all(old_box[4:]+tolerance>=new_box[1:3])
+                            and np.all(new_box[4:]+tolerance>=old_box[1:3])):
+                        possible_old.add(i)
+                        possible_new.add(j)
+            stat['disjoint_operands_skipped']=len(old_ids)+len(new_ids)-len(possible_old)-len(possible_new)
+            old_ids,new_ids=possible_old,possible_new
+            if not old_ids or not new_ids:return list(records),{},stat
+    original_old_ids=set(old_ids)
+    original_new_ids=set(new_ids)
     # A removed occurrence of a repeated, still-present definition is not
     # automatically a material revision. Only exclude it when the existing
     # assembly match independently proves the SAME rigid geometry and name.

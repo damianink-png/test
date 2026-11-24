@@ -113,7 +113,7 @@ def inspect_step_colors(path: str) -> dict:
         raise RuntimeError('Po ponownym wczytaniu STEP nie wykryto kolorów przypisanych do brył/powierzchni')
     return result
 
-def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=None) -> list[SolidInfo]:
+def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=None, *, partial_mass=False) -> list[SolidInfo]:
     if not 1<=max_solids<=50000:raise ValueError('Limit brył musi wynosić od 1 do 50000')
     p=Path(path)
     if not p.is_file(): raise FileNotFoundError(str(path))
@@ -148,6 +148,7 @@ def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=Non
     # this immutable import; persist the namespace with its exact B-Rep cache.
     from uuid import uuid4
     source_key=str(p.resolve())+'#'+uuid4().hex
+    invalid_mass_solids=[]
     outside_counts={}
     shell_definitions={}
     def label_entry(label):
@@ -175,14 +176,23 @@ def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=Non
                 if progress:progress('Import: rozpoznano zamkniętą powłokę jako bryłę: '+hierarchy)
 
         for k,s in enumerate(solids,1):
-            if len(out)>=max_solids: raise ValueError(f'Limit bezpieczenstwa: {max_solids} bryl na plik')
+            if len(out)+len(invalid_mass_solids)>=max_solids: raise ValueError(f'Limit bezpieczenstwa: {max_solids} bryl na plik')
             name2=name if len(solids)==1 else f'{name}#{k}'
             try:
                 info=description_cache.describe(s,name2,hierarchy+'/'+name2,str(p))
             except ValueError as exc:
                 if 'zerowa/ujemna objetosc' not in str(exc):raise
-                from .import_validation import orient_positive_solid
-                corrected=orient_positive_solid(s,hierarchy+'/'+name2)
+                from .import_validation import InvalidStepSolid, orient_positive_solid
+                solid_path=hierarchy+'/'+name2
+                try:
+                    corrected=orient_positive_solid(s,solid_path)
+                except InvalidStepSolid as error:
+                    if not partial_mass:
+                        raise
+                    invalid_mass_solids.append({'sciezka':solid_path,
+                                                'powod':str(error).splitlines()[-1].split('. Napraw',1)[0]})
+                    if progress:progress('Masa częściowa: nie udało się obliczyć objętości '+solid_path)
+                    continue
                 info=description_cache.describe(corrected,name2,hierarchy+'/'+name2,str(p))
                 stats['reversed_solid_orientations']+=1
                 if progress:progress('Skorygowano orientację zamkniętej bryły: '+hierarchy+'/'+name2)
@@ -227,6 +237,10 @@ def load_step(path: str, max_solids: int = 20000, progress=None, diagnostics=Non
             if not loc.IsIdentity(): sh=sh.Moved(loc)
             add_shape(sh,label_name,fullname,name_origin,label_entry(target))
     for i in range(1,roots.Length()+1): walk(roots.Value(i),TopLoc_Location(),'',0)
+    if not out and invalid_mass_solids:
+        raise ValueError(f"Żadna z {len(invalid_mass_solids)} brył nie ma potwierdzonej dodatniej objętości. Pierwsza: {invalid_mass_solids[0]['sciezka']}")
+    if invalid_mass_solids:
+        stats['invalid_mass_solids']=invalid_mass_solids
     if not out: raise ValueError('W pliku STEP nie znaleziono zadnej bryly zamknietej (SOLID).')
     stats['solids']=len(out)
     stats['xcaf_definition_count']=len(definition_populations)

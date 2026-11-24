@@ -40,7 +40,7 @@ export function validate(s:Settings){if(!Number.isFinite(s.tolerance)||s.toleran
 export function fileName(path:string){return path.split(/[\\/]/).pop()||path;}
 
 export function stepPaths(paths:string[]){if(!paths.length||paths.some(p=>!/^.+\.(step|stp)$/i.test(p)))throw Error('Wybierz wyłącznie pliki STEP (.step lub .stp).');return [...new Set(paths)];}
-export function massSummary(value:unknown){if(!value||typeof value!=='object')return null;const s=value as Record<string,unknown>;const mass=s.masa_calosci_kg;if(typeof mass!=='number'||!Number.isFinite(mass))return null;return {mass,models:Number(s.liczba_plikow??1),solids:Number(s.liczba_bryl??0),density:Number(s.gestosc_kg_m3??0)};}
+export function massSummary(value:unknown){if(!value||typeof value!=='object')return null;const s=value as Record<string,unknown>;const mass=s.masa_calosci_kg;if(typeof mass!=='number'||!Number.isFinite(mass))return null;return {mass,partial:s.analysis_complete===false,models:Number(s.liczba_plikow??1),solids:Number(s.liczba_bryl??0),density:Number(s.gestosc_kg_m3??0)};}
 export function hasTranslation(q:Decision){return !q.unresolved&&!q.unrelated&&Array.isArray(q.translation_mm)&&q.translation_mm.length===3&&q.translation_mm.every(Number.isFinite)&&q.translation_mm.some(n=>Math.abs(n)>=0.00005);}
 
 export function hasPlacement(q:Decision){return hasTranslation(q)||(!q.unresolved&&!q.unrelated&&Number.isFinite(q.rotation_deg)&&Math.abs(q.rotation_deg||0)>=0.0001);}

@@ -177,7 +177,7 @@ def main(argv=None):
             elif not (Path(output)/'RAPORT_MASY.html').is_file():
                 emit('UWAGA: Brak RAPORT_MASY.html — zachowano obliczoną masę i plik CSV.')
             payload={'ok':True,'folder':str(output),'podsumowanie':s,
-                     'materials_editable':bool(editable)}
+                     'materials_editable':bool(editable),'analysis_complete':s.get('analysis_complete',True)}
         else:
             from .mesh_v37 import make_mesh
             info=make_mesh(ns.input,folder/'SCENA_3D.npz',ns.quality,notify=emit)
