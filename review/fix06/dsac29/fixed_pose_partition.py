@@ -87,7 +87,7 @@ def _bake_location(shape):
     ).Shape()
 
 
-def same_partition(left, right, tolerance, progress):
+def same_partition(left, right, tolerance, progress, *, baked=False):
     """Require two near-empty Cuts and a balanced Common in the original pose."""
     progress('fixed_partition_validate_sources')
     for shape in (left, right):
@@ -120,22 +120,19 @@ def same_partition(left, right, tolerance, progress):
     if right is None:
         return False
 
-    progress('fixed_partition_intersections')
-    filler = _intersections(left, right, fuzzy, progress, parallel=True)
-    if filler is None:
+    if baked:
         progress('fixed_partition_retry_baked')
         left, right = _bake_location(left), _bake_location(right)
-        fuzzy = minimum_fuzzy
         for shape in (left, right):
             if (not is_valid(shape)
-                    or max(topology_tolerances(shape).values()) > tolerance - fuzzy):
+                    or max(topology_tolerances(shape).values()) > limit):
                 progress('fixed_partition_retry_source_unverified')
                 return False
-        progress('fixed_partition_retry_intersections')
-        filler = _intersections(left, right, fuzzy, progress, parallel=False)
-        if filler is None:
-            progress('fixed_partition_unverified_intersections')
-            return False
+    progress('fixed_partition_intersections')
+    filler = _intersections(left, right, fuzzy, progress, parallel=not baked)
+    if filler is None:
+        progress('fixed_partition_unverified_intersections')
+        return False
 
     residual_limit = tolerance**3
     residuals = []

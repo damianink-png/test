@@ -157,6 +157,14 @@ s=s.replace(old,'for direction,(first,second) in zip(("A_minus_B","B_minus_A"),(
 old='if volume(residual)>tolerance**3:return False'
 if s.count(old)!=1:raise RuntimeError('Unexpected Cut volume decision; refusing unsafe patch')
 s=s.replace(old,'if _ds_checked_cut_volume(residual,direction,op,tolerance)>tolerance**3:return False')
+for old,new in (
+    ('filler.SetNonDestructive(True);filler.SetFuzzyValue(float(tolerance));filler.Perform()',
+     'filler.SetNonDestructive(True);filler.SetRunParallel(True);filler.SetUseOBB(True)\n    filler.SetFuzzyValue(float(tolerance));filler.Perform()'),
+    ('op.SetNonDestructive(True);op.SetFuzzyValue(float(tolerance));op.Build()',
+     'op.SetNonDestructive(True);op.SetRunParallel(True);op.SetUseOBB(True)\n            op.SetFuzzyValue(float(tolerance));op.Build()'),
+):
+    if s.count(old)!=1:raise RuntimeError('Unexpected solid symmetric-difference options')
+    s=s.replace(old,new)
 compile(s,str(step),'exec')
 native.write_text(source,encoding='utf-8')
 step.write_text(s,encoding='utf-8')

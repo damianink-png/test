@@ -38,7 +38,7 @@ class RepeatedWorldRecovery:
         from . import trace_r22 as trace
         center=(np.asarray(self.a[i].center)+np.asarray(self.b[j].center))*.5
         if not np.isfinite(center).all():
-            return False
+            raise NativeGeometryFailure('Druga para reprezentatywna: nieprawidłowe współrzędne')
         left=_relocate(self.a[i],np.eye(3),-center)
         right=_relocate(self.b[j],np.eye(3),-center)
         count_a = self.counts_a[self.groups_a[i]]
@@ -47,14 +47,37 @@ class RepeatedWorldRecovery:
         # Spend the longer budget once per large family, after the standard
         # proof failed, so a small fixed deadline cannot discard all copies.
         timeout_s = 120. if min(count_a, count_b) >= 16 else 30.
-        trace.mark('repeated_alternative_material_partition', 'BUDGET', a_id=i, b_id=j,
-                   copies_a=count_a, copies_b=count_b, timeout_s=timeout_s)
-        if progress:
-            progress(f'Powtórzenia: podział B-Rep pary A[{i}] / B[{j}], '
-                     f'rodzina {count_a} / {count_b} wystąpień, limit {timeout_s:g} s.')
-        return bool(trace.brep_call('repeated_alternative_material_partition',i,j,
-            guarded_world_reexport,left,right,self.tolerance,timeout_s=timeout_s,
-            operation='world_fixed_partition'))
+        problems = []
+        alerts = []
+        for baked in (False, True):
+            operation = 'world_fixed_partition_baked' if baked else 'world_fixed_partition'
+            stage = ('repeated_alternative_baked_partition' if baked
+                     else 'repeated_alternative_material_partition')
+            trace.mark(stage, 'BUDGET', a_id=i, b_id=j,
+                       copies_a=count_a, copies_b=count_b, timeout_s=timeout_s)
+            if progress:
+                progress(f'Powtórzenia: podział B-Rep pary A[{i}] / B[{j}], '
+                         f'próba {2 if baked else 1}, limit {timeout_s:g} s.')
+            stages = []
+            try:
+                matched = trace.brep_call(stage,i,j,guarded_world_reexport,left,right,
+                    self.tolerance,timeout_s=timeout_s,operation=operation,proof_stages_out=stages)
+            except NativeGeometryFailure as exc:
+                outcome = str(exc)
+                retry = bool(stages and stages[-1]=='fixed_partition_intersections'
+                             and ('timeout' in outcome.casefold() or 'limit' in outcome.casefold()))
+            else:
+                if matched:
+                    return True
+                outcome = stages[-1] if stages else 'brak dowodu B-Rep'
+                retry = outcome == 'fixed_partition_unverified_intersections'
+            alerts.extend(phase for phase in stages
+                          if phase.startswith(('fixed_partition_warning ', 'fixed_partition_error ')))
+            problems.append(outcome)
+            if not retry:
+                break
+        details = '; '.join([*dict.fromkeys(alerts), *problems])
+        raise NativeGeometryFailure(f'Druga para reprezentatywna: {details}')
 
     def recover(self,i,j,error,progress=None):
         from .geometry import candidate

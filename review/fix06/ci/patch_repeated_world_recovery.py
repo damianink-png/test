@@ -30,11 +30,6 @@ s=s.replace(anchor,"""for aa,bb in world_probe_pairs.get((gs,gt),()))
 anchor="                gs, gt = group_a[i], group_b[j]"
 assert s.count(anchor)==1
 s=s.replace(anchor,anchor+"\n                retry_pair = None")
-anchor="                    except NativeGeometryFailure as exc:"
-i=s.index(anchor,s.index("trace.mark('world_matching_pair','BEGIN'"))
-s=s[:i]+"""                        if retry_pair == (i,j) and not same:
-                            raise NativeGeometryFailure('Druga para reprezentatywna: brak dowodu B-Rep')
-"""+s[i:]
 anchor="                        if representations.differs(s,b[j],gs,gt):"
 assert s.count(anchor)==1
 s=s.replace(anchor,"""                        if retry_pair == (i,j):
@@ -77,10 +72,17 @@ print('REPEATED_FIXED_WORLD_RECOVERY_PASS')
 native=p.with_name('native_guard.py')
 s=native.read_text()
 changes=[
+    ("operation='world_reexport'):", "operation='world_reexport', proof_stages_out=None):"),
+    ("            trace.mark('native_world','PROOF_STAGES',proof_stages=stages if isinstance(stages,list) and all(isinstance(v,str) for v in stages) else [])",
+     """            stages=stages if isinstance(stages,list) and all(isinstance(v,str) for v in stages) else []
+            if proof_stages_out is not None:
+                proof_stages_out.extend(stages)
+            trace.mark('native_world','PROOF_STAGES',proof_stages=stages)"""),
     ("    if req.get('operation') == 'world_equivalent':",
-     """    if req.get('operation') == 'world_fixed_partition':
+     """    if req.get('operation') in ('world_fixed_partition', 'world_fixed_partition_baked'):
         from .fixed_pose_partition import same_partition
-        match=same_partition(a_shape,b_shape,float(req['tolerance']),report)
+        match=same_partition(a_shape,b_shape,float(req['tolerance']),report,
+                             baked=req['operation']=='world_fixed_partition_baked')
         response=dict(ok=True,match=bool(match),proof_stages=proof_stages)
     elif req.get('operation') == 'world_equivalent':"""),
     ('process_args=None, registered_reexport=False):',

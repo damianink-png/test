@@ -120,6 +120,36 @@ def test_failed_relative_pose_does_not_block_an_independent_pose(monkeypatch):
     assert any(abs(x-.1)<1e-6 for x in calls)
     assert not any(r.status in ('SAME','RENAMED') for r in rows)
 
+
+@pytest.mark.parametrize('first_times_out', [False, True])
+def test_baked_partition_gets_own_budget_and_preserves_alerts(monkeypatch, first_times_out):
+    a = parts(count=16)
+    b = parts(count=16)
+    calls = []
+
+    def verify(left, right, tolerance, *, operation, timeout_s, proof_stages_out):
+        calls.append((operation, timeout_s))
+        assert np.allclose(left.center, right.center)
+        proof_stages_out.append('fixed_partition_intersections')
+        if operation == 'world_fixed_partition' and first_times_out:
+            raise native_guard.NativeGeometryFailure('Timeout odizolowanej weryfikacji STEP')
+        level = 'warning' if operation == 'world_fixed_partition' else 'error'
+        code = ('BOPAlgo_AlertBadPositioning' if level == 'warning'
+                else 'BOPAlgo_AlertIntersectionOfPairOfShapesFailed')
+        proof_stages_out.extend((f'fixed_partition_{level} {code}',
+                                 'fixed_partition_unverified_intersections'))
+        return False
+
+    monkeypatch.setattr(native_guard, 'guarded_world_reexport', verify)
+    policy = RepeatedWorldRecovery(a, b, [0]*16, [1]*16, .01)
+    with pytest.raises(native_guard.NativeGeometryFailure) as failure:
+        policy.verify_alternative(0, 0)
+    assert calls == [('world_fixed_partition', 120.), ('world_fixed_partition_baked', 120.)]
+    assert 'BOPAlgo_AlertIntersectionOfPairOfShapesFailed' in str(failure.value)
+    first_diagnostic = 'Timeout' if first_times_out else 'BOPAlgo_AlertBadPositioning'
+    assert first_diagnostic in str(failure.value)
+
+
 @pytest.mark.parametrize('rotation,translation,expected',[
     (np.eye(3),np.zeros(3),True),
     (np.eye(3),np.array([0.,.04,0.]),False),
@@ -232,6 +262,10 @@ def test_fixed_partition_worker_accepts_reexport_and_rejects_changes():
     b=describe(BRepBuilderAPI_NurbsConvert(box,True).Shape(),'new','new')
     kw={'operation':'world_fixed_partition','timeout_s':30.}
     assert native_guard.guarded_world_reexport(a,b,.01,**kw)
+    stages = []
+    assert native_guard.guarded_world_reexport(a,b,.01,operation='world_fixed_partition_baked',
+                                              timeout_s=30.,proof_stages_out=stages)
+    assert 'fixed_partition_retry_baked' in stages and stages[-1]=='fixed_partition_proven'
     moved=_relocate(b,np.eye(3),np.array([.04,0.,0.]))
     assert not native_guard.guarded_world_reexport(a,moved,.01,**kw)
     modified=describe(BRepPrimAPI_MakeBox(20.,10.,6.9).Shape(),'modified','modified')
@@ -338,7 +372,6 @@ def test_fixed_partition_retries_a_native_warning_at_same_pose(monkeypatch, loca
     from types import SimpleNamespace
 
     from OCP.Message import Message_Warning
-    from OCP.Precision import Precision
     from dsac29 import fixed_pose_partition as partition
     from dsac29.geometry import _precise_world_bounds
 
@@ -377,7 +410,8 @@ def test_fixed_partition_retries_a_native_warning_at_same_pose(monkeypatch, loca
     monkeypatch.setattr(partition, 'BOPAlgo_PaveFiller', lambda: next(fillers))
     monkeypatch.setattr(partition, '_intersections', intersections)
     phases = []
-    assert partition.same_partition(a.shape, b.shape, .01, phases.append) is expected
-    assert calls == [(True, .0001), (False, Precision.Confusion_s())]
+    assert not partition.same_partition(a.shape, b.shape, .01, phases.append)
+    assert partition.same_partition(a.shape, b.shape, .01, phases.append, baked=True) is expected
+    assert calls == [(True, .0001), (False, .0001)]
     assert 'fixed_partition_warning BOPAlgo_AlertBadPositioning' in phases
     assert not a.shape.Location().IsIdentity()
