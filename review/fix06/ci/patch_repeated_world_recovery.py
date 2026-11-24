@@ -35,6 +35,11 @@ i=s.index(anchor,s.index("trace.mark('world_matching_pair','BEGIN'"))
 s=s[:i]+"""                        if retry_pair == (i,j) and not same:
                             raise NativeGeometryFailure('Druga para reprezentatywna: brak dowodu B-Rep')
 """+s[i:]
+anchor="                        if representations.differs(s,b[j],gs,gt):"
+assert s.count(anchor)==1
+s=s.replace(anchor,"""                        if retry_pair == (i,j):
+                            same=repeated_world_recovery.verify_alternative(i,j)
+                        elif representations.differs(s,b[j],gs,gt):""")
 compile(s,str(p),'exec');p.write_text(s)
 print('REPEATED_FIXED_WORLD_RECOVERY_PASS')
 

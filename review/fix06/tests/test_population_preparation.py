@@ -77,3 +77,18 @@ def test_preparation_progress_switches_away_from_movement_before_counting(tmp_pa
     start=next(r for r in data if 'przygotowanie Common' in r['tekst'])
     assert start['phase']=='Weryfikacja materiału'
     assert any('liczby wystąpień' in r['tekst'] for r in data)
+
+
+def test_exact_local_pair_reuses_one_completed_native_check(monkeypatch):
+    from dsac29 import native_guard
+    parts=[describe(BRepPrimAPI_MakeBox(10,20,5).Shape(),'A',str(i)) for i in range(4)]
+    context=GeometryRegistry()
+    # Two local representations. Force separate native definitions and equal
+    # numeric candidate properties so the native cache is exercised.
+    digests={id(p):(b'A' if i<2 else b'B') for i,p in enumerate(parts)}
+    monkeypatch.setattr(context,'exact_digest',lambda p:digests[id(p)])
+    calls=[]
+    monkeypatch.setattr(native_guard,'guarded_rigid',lambda *a,**kw:(calls.append(1) or (False,None,None)))
+    assert sorted(geometry_populations(parts,geometry_context=context))==[(0,1),(2,3)]
+    assert calls==[1]
+    assert context.stats['population_local_proof_hits']>0

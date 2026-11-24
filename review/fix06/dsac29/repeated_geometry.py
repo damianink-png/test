@@ -9,6 +9,8 @@ from time import perf_counter
 from .compare import _VolumeIndex, Cancelled
 from .geometry import candidate
 from .geometry_registry import GeometryRegistry
+from dataclasses import replace
+from OCP.TopLoc import TopLoc_Location
 
 
 def geometry_populations(parts, tolerance=.01, geometry_context=None, cancelled=None, *, relevant_ids=None, progress=None):
@@ -36,6 +38,7 @@ def geometry_populations(parts, tolerance=.01, geometry_context=None, cancelled=
     queue=list(representatives) if relevant is None else [i for i in representatives if relevant.intersection(members[i])]
     scheduled=set(queue);processed=set();native_checks=0;started=perf_counter();last=started
     if progress:progress(f'Zmiany materiału: liczby wystąpień — {len(queue)} rodzin wymagających kontroli w modelu z {len(parts)} częściami.')
+    local_results={}
     for i in queue:
         for j in index.query(parts[i].volume,tolerance):
             if j in processed or find(i)==find(j):continue
@@ -48,12 +51,30 @@ def geometry_populations(parts, tolerance=.01, geometry_context=None, cancelled=
             if not proven:proven=context.same_definition(left,right)
             if not proven and isinstance(context,GeometryRegistry):
                 from .native_guard import guarded_rigid,NativeGeometryFailure
-                native_checks+=1
-                if progress and (native_checks==1 or perf_counter()-last>=.75):
-                    progress(f'Zmiany materiału: liczby wystąpień — test B-Rep {native_checks}, definicje {i}/{j}; {perf_counter()-started:.1f} s.')
-                    last=perf_counter()
-                try:proven=bool(guarded_rigid(left,right,tolerance)[0])
-                except NativeGeometryFailure:continue
+                left_digest=context.exact_digest(left)
+                right_digest=context.exact_digest(right)
+                key=(left_digest,right_digest) if left_digest is not None and right_digest is not None else None
+                if key is not None and key in local_results:
+                    proven=local_results[key]
+                    context.stats['population_local_proof_hits']+=1
+                else:
+                    native_checks+=1
+                    if progress and (native_checks==1 or perf_counter()-last>=.75):
+                        progress(f'Zmiany materiału: liczby wystąpień — test B-Rep {native_checks}, definicje {i}/{j}; {perf_counter()-started:.1f} s.')
+                        last=perf_counter()
+                    # The hashed definition and worker input share the same
+                    # representative, even for baked STEP occurrences.
+                    if key is not None:
+                        left_definition=context.definition_part(left)
+                        right_definition=context.definition_part(right)
+                        local_left=replace(left_definition,shape=left_definition.shape.Located(TopLoc_Location()))
+                        local_right=replace(right_definition,shape=right_definition.shape.Located(TopLoc_Location()))
+                    else:
+                        local_left,local_right=left,right
+                    try:proven=bool(guarded_rigid(local_left,local_right,tolerance)[0])
+                    except NativeGeometryFailure:continue
+                    if key is not None:
+                        local_results[key]=proven
                 context.remember_equivalence(left,right,tolerance,proven)
             if proven:
                 parent[find(j)]=find(i)

@@ -81,20 +81,22 @@ def test_exhausted_solid_difference_has_one_alternate_copy(monkeypatch, alternat
     calls=[]
     def timeout(*args,**kw):
         calls.append(1)
-        if len(calls)==2 and alternate_proves:
-            return True
         raise native_guard.NativeGeometryFailure(
             'Timeout odizolowanej weryfikacji STEP; etap: validated_solid_symmetric_difference')
-    def forbidden(*args,**kw):raise AssertionError('Do not restart exhausted solid subtraction')
+    def alternative(left,right,tolerance,**kw):
+        calls.append(2)
+        assert kw['timeout_s']==30.
+        assert np.allclose(left.center+right.center,0.)
+        return alternate_proves
     monkeypatch.setattr(engine,'guarded_world_equivalent',timeout)
     monkeypatch.setattr(engine,'guarded_world_reexport',timeout)
     monkeypatch.setattr(engine,'guarded_registered_world',timeout)
-    monkeypatch.setattr(native_guard,'guarded_registered_world',forbidden)
+    monkeypatch.setattr(native_guard,'guarded_registered_world',alternative)
     monkeypatch.setattr(native_guard,'guarded_rigid',lambda *args,**kw:(False,None,None))
     rows=compare(a,b,revision_only=True,exact_serialization=False)
     expected={'SAME':119} if alternate_proves else {'UNCERTAIN':238}
     assert Counter(r.status for r in rows)==dict(expected,REMOVED=1,ADDED=1)
-    assert len(calls)==2
+    assert calls==[1,2]
 
 
 def test_failed_relative_pose_does_not_block_an_independent_pose(monkeypatch):
@@ -109,6 +111,7 @@ def test_failed_relative_pose_does_not_block_an_independent_pose(monkeypatch):
         return False
     monkeypatch.setattr(engine,'guarded_world_equivalent',proof)
     monkeypatch.setattr(engine,'guarded_world_reexport',proof)
+    monkeypatch.setattr(native_guard,'guarded_registered_world',proof)
     monkeypatch.setattr(native_guard,'guarded_rigid',lambda *args,**kw:(False,None,None))
     rows=compare(a,b,revision_only=True,exact_serialization=False)
     assert any(abs(x-.1)<1e-6 for x in calls)

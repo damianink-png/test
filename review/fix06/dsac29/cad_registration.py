@@ -412,7 +412,7 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
                     frame['search_diagnostics']=state.summary()
                     return frame
     state.checkpoint()
-    if not complete:
+    if not complete and not winners:
         return {'status':'unresolved','reason':'Osiągnięto limit czasu lub hipotez wyrównania; nie przyjęto niejednoznacznego wyniku.',
                 'search_diagnostics':state.summary()}
     if not winners:
@@ -442,6 +442,13 @@ def propose(a,b,records,tolerance,progress=None,cancelled=None,*,search_state=No
             f'Najlepszy potwierdzony wynik: {best["votes"]} par. Przyczyna: {str(f["reason"])[:600]}',
             'search_diagnostics':state.summary()}
     result={k:v for k,v in best.items() if not k.startswith('_')}
+    if not complete:
+        result.update(
+            requires_confirmation=True,
+            search_budget_exhausted=True,
+            reason=(f"Potwierdzono {best['verified_sample_count']}/{best['checked_sample_count']} par B-Rep "
+                    "w proponowanym położeniu. Limit wyszukiwania upłynął przed zakończeniem "
+                    "sprawdzania pozostałych hipotez."))
     result['search_diagnostics']=state.summary()
     if progress:progress(f'Wyrównanie CAD: {best["votes"]}/{population} kandydatów, {best["verified_sample_count"]}/{best["checked_sample_count"]} dowodów B-Rep; B→A {t.tolist()} mm.')
     return result

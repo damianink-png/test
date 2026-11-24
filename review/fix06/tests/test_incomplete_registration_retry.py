@@ -246,3 +246,29 @@ def test_small_assembly_does_not_relax_brep_acceptance_threshold(monkeypatch):
     assert 'positive>=ceil(.80*checked)' in source
     assert 'cache.deadline=body_deadline' in source
     assert "if not complete:" in source
+
+
+def test_budget_keeps_verified_frame_for_confirmation(monkeypatch):
+    from dsac29 import unique_anchors
+    a,b=parts(count=80),parts(count=80,shift=1000)
+    state=RegistrationSearch()
+    state.bind(a,b,.01)
+    state.features=(np.array([p.center for p in a]),np.array([p.center for p in b]))
+    certified=[(i,i) for i in range(42)]
+    state.pose_winners.append({
+        'status':'registered','translation_B_to_A_mm':[-1000.,0.,0.],
+        'rotation_B_to_A':np.eye(3).tolist(),'certified_pairs':certified,
+        'votes':55,'_volume':100.,'checked_sample_count':48,'verified_sample_count':42,
+        'requires_confirmation':True,
+    })
+    clock=[100.]
+    monkeypatch.setattr(cad_registration,'monotonic',lambda:clock[0])
+    def expire(*args,**kwargs):
+        clock[0]=500.
+        return []
+    monkeypatch.setattr(unique_anchors,'proven_translations',expire)
+    result=cad_registration.propose(a,b,[],.01,search_state=state,extended=True)
+    assert result['search_budget_exhausted'] and result['requires_confirmation']
+    assert result['status']=='registered'
+    assert result['translation_B_to_A_mm']==[-1000.,0.,0.]
+    assert result['certified_pairs']==certified

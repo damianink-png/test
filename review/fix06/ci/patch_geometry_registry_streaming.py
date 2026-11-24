@@ -45,6 +45,15 @@ def patch(path):
     if '    def rigid_result(' not in source:
         if source.count(anchor)!=1:raise RuntimeError('Unknown rigid-result cache anchor')
         source=source.replace(anchor,method+anchor)
+    anchor='    def exact_digest(self, part):'
+    assert source.count(anchor)==1
+    source=source.replace(anchor,"""    def definition_part(self, part):
+        return self._definitions[self.definition(part)]
+
+"""+anchor)
+    anchor='write_brep(part.shape.Located(TopLoc_Location()),path)'
+    assert source.count(anchor)==1
+    source=source.replace(anchor,'write_brep(self._definitions[key].shape.Located(TopLoc_Location()),path)')
     compile(source,str(path),'exec')
     path.write_text(source,encoding='utf-8')
     print('DSCOMPARE_GEOMETRY_REGISTRY_STREAMING_DIGEST_PASS',path)

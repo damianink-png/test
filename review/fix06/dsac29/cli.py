@@ -330,7 +330,8 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                          if sample_only else f'{votes} potwierdzeń B-Rep')+
                         f' vs {original} bez przesunięcia. Wyrównuję automatycznie. '+
                         ('Końcowe porównanie zweryfikuje resztę.' if sample_only else ''))
-            if automatic_alignment and proposal.get('status')=='registered':
+            if (automatic_alignment and proposal.get('status')=='registered'
+                    and not proposal.get('search_budget_exhausted')):
                 decision='align';automatic=True
                 if progress:progress('Potwierdzone przesunięcie: stosuję automatycznie i sprawdzam wynik w końcowym porównaniu.')
             if decision is None:
