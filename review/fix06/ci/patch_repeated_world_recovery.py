@@ -38,7 +38,7 @@ s=s[:i]+"""                        if retry_pair == (i,j) and not same:
 anchor="                        if representations.differs(s,b[j],gs,gt):"
 assert s.count(anchor)==1
 s=s.replace(anchor,"""                        if retry_pair == (i,j):
-                            same=repeated_world_recovery.verify_alternative(i,j)
+                            same=repeated_world_recovery.verify_alternative(i,j,progress)
                         elif representations.differs(s,b[j],gs,gt):""")
 compile(s,str(p),'exec');p.write_text(s)
 print('REPEATED_FIXED_WORLD_RECOVERY_PASS')

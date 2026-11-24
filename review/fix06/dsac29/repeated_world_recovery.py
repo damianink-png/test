@@ -32,7 +32,7 @@ class RepeatedWorldRecovery:
                 return (i,j)
         return None
 
-    def verify_alternative(self,i,j):
+    def verify_alternative(self,i,j,progress=None):
         from .alignment import _relocate
         from .native_guard import guarded_world_reexport
         from . import trace_r22 as trace
@@ -41,8 +41,20 @@ class RepeatedWorldRecovery:
             return False
         left=_relocate(self.a[i],np.eye(3),-center)
         right=_relocate(self.b[j],np.eye(3),-center)
+        count_a = self.counts_a[self.groups_a[i]]
+        count_b = self.counts_b[self.groups_b[j]]
+        # One completed partition can certify the placement of many copies.
+        # Spend the longer budget once per large family, after the standard
+        # proof failed, so a small fixed deadline cannot discard all copies.
+        timeout_s = 120. if min(count_a, count_b) >= 16 else 30.
+        trace.mark('repeated_alternative_material_partition', 'BUDGET', a_id=i, b_id=j,
+                   copies_a=count_a, copies_b=count_b, timeout_s=timeout_s)
+        if progress:
+            progress(f'Powtórzenia: podział B-Rep pary A[{i}] / B[{j}], '
+                     f'rodzina {count_a} / {count_b} wystąpień, limit {timeout_s:g} s.')
         return bool(trace.brep_call('repeated_alternative_material_partition',i,j,
-            guarded_world_reexport,left,right,self.tolerance,timeout_s=30.,operation='world_fixed_partition'))
+            guarded_world_reexport,left,right,self.tolerance,timeout_s=timeout_s,
+            operation='world_fixed_partition'))
 
     def recover(self,i,j,error,progress=None):
         from .geometry import candidate

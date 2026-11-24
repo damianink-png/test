@@ -85,7 +85,9 @@ def test_exhausted_solid_difference_has_one_alternate_copy(monkeypatch, alternat
             'Timeout odizolowanej weryfikacji STEP; etap: validated_solid_symmetric_difference')
     def alternative(left,right,tolerance,**kw):
         calls.append(2)
-        assert kw['timeout_s']==30.
+        # A partition that needs 60 seconds would be killed by the old
+        # deadline even though it can settle the whole stationary family.
+        assert kw['timeout_s']==120.
         assert kw['operation']=='world_fixed_partition'
         assert np.allclose(left.center+right.center,0.)
         return alternate_proves
@@ -316,3 +318,16 @@ def test_stationary_family_recovered_within_near_limit_step_tolerance(monkeypatc
     assert {r.a_index for r in rows if r.status == 'SAME'} == set(range(80)) - {53}
     assert {r.a_index for r in rows if r.status == 'REMOVED'} == {53}
     assert {r.b_index for r in rows if r.status == 'ADDED'} == {53}
+
+
+def test_small_repeat_family_keeps_short_partition_deadline(monkeypatch):
+    a = parts(count=8)
+    b = parts(count=8)
+    calls = []
+    def verify(left, right, tolerance, **kwargs):
+        calls.append(kwargs['timeout_s'])
+        return True
+    monkeypatch.setattr(native_guard, 'guarded_world_reexport', verify)
+    policy = RepeatedWorldRecovery(a, b, [0]*8, [1]*8, .01)
+    assert policy.verify_alternative(0, 0)
+    assert calls == [30.]
