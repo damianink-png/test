@@ -266,3 +266,53 @@ def test_fixed_partition_rechecks_inflated_tolerances_without_changing_source():
     assert phases[-1] == 'fixed_partition_tightened_source_unverified'
     assert 'fixed_partition_intersections' not in phases
     assert topology_tolerances(right) == original_tolerances
+
+
+def test_stationary_family_recovered_within_near_limit_step_tolerance(monkeypatch):
+    from OCP.BRep import BRep_Builder, BRep_Tool
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from OCP.TopAbs import TopAbs_VERTEX
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    from dsac29 import compare as engine
+    from dsac29.geometry import describe
+
+    # The imported vertex really needs more than 0.0099 mm of its declared
+    # tolerance. The fixed 0.0001 mm Boolean allowance used to reject it.
+    shape = BRepPrimAPI_MakeBox(20., 10., 7.).Shape()
+    vertex = TopoDS.Vertex_s(TopExp_Explorer(shape, TopAbs_VERTEX).Current())
+    point = BRep_Tool.Pnt_s(vertex)
+    point.SetX(point.X() + .00994)
+    BRep_Builder().UpdateVertex(vertex, point, .00996796692)
+    assert BRepCheck_Analyzer(shape, True, False, True).IsValid()
+
+    a = parts(count=54, shift=2000)
+    definition = describe(shape, 'new', 'new')
+    b = [replace(_relocate(definition, np.eye(3), part.center-definition.center),
+                 name=part.name) for part in a]
+    b[-1] = _relocate(b[-1], np.eye(3), np.array([1000., 0., 0.]))
+    others = parts(width=15, count=26, shift=50000)
+    a.extend(others)
+    b.extend(others)
+
+    def timeout(*args, **kwargs):
+        raise native_guard.NativeGeometryFailure('Timeout validated_solid_symmetric_difference')
+
+    for name in ('guarded_world_equivalent', 'guarded_world_reexport', 'guarded_registered_world'):
+        monkeypatch.setattr(engine, name, timeout)
+    monkeypatch.setattr(native_guard, 'guarded_rigid', lambda *args, **kwargs: (False, None, None))
+    original = native_guard.guarded_world_reexport
+    completed = []
+
+    def verify(left, right, tolerance, **kwargs):
+        match = original(left, right, tolerance, **kwargs)
+        completed.append((kwargs['operation'], match))
+        return match
+
+    monkeypatch.setattr(native_guard, 'guarded_world_reexport', verify)
+    rows = compare(a, b, revision_only=True, exact_serialization=False)
+    assert completed == [('world_fixed_partition', True)]
+    assert {r.a_index for r in rows if r.status == 'SAME'} == set(range(80)) - {53}
+    assert {r.a_index for r in rows if r.status == 'REMOVED'} == {53}
+    assert {r.b_index for r in rows if r.status == 'ADDED'} == {53}

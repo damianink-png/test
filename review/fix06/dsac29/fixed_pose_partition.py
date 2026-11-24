@@ -3,6 +3,7 @@ from OCP.BOPAlgo import BOPAlgo_PaveFiller
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
 from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.Precision import Precision
 from OCP.ShapeFix import ShapeFix_ShapeTolerance
 from OCP.TopAbs import TopAbs_SOLID
 from OCP.TopTools import TopTools_ListOfShape
@@ -34,8 +35,7 @@ def _operation(kind, filler, left, right, fuzzy):
         del operation
 
 
-def _bounded_source(shape, limit, progress):
-    stored = max(topology_tolerances(shape).values())
+def _bounded_source(shape, stored, limit, progress):
     if stored <= limit:
         return shape
     progress(f'fixed_partition_limit_stored_tolerances {stored:.9g} mm to {limit:.9g} mm')
@@ -57,7 +57,6 @@ def _bounded_source(shape, limit, progress):
 def same_partition(left, right, tolerance, progress):
     """Require two near-empty Cuts and a balanced Common in the original pose."""
     progress('fixed_partition_validate_sources')
-    fuzzy = max(tolerance / 100, 1e-7)
     for shape in (left, right):
         if shape.ShapeType() != TopAbs_SOLID or not is_valid(shape):
             progress('fixed_partition_invalid_source')
@@ -68,14 +67,23 @@ def same_partition(left, right, tolerance, progress):
         progress('fixed_partition_invalid_source_volume')
         return False
 
+    stored_left = max(topology_tolerances(left).values())
+    stored_right = max(topology_tolerances(right).values())
+    minimum_fuzzy = Precision.Confusion_s()
+    # OCCT clamps any smaller setting to its minimum. Reserve only the
+    # needed headroom before considering editing tolerance metadata.
+    preferred_fuzzy = max(minimum_fuzzy, tolerance / 100)
+    headroom = tolerance - max(stored_left, stored_right)
+    fuzzy = max(minimum_fuzzy, min(preferred_fuzzy, headroom))
     limit = tolerance - fuzzy
+    progress(f'fixed_partition_fuzzy_budget {fuzzy:.9g} mm with source limit {limit:.9g} mm')
     if limit <= 0:
         progress('fixed_partition_source_tolerance')
         return False
-    left = _bounded_source(left, limit, progress)
+    left = _bounded_source(left, stored_left, limit, progress)
     if left is None:
         return False
-    right = _bounded_source(right, limit, progress)
+    right = _bounded_source(right, stored_right, limit, progress)
     if right is None:
         return False
 
