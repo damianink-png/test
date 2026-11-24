@@ -330,10 +330,13 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                          if sample_only else f'{votes} potwierdzeń B-Rep')+
                         f' vs {original} bez przesunięcia. Wyrównuję automatycznie. '+
                         ('Końcowe porównanie zweryfikuje resztę.' if sample_only else ''))
-            if (automatic_alignment and proposal.get('status')=='registered'
-                    and not proposal.get('search_budget_exhausted')):
+            if automatic_alignment and proposal.get('status')=='registered':
                 decision='align';automatic=True
                 if progress:progress('Potwierdzone przesunięcie: stosuję automatycznie i sprawdzam wynik w końcowym porównaniu.')
+            if automatic_alignment and decision is None and proposal.get('status')=='unresolved':
+                decision='original'
+                automatic=True
+                if progress:progress('Nie potwierdzono przesunięcia. Porównuję w oryginalnych współrzędnych.')
             if decision is None:
                 if alignment_approval is None:
                     raise RuntimeError('Niepewne przesunięcie wymaga decyzji użytkownika.')
@@ -366,7 +369,11 @@ def process(a_path,b_path,output,tolerance=0.01,density=7850.,step=True,progress
                     decision=confirm_original_after_failed_search(
                         alignment_approval,alignment['reason'],progress,search_diagnostics=registration_search.summary())
             if decision=='original':
-                if alignment.get('status') in ('search_failed_original','search_unresolved_original'):
+                if automatic:
+                    reason=str(proposal.get('reason') or 'Nie potwierdzono przesunięcia.')
+                    alignment.update(**{**proposal,'status':'search_unresolved_original','applied':False,
+                                        'warning':reason+' Porównano modele w oryginalnych współrzędnych.'})
+                elif alignment.get('status') in ('search_failed_original','search_unresolved_original'):
                     alignment.update(applied=False)
                 else:
                     alignment.update(**{**proposal,'status':'original_by_user','applied':False,

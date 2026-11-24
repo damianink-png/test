@@ -40,6 +40,37 @@ assert s.count(anchor)==1
 s=s.replace(anchor,"""                        if retry_pair == (i,j):
                             same=repeated_world_recovery.verify_alternative(i,j,progress)
                         elif representations.differs(s,b[j],gs,gt):""")
+anchor="    if progress:progress('Etap 1/3: sprawdzanie identycznych brył w tym samym miejscu')"
+assert s.count(anchor)==1
+s=s.replace(anchor,"""    if progress:
+        position='po wyrównaniu' if registered_frame else 'w oryginalnym położeniu'
+        progress(f'Etap 1/3: sprawdzanie {position} w dwóch przebiegach doboru par')""")
+anchor="""    for names_equal in (True, False):
+        for i, s in enumerate(a):
+            if i not in free_a: continue
+            if cancelled and cancelled(): raise Cancelled('Przerwano analizę')
+            nearby=list(_nearby(cells,lookup_a[i],lookup_radius))
+            if registered_lookup:nearby.extend(_nearby(mass_cells,s,lookup_radius))
+"""
+assert s.count(anchor)==1
+s=s.replace(anchor,"""    empty_neighborhoods=set()
+    total_positions=2*len(a)
+    for name_pass,names_equal in enumerate((True,False)):
+        for i,s in enumerate(a):
+            if cancelled and cancelled():raise Cancelled('Przerwano analizę')
+            if i in free_a and i not in empty_neighborhoods:
+                nearby=list(_nearby(cells,lookup_a[i],lookup_radius))
+                if registered_lookup:nearby.extend(_nearby(mass_cells,s,lookup_radius))
+                if not nearby:empty_neighborhoods.add(i)
+            else:
+                nearby=()
+""")
+anchor="""            if progress and (i+1)%25 == 0:
+                progress(f'Etap zgodności: {i+1}/{len(a)}; B-Rep: {checks}; pamięć: {memo_hits}; {perf_counter()-started:.1f}s')"""
+assert s.count(anchor)==1
+s=s.replace(anchor,"""            completed=name_pass*len(a)+i+1
+            if progress and (completed%25==0 or completed==total_positions):
+                progress(f'Etap zgodności: {completed}/{total_positions}; B-Rep: {checks}; pamięć: {memo_hits}; {perf_counter()-started:.1f}s')""")
 compile(s,str(p),'exec');p.write_text(s)
 print('REPEATED_FIXED_WORLD_RECOVERY_PASS')
 

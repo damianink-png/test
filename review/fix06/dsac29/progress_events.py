@@ -15,6 +15,7 @@ class ProgressEvents:
         message = str(message)
         stages = (
             ('Wczytywanie', 'Import STEP'), ('Import ', 'Import STEP'),
+            ('Etap 1/3: sprawdzanie po wyrównaniu', 'Zgodność po wyrównaniu'),
             ('Etap 1/3: sprawdzanie', 'Zgodność położenia'),
             ('etap 2/3: przesunięte', 'Ruch części'), ('Etap transformacji', 'Ruch części'),
             ('Weryfikacja przesunięcia', 'Weryfikacja wyrównania B-Rep'),
