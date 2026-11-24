@@ -46,6 +46,12 @@ print('REPEATED_FIXED_WORLD_RECOVERY_PASS')
 native=p.with_name('native_guard.py')
 s=native.read_text()
 changes=[
+    ("    if req.get('operation') == 'world_equivalent':",
+     """    if req.get('operation') == 'world_fixed_partition':
+        from .fixed_pose_partition import same_partition
+        match=same_partition(a_shape,b_shape,float(req['tolerance']),report)
+        response=dict(ok=True,match=bool(match),proof_stages=proof_stages)
+    elif req.get('operation') == 'world_equivalent':"""),
     ('process_args=None, registered_reexport=False):',
      'process_args=None, registered_reexport=False, repeated_cells=False):'),
     ("'operation':'registered_rigid' if registered_reexport else 'rigid',",

@@ -34,15 +34,15 @@ class RepeatedWorldRecovery:
 
     def verify_alternative(self,i,j):
         from .alignment import _relocate
-        from .native_guard import guarded_registered_world
+        from .native_guard import guarded_world_reexport
         from . import trace_r22 as trace
         center=(np.asarray(self.a[i].center)+np.asarray(self.b[j].center))*.5
         if not np.isfinite(center).all():
             return False
         left=_relocate(self.a[i],np.eye(3),-center)
         right=_relocate(self.b[j],np.eye(3),-center)
-        return bool(trace.brep_call('repeated_alternative_registered_boundary',i,j,
-            guarded_registered_world,left,right,self.tolerance,timeout_s=30.))
+        return bool(trace.brep_call('repeated_alternative_material_partition',i,j,
+            guarded_world_reexport,left,right,self.tolerance,timeout_s=30.,operation='world_fixed_partition'))
 
     def recover(self,i,j,error,progress=None):
         from .geometry import candidate

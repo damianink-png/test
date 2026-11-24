@@ -86,12 +86,13 @@ def test_exhausted_solid_difference_has_one_alternate_copy(monkeypatch, alternat
     def alternative(left,right,tolerance,**kw):
         calls.append(2)
         assert kw['timeout_s']==30.
+        assert kw['operation']=='world_fixed_partition'
         assert np.allclose(left.center+right.center,0.)
         return alternate_proves
     monkeypatch.setattr(engine,'guarded_world_equivalent',timeout)
     monkeypatch.setattr(engine,'guarded_world_reexport',timeout)
     monkeypatch.setattr(engine,'guarded_registered_world',timeout)
-    monkeypatch.setattr(native_guard,'guarded_registered_world',alternative)
+    monkeypatch.setattr(native_guard,'guarded_world_reexport',alternative)
     monkeypatch.setattr(native_guard,'guarded_rigid',lambda *args,**kw:(False,None,None))
     rows=compare(a,b,revision_only=True,exact_serialization=False)
     expected={'SAME':119} if alternate_proves else {'UNCERTAIN':238}
@@ -111,7 +112,7 @@ def test_failed_relative_pose_does_not_block_an_independent_pose(monkeypatch):
         return False
     monkeypatch.setattr(engine,'guarded_world_equivalent',proof)
     monkeypatch.setattr(engine,'guarded_world_reexport',proof)
-    monkeypatch.setattr(native_guard,'guarded_registered_world',proof)
+    monkeypatch.setattr(native_guard,'guarded_world_reexport',proof)
     monkeypatch.setattr(native_guard,'guarded_rigid',lambda *args,**kw:(False,None,None))
     rows=compare(a,b,revision_only=True,exact_serialization=False)
     assert any(abs(x-.1)<1e-6 for x in calls)
@@ -217,3 +218,19 @@ def test_successful_fixed_cells_skips_rigid_search_and_preserves_missing_copy(mo
     assert {r.a_index for r in rows if r.status=='REMOVED'}=={53}
     assert {r.b_index for r in rows if r.status=='ADDED'}=={53}
     assert len(calls)==1
+
+
+def test_fixed_partition_worker_accepts_reexport_and_rejects_changes():
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from dsac29.geometry import describe
+
+    box=BRepPrimAPI_MakeBox(20.,10.,7.).Shape()
+    a=describe(box,'old','old')
+    b=describe(BRepBuilderAPI_NurbsConvert(box,True).Shape(),'new','new')
+    kw={'operation':'world_fixed_partition','timeout_s':30.}
+    assert native_guard.guarded_world_reexport(a,b,.01,**kw)
+    moved=_relocate(b,np.eye(3),np.array([.04,0.,0.]))
+    assert not native_guard.guarded_world_reexport(a,moved,.01,**kw)
+    modified=describe(BRepPrimAPI_MakeBox(20.,10.,6.9).Shape(),'modified','modified')
+    assert not native_guard.guarded_world_reexport(a,modified,.01,**kw)
