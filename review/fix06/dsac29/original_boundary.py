@@ -198,14 +198,28 @@ def equivalent(a,b,tolerance,progress=None):
             matched=surface_equal(left,right,tol,cache)
             if matched:stage='trims'
             return matched
+        diagnostic = {}
+        if all('BSpline' in kind for kind in (fa[i][0],fb[j][0])):
+            from .nurbs_orientation import native_polynomial_equal
+            try:
+                proven = native_polynomial_equal(faces_a[i],faces_b[j],.875*tolerance,diagnostic)
+            except (RuntimeError,ValueError,ArithmeticError):
+                proven = False
+            if proven:
+                # Keep the total surface and trim displacement within tolerance.
+                trim = min(tolerance/2, tolerance-diagnostic['certified'])
+                if prove(faces_a[i],faces_b[j],{0:0},[fa[i]],2*trim,
+                         strict_repair=False,allow_original_micro_degenerate=True,
+                         surface_prover=lambda *_: True,edge_prover=circular_edge_equal):
+                    return True
         matched=prove(faces_a[i],faces_b[j],{0:0},[fa[i]],tolerance,
                       strict_repair=False,allow_original_micro_degenerate=True,
                       surface_prover=cached_surface,edge_prover=circular_edge_equal)
-        if not matched:first_rejections.setdefault(stage,(i,j))
+        if not matched:first_rejections.setdefault(stage,(i,j,diagnostic))
         return matched
     owner=verified_face_owner(options,verify)
     if owner is None:
-        for stage,(i,j) in first_rejections.items():
+        for stage,(i,j,diagnostic) in first_rejections.items():
             detail = ''
             if stage == 'surface' and 'BSpline' in fa[i][0] and 'BSpline' in fb[j][0]:
                 from OCP.BRepAdaptor import BRepAdaptor_Surface
@@ -216,6 +230,9 @@ def equivalent(a,b,tolerance,progress=None):
                                f' knots={spline.NbUKnots()}x{spline.NbVKnots()}'
                                f' periodic={int(spline.IsUPeriodic())},{int(spline.IsVPeriodic())}'
                                f' rational={int(spline.IsURational())},{int(spline.IsVRational())}')
+            if 'bound' in diagnostic:
+                detail += (f" native_hull_mm={diagnostic['poles']:.8g}"
+                           f" trim_box_bound_mm={diagnostic['trim']:.8g}")
             report(f'original_boundary_candidate_rejected_{stage} A[{i+1}] {fa[i][0]} / B[{j+1}] {fb[j][0]}{detail}')
         return False
     # Matching uses only fully verified face/wire pairs. A greedy geometric

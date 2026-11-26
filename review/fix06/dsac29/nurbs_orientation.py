@@ -21,6 +21,9 @@ def patch_equal(left, right, tolerance):
         return False
     if pole_bound(left, right) <= tolerance:
         return True
+    if p.shape == q.shape and np.all(w == w.flat[0]) and np.all(v == v.flat[0]):
+        rounding = 1e-13 * max(1., np.max(abs(p)), np.max(abs(q)))
+        return _difference_within(p-q, tolerance-rounding)
     if max(*w.shape, *v.shape) > 9:
         return False
 
@@ -88,3 +91,126 @@ def oriented_surface_equal(left,right,tolerance):
         if good:return True
     from .bernstein_partition import surfaces_equal
     return surfaces_equal(a.BSpline(),b.BSpline(),required_flip,tolerance)
+
+
+def _difference_within(net, limit, depth=0):
+    """Enclose the polynomial difference everywhere by its Bézier hull."""
+    if np.max(np.linalg.norm(net, axis=-1)) <= limit:
+        return True
+    if depth >= 8 or np.max(np.linalg.norm(net[[0,0,-1,-1],[0,-1,0,-1]], axis=-1)) > limit:
+        return False
+    axis = depth % 2 if min(net.shape[:2]) > 1 else int(net.shape[0] == 1)
+    level = np.moveaxis(net, axis, 0)
+    left, right = [level[0]], [level[-1]]
+    while len(level) > 1:
+        level = (level[:-1]+level[1:])*.5
+        left.append(level[0])
+        right.append(level[-1])
+    return all(_difference_within(np.moveaxis(np.array(half), 0, axis), limit, depth+1)
+               for half in (left, right[::-1]))
+
+
+def native_polynomial_equal(left_face, right_face, tolerance, details=None):
+    """Compare original polynomial spans with a bound for unequal trim boxes."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_BSplineSurface
+    from OCP.GeomConvert import GeomConvert_BSplineSurfaceToBezierSurface
+
+    def definition(face):
+        adaptor = BRepAdaptor_Surface(face)
+        if adaptor.GetType() != GeomAbs_BSplineSurface or int(face.Orientation()) not in (0,1):
+            return None
+        s = adaptor.BSpline()
+        if s.IsURational() or s.IsVRational() or s.IsUPeriodic() or s.IsVPeriodic():
+            return None
+        dimensions = (s.NbUKnots()-1, s.NbVKnots()-1)
+        if np.prod(dimensions)*(s.UDegree()+1)*(s.VDegree()+1) > 32768:
+            return None
+        domain = []
+        basis = []
+        for axis in ('U','V'):
+            knots = np.asarray(list(getattr(s, axis+'Knots')()), dtype=float)
+            bounds = [getattr(adaptor,'First'+axis+'Parameter')(), getattr(adaptor,'Last'+axis+'Parameter')()]
+            if bounds[0] < knots[0] or bounds[1] > knots[-1] or not bounds[0] < bounds[1]:
+                return None
+            domain.append(np.interp(bounds, knots, np.arange(len(knots))))
+            basis.append((tuple(knots), tuple(getattr(s, axis+'Multiplicities')())))
+        return s, dimensions, np.asarray(domain), basis
+
+    def extract(s, dimensions):
+        spans = GeomConvert_BSplineSurfaceToBezierSurface(s)
+        if (spans.NbUPatches(), spans.NbVPatches()) != dimensions:
+            return None
+        grid = np.empty((*dimensions, s.UDegree()+1, s.VDegree()+1, 3))
+        for i,j in np.ndindex(dimensions):
+            patch = spans.Patch(i+1,j+1)
+            grid[i,j] = [[patch.Pole(u,v).Coord() for v in range(1,patch.NbVPoles()+1)]
+                         for u in range(1,patch.NbUPoles()+1)]
+        if not np.isfinite(grid).all():
+            return None
+        return grid
+
+    left, right = definition(left_face), definition(right_face)
+    if left is None or right is None:
+        return False
+    s, dims_a, bounds_a, basis_a = left
+    t, dims_b, original_bounds_b, basis_b = right
+    required_flip = left_face.Orientation() != right_face.Orientation()
+    # With identical basis functions the surface difference is a convex
+    # combination of corresponding pole differences in the world frame.
+    if (not required_flip and basis_a == basis_b and np.array_equal(bounds_a, original_bounds_b)
+            and (s.UDegree(), s.VDegree()) == (t.UDegree(), t.VDegree())):
+        def poles(surface):
+            return np.asarray([[surface.Pole(i,j).Coord() for j in range(1,surface.NbVPoles()+1)]
+                               for i in range(1,surface.NbUPoles()+1)])
+        p, q = poles(s), poles(t)
+        bound = np.max(np.linalg.norm(p-q, axis=-1)) + 1e-13*max(1.,np.max(abs(p)),np.max(abs(q)))
+        if bound <= tolerance:
+            if details is not None:
+                details['certified'] = float(bound)
+            return True
+
+    a, original_b = extract(s,dims_a), extract(t,dims_b)
+    if a is None or original_b is None:
+        return False
+    for swap,ru,rv in product((False,True),repeat=3):
+        if (swap ^ ru ^ rv) != required_flip:
+            continue
+        b, bounds_b = original_b, original_bounds_b
+        if swap:
+            b = b.transpose(1,0,3,2,4)
+            bounds_b = bounds_b[::-1]
+        if b.shape != a.shape:
+            continue
+        bounds_b = bounds_b.copy()
+        if ru:
+            b = b[::-1,:,::-1]
+            bounds_b[0] = b.shape[0]-bounds_b[0,::-1]
+        if rv:
+            b = b[:,::-1,:,::-1]
+            bounds_b[1] = b.shape[1]-bounds_b[1,::-1]
+
+        # Each span occupies one unit in this coordinate system. The affine
+        # map between the face boxes displaces UV by at most these endpoint
+        # differences. Bound its world displacement using derivative hulls.
+        delta = np.max(np.abs(bounds_a-bounds_b), axis=1)
+        lower = np.maximum(0,np.floor(np.minimum(bounds_a[:,0],bounds_b[:,0])).astype(int))
+        upper = np.minimum(a.shape[:2],np.ceil(np.maximum(bounds_a[:,1],bounds_b[:,1])).astype(int))
+        region = np.s_[lower[0]:upper[0],lower[1]:upper[1]]
+        x, y = a[region], b[region]
+        if not x.size:
+            continue
+        slope = [np.max(np.linalg.norm(np.diff(y,axis=k),axis=-1))*(y.shape[k]-1) for k in (2,3)]
+        trim_error = float(delta @ slope)
+        residual = x-y
+        hull = float(np.max(np.linalg.norm(residual,axis=-1)))
+        if details is not None and hull+trim_error < details.get('bound',float('inf')):
+            details.update(bound=hull+trim_error, poles=hull, trim=trim_error)
+        rounding = 1e-13 * max(1.,np.max(abs(x)),np.max(abs(y)))
+        limit = tolerance-trim_error-rounding
+        if limit > 0 and (hull <= limit or all(_difference_within(residual[i,j],limit)
+                                               for i,j in np.ndindex(residual.shape[:2]))):
+            if details is not None:
+                details['certified'] = min(tolerance, hull+trim_error+rounding)
+            return True
+    return False

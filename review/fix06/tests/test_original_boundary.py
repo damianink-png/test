@@ -203,16 +203,11 @@ def test_surface_conversion_reused_without_reusing_movement_verdict(monkeypatch)
     assert len(calls)==4
 
 
-def test_different_spline_exports_keep_the_53_stationary_occurrences():
-    from collections import Counter
-    import numpy as np
+def _cylindrical_solids():
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid, BRepBuilderAPI_Sewing
     from OCP.TopAbs import TopAbs_FACE
     from OCP.TopoDS import TopoDS
     from dsac29.parametric_identity import items
-    from dsac29.compare import compare
-    from dsac29.geometry import describe
-    from dsac29.alignment import _relocate
 
     source = BRepBuilderAPI_NurbsConvert(BRepPrimAPI_MakeCylinder(5.,10.).Shape(), True).Shape()
     _, *caps = items(source, TopAbs_FACE, TopoDS.Face_s)
@@ -222,6 +217,96 @@ def test_different_spline_exports_keep_the_53_stationary_occurrences():
     sewing.Perform()
     assert sewing.NbFreeEdges() == 0
     target = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(sewing.SewedShape())).Solid()
+    return source, target
+
+
+def _bicubic_cap(offset):
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+    from OCP.Geom import Geom_BSplineSurface
+    from OCP.TColgp import TColgp_Array2OfPnt
+    from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal
+    from OCP.gp import gp_Pnt
+
+    def knot_data(count):
+        knots = TColStd_Array1OfReal(1, count)
+        mults = TColStd_Array1OfInteger(1, count)
+        for i in range(1, count+1):
+            knots.SetValue(i, i-1)
+            mults.SetValue(i, 4 if i in (1, count) else 1)
+        return knots, mults
+
+    uk, um = knot_data(21)
+    vk, vm = knot_data(5)
+    poles = TColgp_Array2OfPnt(1, 23, 1, 7)
+    for i in range(23):
+        for j in range(7):
+            z = 10. + (offset if (i,j) == (11,3) else 0.)
+            poles.SetValue(i+1, j+1, gp_Pnt(i*20./22, j*4./6, z))
+    surface = Geom_BSplineSurface(poles, uk, vk, um, vm, 3, 3, False, False)
+    return BRepBuilderAPI_MakeFace(surface, 1e-7).Face()
+
+
+def _bicubic_solid(offset):
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid, BRepBuilderAPI_Sewing
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopoDS import TopoDS
+    from dsac29.parametric_identity import items
+
+    faces = items(BRepPrimAPI_MakeBox(20.,4.,10.).Shape(), TopAbs_FACE, TopoDS.Face_s)
+    sewing = BRepBuilderAPI_Sewing(1e-6)
+    for face in [*faces[:-1], _bicubic_cap(offset)]:
+        sewing.Add(face)
+    sewing.Perform()
+    assert sewing.NbFreeEdges() == 0
+    return BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(sewing.SewedShape())).Solid()
+
+
+def test_bicubic_surface_budget_checks_interior_and_orientation():
+    from OCP.TopoDS import TopoDS
+    from dsac29.nurbs_orientation import native_polynomial_equal
+
+    a, b = _bicubic_cap(0.), _bicubic_cap(.015)
+    assert not surface_equal(a, b, .005)
+    assert native_polynomial_equal(a, b, .00875)
+    assert not native_polynomial_equal(a, TopoDS.Face_s(b.Reversed()), .00875)
+    assert not native_polynomial_equal(a, _bicubic_cap(.06), .01)
+    assert not equivalent(_bicubic_solid(0.), _bicubic_solid(.06), .01)
+
+
+def test_bicubic_surface_compares_original_trim_and_world_placement():
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.TopoDS import TopoDS
+    from OCP.gp import gp_Trsf, gp_Vec
+    from dsac29.nurbs_orientation import native_polynomial_equal
+
+    def trimmed(surface, u0, u1, v0=0., v1=4.):
+        return BRepBuilderAPI_MakeFace(surface, u0, u1, v0, v1, 1e-7).Face()
+
+    source = BRepAdaptor_Surface(_bicubic_cap(.06)).BSpline()
+    face = trimmed(source, 5., 13.)
+    other = source.Copy()
+    other.ExchangeUV()
+    swapped = TopoDS.Face_s(trimmed(other, 0., 4., 5., 13.).Reversed())
+    assert native_polynomial_equal(face, swapped, .00875)
+    assert not native_polynomial_equal(face, trimmed(source, 5., 14.), .00875)
+    trsf = gp_Trsf()
+    trsf.SetTranslation(gp_Vec(.02, 0., 0.))
+    shifted = TopoDS.Face_s(swapped.Moved(TopLoc_Location(trsf)))
+    assert not native_polynomial_equal(face, shifted, .00875)
+
+
+@pytest.mark.parametrize('solids', [_cylindrical_solids, lambda: (_bicubic_solid(0.), _bicubic_solid(.015))],
+                         ids=['rational-cylinder', 'polynomial-23x7'])
+def test_different_spline_exports_keep_the_53_stationary_occurrences(solids):
+    from collections import Counter
+    import numpy as np
+    from dsac29.compare import compare
+    from dsac29.geometry import describe
+    from dsac29.alignment import _relocate
+
+    source, target = solids()
     assert equivalent(source, target, .01)
 
     def occurrences(shape, name, positions):
