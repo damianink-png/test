@@ -83,10 +83,11 @@ def _planar_surface_equal(a, b, tolerance):
 
 
 def surface_equal(a,b,tolerance,cache=None):
+    from .cylindrical_boundary import equivalent as cylinder_equal
     from .nurbs_orientation import oriented_surface_equal
     if not np.isfinite(tolerance) or tolerance<=0:return False
     try:
-        if _planar_surface_equal(a, b, tolerance):
+        if _planar_surface_equal(a, b, tolerance) or cylinder_equal(a, b, tolerance):
             return True
     except Exception:
         pass  # The existing bounded UV proof can still verify this pair.
@@ -103,6 +104,7 @@ def equivalent(a,b,tolerance,progress=None):
     from .brep_safety import is_valid
     from .step_reexport_tolerance import _faces
     from .parametric_identity import prove
+    from .cylindrical_boundary import circular_edge_equal
     from OCP.TopAbs import TopAbs_SOLID,TopAbs_FACE
     from OCP.TopoDS import TopoDS
     from .parametric_identity import items
@@ -143,7 +145,7 @@ def equivalent(a,b,tolerance,progress=None):
             return matched
         matched=prove(faces_a[i],faces_b[j],{0:0},[fa[i]],tolerance,
                       strict_repair=False,allow_original_micro_degenerate=True,
-                      surface_prover=cached_surface)
+                      surface_prover=cached_surface,edge_prover=circular_edge_equal)
         if not matched:first_rejections.setdefault(stage,(i,j))
         return matched
     owner=verified_face_owner(options,verify)

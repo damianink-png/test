@@ -1,3 +1,4 @@
+from math import tau
 import pytest
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder,BRepPrimAPI_MakeBox
 from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
@@ -60,6 +61,69 @@ def test_whole_solid_with_rotated_uv_and_trim_diagnostics():
     assert not equivalent(a, changed, .01, stages.append)
     assert any(stage.startswith('original_boundary_candidate_rejected_trims ') for stage in stages)
 
+
+def _rational_cylinder_face(radius, stop):
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+    from OCP.Convert import Convert_QuasiAngular
+    from OCP.Geom import (Geom_Circle, Geom_RectangularTrimmedSurface,
+                          Geom_SurfaceOfLinearExtrusion, Geom_TrimmedCurve)
+    from OCP.GeomConvert import GeomConvert
+    from OCP.gp import gp_Ax2, gp_Dir
+
+    arc = Geom_TrimmedCurve(Geom_Circle(gp_Ax2(), radius), 0., stop)
+    curve = GeomConvert.CurveToBSplineCurve_s(arc, Convert_QuasiAngular)
+    surface = Geom_SurfaceOfLinearExtrusion(curve, gp_Dir(0., 0., 1.))
+    trim = Geom_RectangularTrimmedSurface(surface, curve.FirstParameter(), curve.LastParameter(), 0., 10.)
+    return BRepBuilderAPI_MakeFace(GeomConvert.SurfaceToBSplineSurface_s(trim), 1e-7).Face()
+
+
+@pytest.mark.parametrize('end', [2.3, tau])
+def test_cylindrical_surface_and_trims_match_different_rational_parameters(end):
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+    from OCP.Geom import Geom_CylindricalSurface
+    from OCP.TopoDS import TopoDS
+    from OCP.gp import gp_Ax3
+    from dsac29.cylindrical_boundary import circular_edge_equal
+    from dsac29.parametric_identity import prove
+
+    cylinder = Geom_CylindricalSurface(gp_Ax3(), 5.)
+    a = BRepBuilderAPI_MakeFace(cylinder, 0., end, 0., 10., 1e-7).Face()
+
+    options = dict(strict_repair=False, surface_prover=surface_equal, edge_prover=circular_edge_equal)
+    b = _rational_cylinder_face(5., end)
+    assert surface_equal(a, b, .005)
+    assert surface_equal(b, a, .005)
+    assert prove(a,b,{0:0},[],.01,**options)
+    assert not surface_equal(a, TopoDS.Face_s(b.Reversed()), .005)
+    assert not surface_equal(a, _rational_cylinder_face(5.03, end), .005)
+    changed_trim = _rational_cylinder_face(5., end-.2)
+    assert surface_equal(a, changed_trim, .005)
+    assert not prove(a,changed_trim,{0:0},[],.01,**options)
+
+
+def test_closed_solid_cylindrical_reexport_is_proven_at_its_own_location():
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid, BRepBuilderAPI_Sewing
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.TopoDS import TopoDS
+    from OCP.gp import gp_Trsf, gp_Vec
+    from dsac29.parametric_identity import items
+
+    source = BRepPrimAPI_MakeCylinder(5., 10.).Shape()
+    _, *caps = items(source, TopAbs_FACE, TopoDS.Face_s)
+    sewing = BRepBuilderAPI_Sewing(1e-6)
+    for face in [_rational_cylinder_face(5., tau), *caps]:
+        sewing.Add(face)
+    sewing.Perform()
+    assert sewing.NbFreeEdges() == 0
+    target = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(sewing.SewedShape())).Solid()
+    transform = gp_Trsf()
+    transform.SetTranslation(gp_Vec(130., 280., 410.))
+    location = TopLoc_Location(transform)
+    assert equivalent(source.Moved(location), target.Moved(location), .01)
+    transform.SetTranslation(gp_Vec(.05, 0., 0.))
+    assert not equivalent(source, target.Moved(TopLoc_Location(transform)), .01)
+
 @pytest.mark.parametrize('shape',[lambda:BRepPrimAPI_MakeCylinder(5,10).Shape(),lambda:BRepPrimAPI_MakeBox(10,20,30).Shape()])
 def test_analytic_export_matches_nurbs_without_replacing_original_wires(shape):
     a=shape();b=BRepBuilderAPI_NurbsConvert(a,True).Shape()
@@ -111,6 +175,7 @@ def test_nearby_faces_with_reversed_enumeration_match_by_proven_geometry():
 
 def test_surface_conversion_reused_without_reusing_movement_verdict(monkeypatch):
     from dsac29 import original_boundary as module
+    from dsac29 import cylindrical_boundary
     from OCP.BRepAdaptor import BRepAdaptor_Surface
     from OCP.GeomAbs import GeomAbs_Cylinder
     from OCP.TopAbs import TopAbs_FACE
@@ -126,6 +191,7 @@ def test_surface_conversion_reused_without_reusing_movement_verdict(monkeypatch)
     native=module._surface_face;calls=[]
     def counted(face):calls.append(face);return native(face)
     monkeypatch.setattr(module,'_surface_face',counted)
+    monkeypatch.setattr(cylindrical_boundary,'equivalent',lambda *args:False)
     cache=module.SurfaceCache()
     for _ in range(10):assert module.surface_equal(a,b,.01,cache)
     assert len(calls)==2
