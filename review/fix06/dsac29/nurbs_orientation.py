@@ -116,26 +116,46 @@ def native_polynomial_equal(left_face, right_face, tolerance, details=None):
     from OCP.GeomAbs import GeomAbs_BSplineSurface
     from OCP.GeomConvert import GeomConvert_BSplineSurfaceToBezierSurface
 
-    def definition(face):
+    def reject(label, reason):
+        if details is not None:
+            details[label] = reason
+
+    def definition(face, label):
         adaptor = BRepAdaptor_Surface(face)
         if adaptor.GetType() != GeomAbs_BSplineSurface or int(face.Orientation()) not in (0,1):
+            reject(label, 'unsupported_face')
             return None
         s = adaptor.BSpline()
         if s.IsURational() or s.IsVRational() or s.IsUPeriodic() or s.IsVPeriodic():
+            reject(label, 'rational_or_periodic')
             return None
-        dimensions = (s.NbUKnots()-1, s.NbVKnots()-1)
-        if np.prod(dimensions)*(s.UDegree()+1)*(s.VDegree()+1) > 32768:
-            return None
-        domain = []
-        basis = []
+        domain, basis, overhang, dimensions = [], [], [], []
         for axis in ('U','V'):
             knots = np.asarray(list(getattr(s, axis+'Knots')()), dtype=float)
+            mults = tuple(getattr(s, axis+'Multiplicities')())
+            basis.append((tuple(knots),mults))
+            first = getattr(s,'First'+axis+'KnotIndex')()
+            last = getattr(s,'Last'+axis+'KnotIndex')()
+            knots = knots[first-1:last]
+            dimensions.append(len(knots)-1)
             bounds = [getattr(adaptor,'First'+axis+'Parameter')(), getattr(adaptor,'Last'+axis+'Parameter')()]
-            if bounds[0] < knots[0] or bounds[1] > knots[-1] or not bounds[0] < bounds[1]:
+            if not np.isfinite(bounds).all() or not bounds[0] < bounds[1]:
+                reject(label, axis+'_invalid_domain')
                 return None
+            # A STEP p-curve may run just outside the support knots. OCCT
+            # evaluates the terminal polynomial there. Keep its displacement
+            # in the proof budget, measured in units of the terminal span.
+            excess = max(0., (knots[0]-bounds[0])/(knots[1]-knots[0]),
+                         (bounds[1]-knots[-1])/(knots[-1]-knots[-2]))
+            if excess > .01 or bounds[1] <= knots[0] or bounds[0] >= knots[-1]:
+                reject(label, f'{axis}_outside_span({excess:.8g})')
+                return None
+            overhang.append(excess)
             domain.append(np.interp(bounds, knots, np.arange(len(knots))))
-            basis.append((tuple(knots), tuple(getattr(s, axis+'Multiplicities')())))
-        return s, dimensions, np.asarray(domain), basis
+        if np.prod(dimensions)*(s.UDegree()+1)*(s.VDegree()+1) > 32768:
+            reject(label, 'span_budget')
+            return None
+        return s, tuple(dimensions), np.asarray(domain), basis, np.array(overhang)
 
     def extract(s, dimensions):
         spans = GeomConvert_BSplineSurfaceToBezierSurface(s)
@@ -150,15 +170,15 @@ def native_polynomial_equal(left_face, right_face, tolerance, details=None):
             return None
         return grid
 
-    left, right = definition(left_face), definition(right_face)
+    left, right = definition(left_face,'A'), definition(right_face,'B')
     if left is None or right is None:
         return False
-    s, dims_a, bounds_a, basis_a = left
-    t, dims_b, original_bounds_b, basis_b = right
+    s, dims_a, bounds_a, basis_a, excess_a = left
+    t, dims_b, original_bounds_b, basis_b, excess_b = right
     required_flip = left_face.Orientation() != right_face.Orientation()
     # With identical basis functions the surface difference is a convex
     # combination of corresponding pole differences in the world frame.
-    if (not required_flip and basis_a == basis_b and np.array_equal(bounds_a, original_bounds_b)
+    if (not required_flip and not (excess_a.any() or excess_b.any()) and basis_a == basis_b and np.array_equal(bounds_a, original_bounds_b)
             and (s.UDegree(), s.VDegree()) == (t.UDegree(), t.VDegree())):
         def poles(surface):
             return np.asarray([[surface.Pole(i,j).Coord() for j in range(1,surface.NbVPoles()+1)]
@@ -172,7 +192,23 @@ def native_polynomial_equal(left_face, right_face, tolerance, details=None):
 
     a, original_b = extract(s,dims_a), extract(t,dims_b)
     if a is None or original_b is None:
+        reject('span_layout', 'conversion_failed')
         return False
+
+    def extension_bound(grid, excess):
+        if not excess.any():
+            return 0.
+        # On [-e,1+e] the sum of absolute Bernstein basis values is at
+        # most (1+2e)**degree. Apply this to both derivative control nets.
+        degrees = np.asarray(grid.shape[2:4])-1
+        growth = np.prod((1.+2.*excess)**degrees)
+        slopes = [degree*np.max(np.linalg.norm(np.diff(grid,axis=k+2),axis=-1))
+                  for k,degree in enumerate(degrees)]
+        return float(growth*(excess @ slopes))
+
+    extension = extension_bound(a,excess_a) + extension_bound(original_b,excess_b)
+    if details is not None:
+        details['extension_mm'] = extension
     for swap,ru,rv in product((False,True),repeat=3):
         if (swap ^ ru ^ rv) != required_flip:
             continue
@@ -201,7 +237,7 @@ def native_polynomial_equal(left_face, right_face, tolerance, details=None):
         if not x.size:
             continue
         slope = [np.max(np.linalg.norm(np.diff(y,axis=k),axis=-1))*(y.shape[k]-1) for k in (2,3)]
-        trim_error = float(delta @ slope)
+        trim_error = float(delta @ slope) + extension
         residual = x-y
         hull = float(np.max(np.linalg.norm(residual,axis=-1)))
         if details is not None and hull+trim_error < details.get('bound',float('inf')):

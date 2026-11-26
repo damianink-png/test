@@ -22,7 +22,21 @@ a='  def wires_equal(ex,ey):'
 assert s.count(a)==1
 s=s.replace(a,'''  def oriented_edges_equal(left,right):
    extra=None if edge_prover is None else lambda i,j: edge_prover(left[i],right[j],tol)
-   return perfect(edge_options([data(e) for e in left],[data(e) for e in right],tol,extra))
+   options = edge_options([data(e) for e in left],[data(e) for e in right],tol,extra)
+   if perfect(options):return True
+   if extra is None:return False
+   # A full circle can start at a different seam after a STEP export.
+   # For closed edges only, give the independent whole-curve prover the
+   # candidates which the endpoint index could not reach.
+   closed_right = [j for j,e in enumerate(right) if BRep_Tool.IsClosed_s(e)]
+   changed = False
+   for i,e in enumerate(left):
+    if BRep_Tool.IsClosed_s(e):
+     for j in closed_right:
+      if j not in options[i] and extra(i,j):
+       options[i].append(j)
+       changed = True
+   return changed and perfect(options)
 
   def wires_equal(ex,ey):''')
 a='perfect(edge_options([data(e) for e in x],[data(e) for e in y],tol))'

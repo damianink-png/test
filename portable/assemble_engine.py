@@ -37,7 +37,7 @@ def assemble(target):
         raise RuntimeError('CAD source syntax failed')
     info_path=target/'build_info.json'
     info=json.loads(info_path.read_text(encoding='utf-8-sig'))
-    info.update(revision=f'Portable {version} — granice odchyłki oryginalnych płatów B-Spline 2026-11-26',
+    info.update(revision=f'Portable {version} — granice przycięcia płatów STEP i szwy zamkniętych krawędzi 2026-11-26',
                 portable_version=version,
                 source_commit=os.environ.get('GITHUB_SHA','local_uncommitted'),
                 source_assembly='portable/prepare_source.py + portable/assemble_engine.py')

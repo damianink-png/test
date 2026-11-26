@@ -86,3 +86,12 @@ def test_mixed_surface_types_skip_doomed_descriptor_stage(monkeypatch):
     phases=[]
     assert not module.reexport_equivalent_world(a,b,.01,allow_boolean=False,progress=phases.append)
     assert phases[-1]=='surface_type_mismatch_requires_normalization'
+
+
+def test_unmatched_report_excludes_earlier_resolved_rejections():
+    from dsac29.boundary_work import verified_face_owner
+    report = []
+    options = [[0,1], [2,3]]
+    assert verified_face_owner(options, lambda i,j: (i,j)==(0,1),
+                               lambda root,visited: report.append((root,visited))) is None
+    assert report == [(1,{1})]

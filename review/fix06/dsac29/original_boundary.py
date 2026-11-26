@@ -160,7 +160,7 @@ def equivalent(a,b,tolerance,progress=None):
     from .step_reexport_tolerance import _faces
     from .parametric_identity import prove
     from .cylindrical_boundary import circular_edge_equal
-    from OCP.TopAbs import TopAbs_SOLID,TopAbs_FACE
+    from OCP.TopAbs import TopAbs_SOLID,TopAbs_FACE,TopAbs_WIRE,TopAbs_EDGE
     from OCP.TopoDS import TopoDS
     from .parametric_identity import items
     from .same_domain import _count
@@ -203,7 +203,8 @@ def equivalent(a,b,tolerance,progress=None):
             from .nurbs_orientation import native_polynomial_equal
             try:
                 proven = native_polynomial_equal(faces_a[i],faces_b[j],.875*tolerance,diagnostic)
-            except (RuntimeError,ValueError,ArithmeticError):
+            except (RuntimeError,ValueError,ArithmeticError) as exc:
+                diagnostic['native_exception'] = f'{type(exc).__name__} {str(exc)[:100]}'
                 proven = False
             if proven:
                 # Keep the total surface and trim displacement within tolerance.
@@ -212,24 +213,62 @@ def equivalent(a,b,tolerance,progress=None):
                          strict_repair=False,allow_original_micro_degenerate=True,
                          surface_prover=lambda *_: True,edge_prover=circular_edge_equal):
                     return True
+                diagnostic['trim_proof'] = 'rejected'
+                if trim == tolerance/2:
+                    # The fallback uses the same oriented wires and edge budget.
+                    first_rejections.setdefault(i,{}).setdefault('trims',(i,j,diagnostic))
+                    return False
         matched=prove(faces_a[i],faces_b[j],{0:0},[fa[i]],tolerance,
                       strict_repair=False,allow_original_micro_degenerate=True,
                       surface_prover=cached_surface,edge_prover=circular_edge_equal)
-        if not matched:first_rejections.setdefault(stage,(i,j,diagnostic))
+        if not matched:first_rejections.setdefault(i,{}).setdefault(stage,(i,j,diagnostic))
         return matched
-    owner=verified_face_owner(options,verify)
+    blocked = {}
+    def unmatched(root, visited):
+        report(f'original_boundary_unmatched A[{root+1}] candidates={len(options[root])} visited={len(visited)}')
+        # A rejection elsewhere may already have been resolved by a different
+        # partner. Report only failures from this unsuccessful augmenting path.
+        for index in [root,*sorted(visited-{root})]:
+            for stage,rejection in first_rejections.get(index,{}).items():
+                blocked.setdefault(stage,rejection)
+    owner=verified_face_owner(options,verify,unmatched)
     if owner is None:
-        for stage,(i,j,diagnostic) in first_rejections.items():
+        for stage,(i,j,diagnostic) in blocked.items():
             detail = ''
-            if stage == 'surface' and 'BSpline' in fa[i][0] and 'BSpline' in fb[j][0]:
+            if 'BSpline' in fa[i][0] and 'BSpline' in fb[j][0]:
                 from OCP.BRepAdaptor import BRepAdaptor_Surface
                 for label, face in (('A', faces_a[i]), ('B', faces_b[j])):
-                    spline = BRepAdaptor_Surface(face).BSpline()
+                    adaptor = BRepAdaptor_Surface(face)
+                    spline = adaptor.BSpline()
+                    bounds = (adaptor.FirstUParameter(),adaptor.LastUParameter(),
+                              adaptor.FirstVParameter(),adaptor.LastVParameter())
                     detail += (f' {label}: degree={spline.UDegree()}x{spline.VDegree()}'
                                f' poles={spline.NbUPoles()}x{spline.NbVPoles()}'
                                f' knots={spline.NbUKnots()}x{spline.NbVKnots()}'
                                f' periodic={int(spline.IsUPeriodic())},{int(spline.IsVPeriodic())}'
-                               f' rational={int(spline.IsURational())},{int(spline.IsVRational())}')
+                               f' rational={int(spline.IsURational())},{int(spline.IsVRational())}'
+                               f' orientation={int(face.Orientation())}'
+                               f' uv={tuple(float(v) for v in bounds)} support={spline.Bounds()}')
+            if stage == 'trims' or 'trim_proof' in diagnostic:
+                from collections import Counter
+                from OCP.BRep import BRep_Tool
+                from OCP.BRepAdaptor import BRepAdaptor_Curve
+                for label,face in (('A',faces_a[i]),('B',faces_b[j])):
+                    wires = items(face,TopAbs_WIRE,TopoDS.Wire_s)
+                    edges = items(face,TopAbs_EDGE,TopoDS.Edge_s)
+                    kinds = Counter()
+                    for edge in edges:
+                        try:
+                            kind = ('point' if BRep_Tool.Degenerated_s(edge) else
+                                    str(BRepAdaptor_Curve(edge).GetType()).split('.')[-1])
+                        except RuntimeError:
+                            kind = 'unreadable_curve'
+                        kinds[kind] += 1
+                    detail += (f' {label}_wires={len(wires)} edges={dict(kinds)}'
+                               f' closed={sum(BRep_Tool.IsClosed_s(e) for e in edges)}')
+            for key in ('A','B','native_exception','span_layout','extension_mm','certified','trim_proof'):
+                if key in diagnostic:
+                    detail += f' {key}={diagnostic[key]}'
             if 'bound' in diagnostic:
                 detail += (f" native_hull_mm={diagnostic['poles']:.8g}"
                            f" trim_box_bound_mm={diagnostic['trim']:.8g}")

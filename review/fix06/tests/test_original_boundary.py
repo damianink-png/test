@@ -246,7 +246,8 @@ def _bicubic_cap(offset):
     return BRepBuilderAPI_MakeFace(surface, 1e-7).Face()
 
 
-def _bicubic_solid(offset):
+def _bicubic_solid(offset, excess=0.):
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid, BRepBuilderAPI_Sewing
     from OCP.TopAbs import TopAbs_FACE
     from OCP.TopoDS import TopoDS
@@ -254,7 +255,10 @@ def _bicubic_solid(offset):
 
     faces = items(BRepPrimAPI_MakeBox(20.,4.,10.).Shape(), TopAbs_FACE, TopoDS.Face_s)
     sewing = BRepBuilderAPI_Sewing(1e-6)
-    for face in [*faces[:-1], _bicubic_cap(offset)]:
+    cap = _bicubic_cap(offset)
+    if excess:
+        cap = _extended_face(BRepAdaptor_Surface(cap).BSpline(), excess)
+    for face in [*faces[:-1], cap]:
         sewing.Add(face)
     sewing.Perform()
     assert sewing.NbFreeEdges() == 0
@@ -297,8 +301,9 @@ def test_bicubic_surface_compares_original_trim_and_world_placement():
     assert not native_polynomial_equal(face, shifted, .00875)
 
 
-@pytest.mark.parametrize('solids', [_cylindrical_solids, lambda: (_bicubic_solid(0.), _bicubic_solid(.015))],
-                         ids=['rational-cylinder', 'polynomial-23x7'])
+@pytest.mark.parametrize('solids', [_cylindrical_solids, lambda: (_bicubic_solid(0.), _bicubic_solid(.015)),
+                                     lambda: (_bicubic_solid(0.), _bicubic_solid(.015, 1e-9))],
+                         ids=['rational-cylinder', 'polynomial-23x7','pcurve-outside-knots'])
 def test_different_spline_exports_keep_the_53_stationary_occurrences(solids):
     from collections import Counter
     import numpy as np
@@ -320,3 +325,63 @@ def test_different_spline_exports_keep_the_53_stationary_occurrences(solids):
     rows = classify_revisions(old, new, rows, geometry_first=True)
     assert Counter(row.status for row in rows) == {'SAME':53,'REMOVED':22,'ADDED':56}
     assert {(row.a_index,row.b_index) for row in rows if row.status=='SAME'} == {(i,i) for i in range(53)}
+
+
+def _extended_face(support, excess):
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire
+    from OCP.BRepLib import BRepLib
+    from OCP.GCE2d import GCE2d_MakeSegment
+    from OCP.gp import gp_Pnt2d
+
+    corners = [(-excess,0.),(20.,0.),(20.,4.),(-excess,4.)]
+    wire = BRepBuilderAPI_MakeWire()
+    for i, point in enumerate(corners):
+        line = GCE2d_MakeSegment(gp_Pnt2d(*corners[i-1]),gp_Pnt2d(*point)).Value()
+        wire.Add(BRepBuilderAPI_MakeEdge(line,support).Edge())
+    face = BRepBuilderAPI_MakeFace(support,wire.Wire(),True).Face()
+    assert BRepAdaptor_Surface(face).FirstUParameter() < 0.
+    BRepLib.BuildCurves3d_s(face)
+    return face
+
+
+def test_exported_pcurves_outside_native_knots_consume_world_distance_budget():
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from dsac29.nurbs_orientation import native_polynomial_equal
+
+    cap = _bicubic_cap(0.)
+    support = BRepAdaptor_Surface(cap).BSpline()
+    details = {}
+    assert native_polynomial_equal(cap, _extended_face(support, 1e-7), .00875, details)
+    assert 0. < details['extension_mm'] <= details['certified'] <= .00875
+    assert not native_polynomial_equal(cap, _extended_face(support, .005), .00875)
+    details = {}
+    assert not native_polynomial_equal(cap, _extended_face(support, .05), .00875, details)
+    assert 'outside_span' in details['B']
+
+
+def test_disk_with_a_new_seam_needs_its_full_oriented_circle():
+    from math import cos, sin
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire, BRepBuilderAPI_MakeFace
+    from OCP.Geom import Geom_Circle
+    from OCP.GeomConvert import GeomConvert
+    from OCP.TopoDS import TopoDS
+    from OCP.gp import gp_Ax2, gp_Pln, gp_Pnt, gp_Dir
+    from dsac29.cylindrical_boundary import circular_edge_equal
+    from dsac29.parametric_identity import prove
+
+    def edge(angle, radius, spline):
+        axes = gp_Ax2(gp_Pnt(),gp_Dir(0,0,1),gp_Dir(cos(angle),sin(angle),0))
+        circle = Geom_Circle(axes,radius)
+        return BRepBuilderAPI_MakeEdge(GeomConvert.CurveToBSplineCurve_s(circle) if spline else circle).Edge()
+
+    def disk(trim):
+        return BRepBuilderAPI_MakeFace(gp_Pln(gp_Pnt(),gp_Dir(0,0,1)), BRepBuilderAPI_MakeWire(trim).Wire(),True).Face()
+
+    for spline in (True,False):
+        a, b = edge(0.,5.,spline),edge(1.2,5.,True)
+        assert circular_edge_equal(a,b,.005)
+        assert prove(disk(a),disk(b),{0:0},[],.01,strict_repair=False,
+                     surface_prover=surface_equal,edge_prover=circular_edge_equal)
+        assert not circular_edge_equal(a,TopoDS.Edge_s(b.Reversed()),.005)
+        assert not circular_edge_equal(a,edge(1.2,5.03,True),.005)

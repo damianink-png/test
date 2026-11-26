@@ -155,10 +155,16 @@ def circular_edge_equal(a, b, tolerance):
     """Prove one analytic circle and its oriented rational trimming curve."""
     from OCP.BRepAdaptor import BRepAdaptor_Curve
     from OCP.GeomAbs import GeomAbs_BSplineCurve, GeomAbs_Circle
-    from .parametric_identity import edge_data
+    from OCP.BRep import BRep_Tool
+    from .parametric_identity import edge_data, edge_equal
 
     try:
         left, right = BRepAdaptor_Curve(a), BRepAdaptor_Curve(b)
+        closed = BRep_Tool.IsClosed_s(a) and BRep_Tool.IsClosed_s(b)
+        if closed and left.GetType() == right.GetType() == GeomAbs_Circle:
+            x, y = edge_data(a), edge_data(b)
+            return (all(abs(d[6]-2*np.pi) <= 1e-12 for d in (x,y))
+                    and edge_equal(x,y,tolerance))
         if left.GetType() == right.GetType() == GeomAbs_BSplineCurve:
             from OCP.GC import GC_MakeCircle
             from OCP.ElCLib import ElCLib
@@ -192,7 +198,8 @@ def circular_edge_equal(a, b, tolerance):
         if data[0]!='bezier' or not 0 < len(data[1]) <= 128 or not 0 < sweep <= 2*np.pi+1e-10:
             return False
         arcs = data[1]
-        if max(np.linalg.norm(start-arcs[0][0][0]), np.linalg.norm(end-arcs[-1][0][-1])) > tolerance/2:
+        full = closed and abs(sweep-2*np.pi) <= 1e-12
+        if not full and max(np.linalg.norm(start-arcs[0][0][0]), np.linalg.norm(end-arcs[-1][0][-1])) > tolerance/2:
             return False
         error = min(.25, tolerance/(4*radius))-1e-12
         if error <= 0:
