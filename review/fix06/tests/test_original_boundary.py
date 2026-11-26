@@ -301,9 +301,79 @@ def test_bicubic_surface_compares_original_trim_and_world_placement():
     assert not native_polynomial_equal(face, shifted, .00875)
 
 
+def _reported_cap(old, offset=0.):
+    """Recorded UV ranges/orientations; synthetic knots and control points."""
+    import numpy as np
+    from OCP.Geom import Geom_BSplineSurface
+    from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal
+    from OCP.TColgp import TColgp_Array2OfPnt
+    from OCP.TopoDS import TopoDS
+    from OCP.gp import gp_Pnt
+
+    bounds = ((-.00018445272065421535,2.339643364298939,-.0063301236956363575,1.6001413635270016)
+              if old else (-.00018235991749899097,2.3396433642989387,-.023357329638431637,1.5830458494965853))
+    first_span = .00018445272065421535/.0270682
+    def axis(knots):
+        k = TColStd_Array1OfReal(1,len(knots))
+        m = TColStd_Array1OfInteger(1,len(knots))
+        for i,value in enumerate(knots,1):
+            k.SetValue(i,value)
+            m.SetValue(i,4 if i in (1,len(knots)) else 1)
+        flat = np.r_[[knots[0]]*3,knots,[knots[-1]]*3]
+        triples = [flat[i+1:i+4] for i in range(len(flat)-4)]
+        return k,m,triples
+
+    uk,um,us = axis(np.r_[0.,np.linspace(first_span,2.378167391356,20)])
+    vk,vm,vs = axis(np.linspace(-.09956341465096,1.676343957654,5))
+    poles = TColgp_Array2OfPnt(1,len(us),1,len(vs))
+    for i,u in enumerate(us):
+        x = 20.*(np.mean(u)-bounds[0])/(bounds[1]-bounds[0])
+        for j,v in enumerate(vs):
+            v = (v-bounds[2])/(bounds[3]-bounds[2])
+            y = 4.*np.mean(v)
+            # Blossom of 4*v*(1-v) leaves the actual trim edges in z=0.
+            arch = 4.*(np.mean(v)-(v[0]*v[1]+v[1]*v[2]+v[0]*v[2])/3.)
+            z = offset*arch if i==11 else 0.
+            poles.SetValue(i+1,j+1,gp_Pnt(x,y if old else 4.-y,z))
+    face = _rectangular_pcurves(Geom_BSplineSurface(poles,uk,vk,um,vm,3,3,False,False),bounds)
+    return TopoDS.Face_s(face.Reversed()) if old else face
+
+
+def _reported_solids():
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing,BRepBuilderAPI_MakeSolid
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopoDS import TopoDS
+    from dsac29.parametric_identity import items
+
+    box = BRepPrimAPI_MakeBox(20.,4.,10.).Shape()
+    faces = items(box,TopAbs_FACE,TopoDS.Face_s)
+    solids = []
+    for cap in (_reported_cap(True,.35),_reported_cap(False,.35)):
+        sewing = BRepBuilderAPI_Sewing(1e-6)
+        for face in [*faces[:4],cap,faces[-1]]:
+            sewing.Add(face)
+        sewing.Perform()
+        assert sewing.NbFreeEdges() == 0
+        solids.append(BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(sewing.SewedShape())).Solid())
+    return solids
+
+
+def test_reported_sixth_face_checks_reflected_trim_rectangles():
+    from OCP.TopoDS import TopoDS
+    from dsac29.nurbs_orientation import native_polynomial_equal
+    a,b = _reported_cap(True),_reported_cap(False,.012)
+    for left,right in ((a,b),(b,a)):
+        details = {}
+        assert native_polynomial_equal(left,right,.00875,details)
+        assert details['max_overhang_spans'] == pytest.approx(.0270682)
+        assert 0. < details['certified'] <= .00875
+    assert not native_polynomial_equal(a,TopoDS.Face_s(b.Reversed()),.00875)
+    assert not native_polynomial_equal(a,_reported_cap(False,.09),.00875)
+
+
 @pytest.mark.parametrize('solids', [_cylindrical_solids, lambda: (_bicubic_solid(0.), _bicubic_solid(.015)),
-                                     lambda: (_bicubic_solid(0.), _bicubic_solid(.015, 1e-9))],
-                         ids=['rational-cylinder', 'polynomial-23x7','pcurve-outside-knots'])
+                                     lambda: (_bicubic_solid(0.), _bicubic_solid(.015, 1e-9)), _reported_solids],
+                         ids=['rational-cylinder', 'polynomial-23x7','pcurve-outside-knots','reported-reflected-overhang'])
 def test_different_spline_exports_keep_the_53_stationary_occurrences(solids):
     from collections import Counter
     import numpy as np
@@ -328,19 +398,22 @@ def test_different_spline_exports_keep_the_53_stationary_occurrences(solids):
 
 
 def _extended_face(support, excess):
-    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    return _rectangular_pcurves(support,(-excess,20.,0.,4.))
+
+
+def _rectangular_pcurves(support, bounds):
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire
     from OCP.BRepLib import BRepLib
     from OCP.GCE2d import GCE2d_MakeSegment
     from OCP.gp import gp_Pnt2d
 
-    corners = [(-excess,0.),(20.,0.),(20.,4.),(-excess,4.)]
+    u0,u1,v0,v1 = bounds
+    corners = [(u0,v0),(u1,v0),(u1,v1),(u0,v1)]
     wire = BRepBuilderAPI_MakeWire()
     for i, point in enumerate(corners):
         line = GCE2d_MakeSegment(gp_Pnt2d(*corners[i-1]),gp_Pnt2d(*point)).Value()
         wire.Add(BRepBuilderAPI_MakeEdge(line,support).Edge())
     face = BRepBuilderAPI_MakeFace(support,wire.Wire(),True).Face()
-    assert BRepAdaptor_Surface(face).FirstUParameter() < 0.
     BRepLib.BuildCurves3d_s(face)
     return face
 
@@ -353,11 +426,12 @@ def test_exported_pcurves_outside_native_knots_consume_world_distance_budget():
     support = BRepAdaptor_Surface(cap).BSpline()
     details = {}
     assert native_polynomial_equal(cap, _extended_face(support, 1e-7), .00875, details)
-    assert 0. < details['extension_mm'] <= details['certified'] <= .00875
+    assert details['max_overhang_spans'] == pytest.approx(1e-7)
+    assert 0. < details['certified'] <= .00875
     assert not native_polynomial_equal(cap, _extended_face(support, .005), .00875)
     details = {}
     assert not native_polynomial_equal(cap, _extended_face(support, .05), .00875, details)
-    assert 'outside_span' in details['B']
+    assert details['corner_gap_mm'] > .00875
 
 
 def test_disk_with_a_new_seam_needs_its_full_oriented_circle():

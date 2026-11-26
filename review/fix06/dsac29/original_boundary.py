@@ -266,7 +266,7 @@ def equivalent(a,b,tolerance,progress=None):
                         kinds[kind] += 1
                     detail += (f' {label}_wires={len(wires)} edges={dict(kinds)}'
                                f' closed={sum(BRep_Tool.IsClosed_s(e) for e in edges)}')
-            for key in ('A','B','native_exception','span_layout','extension_mm','certified','trim_proof'):
+            for key in ('A','B','native_exception','span_layout','max_overhang_spans','corner_gap_mm','trimmed_patch_mm','cell_budget','certified','trim_proof'):
                 if key in diagnostic:
                     detail += f' {key}={diagnostic[key]}'
             if 'bound' in diagnostic:

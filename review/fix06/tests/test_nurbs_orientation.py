@@ -87,3 +87,26 @@ def test_isolated_worker_accepts_all_forward_export_without_boolean(monkeypatch)
     events.clear()
     assert guarded_registered_world(describe(converted,'old','old'),describe(exported,'new','new'),.01)
     assert any(e.get('phase')=='nurbs_boundary_proven' and e.get('match') is True for e in events)
+
+
+def test_affine_span_restriction_matches_direct_bezier_evaluation():
+    import numpy as np
+    from dsac29.nurbs_orientation import _interval_maps
+
+    # The shared partition cuts through spans and extends beyond both ends.
+    knots = np.array([.03,.15,.82,.98])
+    breaks = np.array([0.,.06,.15,.16,.43,.82,.9,1.])
+    nets = np.random.default_rng(664).normal(size=(3,4,3))
+    spans, maps, _, _ = _interval_maps(knots,breaks,3)
+
+    def evaluate(net,t):
+        while len(net)>1:
+            net = (1.-t)*net[:-1]+t*net[1:]
+        return net[0]
+
+    for i,span in enumerate(spans):
+        restricted = maps[i] @ nets[span]
+        for t in (0.,.17,.49,.84,1.):
+            u = (1.-t)*breaks[i]+t*breaks[i+1]
+            reference = evaluate(nets[span],(u-knots[span])/(knots[span+1]-knots[span]))
+            np.testing.assert_allclose(evaluate(restricted,t),reference,atol=1e-13,rtol=1e-13)

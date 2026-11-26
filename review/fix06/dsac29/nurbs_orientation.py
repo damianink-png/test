@@ -110,6 +110,71 @@ def _difference_within(net, limit, depth=0):
                for half in (left, right[::-1]))
 
 
+def _interval_maps(knots, breaks, degree):
+    """Blossom coefficients of each original span on its new interval."""
+    spans = np.searchsorted(knots, breaks[:-1], side='right')-1
+    spans = np.clip(spans, 0, len(knots)-2)
+    widths = knots[spans+1]-knots[spans]
+    ends = (np.stack((breaks[:-1],breaks[1:]),axis=1)-knots[spans,None])/widths[:,None]
+    # Row j is the blossom at (degree-j) left and j right endpoints.
+    # The same polynomial formula holds outside the first and last knot.
+    rows = np.arange(degree+1)
+    matrix = np.ones((len(spans),degree+1,1))
+    for k in range(degree):
+        t = np.where(rows < degree-k,ends[:,0,None],ends[:,1,None])[...,None]
+        values = np.zeros((*matrix.shape[:2],matrix.shape[2]+1))
+        values[:,:,:-1] += (1.-t)*matrix
+        values[:,:,1:] += t*matrix
+        matrix = values
+    growth = float(np.max(abs(1.-ends)+abs(ends)))**degree
+    conditioning = float(np.max((1.+np.abs(knots[spans])+np.abs(knots[spans+1]))/widths))
+    return spans, matrix, growth, conditioning
+
+
+def _trimmed_polynomial_bound(a, b, knots_a, knots_b, tolerance, details):
+    """Match the two trim rectangles, including extrapolated terminal spans."""
+    breaks = []
+    for x,y in zip(knots_a,knots_b):
+        internal = np.concatenate((x[1:-1], y[1:-1]))
+        breaks.append(np.unique(np.r_[0., internal[(internal>0.) & (internal<1.)], 1.]))
+    cells = (len(breaks[0])-1)*(len(breaks[1])-1)
+    if cells*a.shape[2]*a.shape[3] > 131072:
+        if details is not None:
+            details['cell_budget'] = cells
+        return False
+    # Restrict both tensor-product polynomials on each cell. Shared
+    # extrapolation cancels in the difference, even with reversed UV axes.
+    origin = a[0,0,0,0]
+    def restricted(grid, knots):
+        u, um, ug, uc = _interval_maps(knots[0],breaks[0],grid.shape[2]-1)
+        v, vm, vg, vc = _interval_maps(knots[1],breaks[1],grid.shape[3]-1)
+        net = grid[u[:,None],v[None,:]]-origin
+        size = max(1.,np.max(abs(grid)),np.max(abs(origin)))
+        rounding = (64*np.finfo(float).eps * size * ug*vg *
+                    (grid.shape[2]**2*max(1.,uc)+grid.shape[3]**2*max(1.,vc)))
+        if not np.isfinite(rounding) or rounding >= tolerance:
+            return None
+        net = np.einsum('uik,uvklc->uvilc',um,net)
+        return np.einsum('vjl,uvilc->uvijc',vm,net), rounding
+    left, right = restricted(a,knots_a), restricted(b,knots_b)
+    if left is None or right is None:
+        return False
+    residual = left[0]-right[0]
+    limit = tolerance-left[1]-right[1]
+    if limit <= 0 or not np.isfinite(residual).all():
+        return False
+    hulls = np.linalg.norm(residual,axis=-1).max(axis=(2,3))
+    bound = float(hulls.max()+left[1]+right[1])
+    if details is not None:
+        details['trimmed_patch_mm'] = min(details.get('trimmed_patch_mm',float('inf')),bound)
+    for i,j in np.argwhere(hulls > limit):
+        if not _difference_within(residual[i,j],limit):
+            return False
+    if details is not None:
+        details['certified'] = min(tolerance,bound)
+    return True
+
+
 def native_polynomial_equal(left_face, right_face, tolerance, details=None):
     """Compare original polynomial spans with a bound for unequal trim boxes."""
     from OCP.BRepAdaptor import BRepAdaptor_Surface
@@ -129,7 +194,7 @@ def native_polynomial_equal(left_face, right_face, tolerance, details=None):
         if s.IsURational() or s.IsVRational() or s.IsUPeriodic() or s.IsVPeriodic():
             reject(label, 'rational_or_periodic')
             return None
-        domain, basis, overhang, dimensions = [], [], [], []
+        domain, basis, overhang, dimensions, trim_knots = [], [], [], [], []
         for axis in ('U','V'):
             knots = np.asarray(list(getattr(s, axis+'Knots')()), dtype=float)
             mults = tuple(getattr(s, axis+'Multiplicities')())
@@ -143,19 +208,23 @@ def native_polynomial_equal(left_face, right_face, tolerance, details=None):
                 reject(label, axis+'_invalid_domain')
                 return None
             # A STEP p-curve may run just outside the support knots. OCCT
-            # evaluates the terminal polynomial there. Keep its displacement
-            # in the proof budget, measured in units of the terminal span.
+            # evaluates the terminal polynomial there, on each actual trim.
             excess = max(0., (knots[0]-bounds[0])/(knots[1]-knots[0]),
                          (bounds[1]-knots[-1])/(knots[-1]-knots[-2]))
-            if excess > .01 or bounds[1] <= knots[0] or bounds[0] >= knots[-1]:
+            if bounds[1] <= knots[0] or bounds[0] >= knots[-1]:
                 reject(label, f'{axis}_outside_span({excess:.8g})')
                 return None
+            normalized = (knots-bounds[0])/(bounds[1]-bounds[0])
+            if not np.isfinite(normalized).all() or not np.all(np.diff(normalized)>0):
+                reject(label,axis+'_ill_conditioned_knots')
+                return None
+            trim_knots.append(normalized)
             overhang.append(excess)
             domain.append(np.interp(bounds, knots, np.arange(len(knots))))
         if np.prod(dimensions)*(s.UDegree()+1)*(s.VDegree()+1) > 32768:
             reject(label, 'span_budget')
             return None
-        return s, tuple(dimensions), np.asarray(domain), basis, np.array(overhang)
+        return s, tuple(dimensions), np.asarray(domain), basis, np.array(overhang), trim_knots
 
     def extract(s, dimensions):
         spans = GeomConvert_BSplineSurfaceToBezierSurface(s)
@@ -173,8 +242,8 @@ def native_polynomial_equal(left_face, right_face, tolerance, details=None):
     left, right = definition(left_face,'A'), definition(right_face,'B')
     if left is None or right is None:
         return False
-    s, dims_a, bounds_a, basis_a, excess_a = left
-    t, dims_b, original_bounds_b, basis_b, excess_b = right
+    s, dims_a, bounds_a, basis_a, excess_a, knots_a = left
+    t, dims_b, original_bounds_b, basis_b, excess_b, knots_b = right
     required_flip = left_face.Orientation() != right_face.Orientation()
     # With identical basis functions the surface difference is a convex
     # combination of corresponding pole differences in the world frame.
@@ -195,36 +264,55 @@ def native_polynomial_equal(left_face, right_face, tolerance, details=None):
         reject('span_layout', 'conversion_failed')
         return False
 
-    def extension_bound(grid, excess):
-        if not excess.any():
-            return 0.
-        # On [-e,1+e] the sum of absolute Bernstein basis values is at
-        # most (1+2e)**degree. Apply this to both derivative control nets.
-        degrees = np.asarray(grid.shape[2:4])-1
-        growth = np.prod((1.+2.*excess)**degrees)
-        slopes = [degree*np.max(np.linalg.norm(np.diff(grid,axis=k+2),axis=-1))
-                  for k,degree in enumerate(degrees)]
-        return float(growth*(excess @ slopes))
-
-    extension = extension_bound(a,excess_a) + extension_bound(original_b,excess_b)
+    extended = excess_a.any() or excess_b.any()
     if details is not None:
-        details['extension_mm'] = extension
+        details['max_overhang_spans'] = float(max(max(excess_a),max(excess_b)))
+    # An affine correspondence of the rectangles must match their four
+    # world corners. Reject wrong axis maps before restricting all spans.
+    def corners(face):
+        adaptor = BRepAdaptor_Surface(face)
+        return np.array([[adaptor.Value(u,v).Coord() for v in
+                          (adaptor.FirstVParameter(),adaptor.LastVParameter())] for u in
+                         (adaptor.FirstUParameter(),adaptor.LastUParameter())])
+    corner_pair = None
     for swap,ru,rv in product((False,True),repeat=3):
         if (swap ^ ru ^ rv) != required_flip:
             continue
         b, bounds_b = original_b, original_bounds_b
+        oriented_knots = list(knots_b)
         if swap:
+            oriented_knots.reverse()
             b = b.transpose(1,0,3,2,4)
             bounds_b = bounds_b[::-1]
-        if b.shape != a.shape:
+        if b.shape[2:] != a.shape[2:]:
             continue
         bounds_b = bounds_b.copy()
         if ru:
+            oriented_knots[0] = 1.-oriented_knots[0][::-1]
             b = b[::-1,:,::-1]
             bounds_b[0] = b.shape[0]-bounds_b[0,::-1]
         if rv:
+            oriented_knots[1] = 1.-oriented_knots[1][::-1]
             b = b[:,::-1,:,::-1]
             bounds_b[1] = b.shape[1]-bounds_b[1,::-1]
+
+        if extended or b.shape != a.shape:
+            if corner_pair is None:
+                corner_pair = corners(left_face), corners(right_face)
+            corners_a, corners_b = corner_pair
+            other_corners = corners_b.swapaxes(0,1) if swap else corners_b
+            if ru:
+                other_corners = other_corners[::-1]
+            if rv:
+                other_corners = other_corners[:,::-1]
+            gap = float(np.max(np.linalg.norm(corners_a-other_corners,axis=-1)))
+            if details is not None:
+                details['corner_gap_mm'] = min(details.get('corner_gap_mm',float('inf')),gap)
+            if gap > tolerance or any(np.any(np.diff(axis)<=0) for axis in oriented_knots):
+                continue
+            if _trimmed_polynomial_bound(a,b,knots_a,oriented_knots,tolerance,details):
+                return True
+            continue
 
         # Each span occupies one unit in this coordinate system. The affine
         # map between the face boxes displaces UV by at most these endpoint
@@ -237,7 +325,7 @@ def native_polynomial_equal(left_face, right_face, tolerance, details=None):
         if not x.size:
             continue
         slope = [np.max(np.linalg.norm(np.diff(y,axis=k),axis=-1))*(y.shape[k]-1) for k in (2,3)]
-        trim_error = float(delta @ slope) + extension
+        trim_error = float(delta @ slope)
         residual = x-y
         hull = float(np.max(np.linalg.norm(residual,axis=-1)))
         if details is not None and hull+trim_error < details.get('bound',float('inf')):
