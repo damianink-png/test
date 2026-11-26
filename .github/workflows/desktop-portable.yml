@@ -190,13 +190,13 @@ jobs:
           Get-FileHash delivery/portable/DSCompare.exe,delivery/onefile/DSCompare.exe | Format-List | Out-File evidence/launcher-hashes.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-0.6.58-Portable-ZIP
+          name: DSCompare-0.6.59-Portable-ZIP
           path: delivery/portable/
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
-          name: DSCompare-0.6.58-Portable-OneEXE
+          name: DSCompare-0.6.59-Portable-OneEXE
           path: delivery/onefile/DSCompare.exe
           compression-level: 0
           if-no-files-found: error

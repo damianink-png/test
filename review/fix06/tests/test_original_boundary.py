@@ -1,7 +1,64 @@
 import pytest
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder,BRepPrimAPI_MakeBox
 from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
-from dsac29.original_boundary import equivalent
+from dsac29.original_boundary import equivalent, surface_equal
+
+
+def _planar_face(angle, *, width=12., height=8., offset=0.):
+    from math import cos, sin
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon
+    from OCP.gp import gp_Ax3, gp_Dir, gp_Pln, gp_Pnt
+    polygon = BRepBuilderAPI_MakePolygon()
+    for x, y in ((0., 0.), (width, 0.), (width, height), (0., height)):
+        polygon.Add(gp_Pnt(x, y, offset))
+    polygon.Close()
+    axis = gp_Ax3(gp_Pnt(0., 0., offset), gp_Dir(0., 0., 1.), gp_Dir(cos(angle), sin(angle), 0.))
+    return BRepBuilderAPI_MakeFace(gp_Pln(axis), polygon.Wire(), True).Face()
+
+
+@pytest.mark.parametrize('convert', [False, True])
+def test_planar_surface_matches_rotated_uv_and_checks_original_trims(convert):
+    from math import pi
+    from OCP.TopoDS import TopoDS
+    from dsac29.parametric_identity import prove
+
+    def export(face):
+        if not convert:
+            return face
+        return TopoDS.Face_s(BRepBuilderAPI_NurbsConvert(face, True).Shape())
+
+    a = _planar_face(0.)
+    b = export(_planar_face(pi/4))
+    assert surface_equal(a, b, .005)
+    assert surface_equal(b, a, .005)
+    options = dict(strict_repair=False, surface_prover=surface_equal)
+    assert prove(a, b, {0: 0}, [], .01, **options)
+    assert not surface_equal(a, TopoDS.Face_s(b.Reversed()), .005)
+    assert not surface_equal(a, export(_planar_face(pi/4, offset=.02)), .005)
+    changed_trim = export(_planar_face(pi/4, width=11.))
+    assert surface_equal(a, changed_trim, .005)
+    assert not prove(a, changed_trim, {0: 0}, [], .01, **options)
+
+
+def test_whole_solid_with_rotated_uv_and_trim_diagnostics():
+    from math import pi
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakePrism
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.gp import gp_Trsf, gp_Vec
+
+    a, b = (BRepPrimAPI_MakePrism(_planar_face(angle), gp_Vec(0., 0., 10.)).Shape()
+            for angle in (0., pi/4))
+    b = BRepBuilderAPI_NurbsConvert(b, True).Shape()
+    transform = gp_Trsf()
+    transform.SetTranslation(gp_Vec(130., 280., 410.))
+    location = TopLoc_Location(transform)
+    assert equivalent(a.Moved(location), b.Moved(location), .01)
+    assert not equivalent(a, b.Moved(location), .01)
+
+    stages = []
+    changed = BRepPrimAPI_MakeBox(12.02, 8., 10.).Shape()
+    assert not equivalent(a, changed, .01, stages.append)
+    assert any(stage.startswith('original_boundary_candidate_rejected_trims ') for stage in stages)
 
 @pytest.mark.parametrize('shape',[lambda:BRepPrimAPI_MakeCylinder(5,10).Shape(),lambda:BRepPrimAPI_MakeBox(10,20,30).Shape()])
 def test_analytic_export_matches_nurbs_without_replacing_original_wires(shape):
@@ -54,14 +111,18 @@ def test_nearby_faces_with_reversed_enumeration_match_by_proven_geometry():
 
 def test_surface_conversion_reused_without_reusing_movement_verdict(monkeypatch):
     from dsac29 import original_boundary as module
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Cylinder
     from OCP.TopAbs import TopAbs_FACE
-    from OCP.TopExp import TopExp_Explorer
     from OCP.TopoDS import TopoDS
     from OCP.gp import gp_Trsf,gp_Vec
     from OCP.TopLoc import TopLoc_Location
-    shape=BRepPrimAPI_MakeBox(10,20,30).Shape()
-    a=TopoDS.Face_s(TopExp_Explorer(shape,TopAbs_FACE).Current())
-    b=TopoDS.Face_s(TopExp_Explorer(BRepBuilderAPI_NurbsConvert(shape,True).Shape(),TopAbs_FACE).Current())
+    from dsac29.parametric_identity import items
+    shape=BRepPrimAPI_MakeCylinder(5,10).Shape()
+    originals=items(shape,TopAbs_FACE,TopoDS.Face_s)
+    export_by_face=items(BRepBuilderAPI_NurbsConvert(shape,True).Shape(),TopAbs_FACE,TopoDS.Face_s)
+    index=next(i for i,face in enumerate(originals) if BRepAdaptor_Surface(face).GetType()==GeomAbs_Cylinder)
+    a,b=originals[index],export_by_face[index]
     native=module._surface_face;calls=[]
     def counted(face):calls.append(face);return native(face)
     monkeypatch.setattr(module,'_surface_face',counted)

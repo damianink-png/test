@@ -34,8 +34,62 @@ class SurfaceCache:
         return value
 
 
+def _planar_surface_equal(a, b, tolerance):
+    """Prove an oriented graph over a plane without matching UV frames."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Plane, GeomAbs_BSplineSurface
+
+    if any(int(face.Orientation()) not in (0, 1) for face in (a, b)):
+        return False
+    left, right = BRepAdaptor_Surface(a), BRepAdaptor_Surface(b)
+    if left.GetType() != GeomAbs_Plane:
+        a, b = b, a
+        left, right = right, left
+    if left.GetType() != GeomAbs_Plane:
+        return False
+
+    plane = left.Plane()
+    axes = plane.Position()
+    normal = np.cross(axes.XDirection().Coord(), axes.YDirection().Coord())
+    if int(a.Orientation()) == 1:
+        normal = -normal
+    if right.GetType() == GeomAbs_Plane:
+        us = (right.FirstUParameter(), right.LastUParameter())
+        vs = (right.FirstVParameter(), right.LastVParameter())
+        poles = np.array([[right.Value(u, v).Coord() for v in vs] for u in us])
+    elif right.GetType() == GeomAbs_BSplineSurface:
+        spline = right.BSpline()
+        if ((spline.UDegree(), spline.VDegree(), spline.NbUPoles(), spline.NbVPoles()) != (1, 1, 2, 2)
+                or spline.NbUKnots() != 2 or spline.NbVKnots() != 2
+                or spline.IsUPeriodic() or spline.IsVPeriodic()
+                or spline.IsURational() or spline.IsVRational()):
+            return False
+        poles = np.array([[spline.Pole(u, v).Coord() for v in (1, 2)] for u in (1, 2)])
+    else:
+        return False
+
+    # A bilinear patch is inside the hull of its poles. Its projected
+    # Jacobian is affine in UV, so strict agreement at all four corners
+    # proves the projection is oriented and one-to-one over the whole patch.
+    if not np.isfinite(poles).all() or np.max(np.abs((poles - plane.Location().Coord()) @ normal)) > tolerance:
+        return False
+    du = poles[1] - poles[0]
+    dv = poles[:, 1] - poles[:, 0]
+    if int(b.Orientation()) == 1:
+        normal = -normal
+    jacobian = np.cross(du[:, None, :], dv[None, :, :]) @ normal
+    scale = np.linalg.norm(du, axis=1)[:, None] * np.linalg.norm(dv, axis=1)[None, :]
+    return bool(np.all(jacobian > 1e-10 * scale))
+
+
 def surface_equal(a,b,tolerance,cache=None):
     from .nurbs_orientation import oriented_surface_equal
+    if not np.isfinite(tolerance) or tolerance<=0:return False
+    try:
+        if _planar_surface_equal(a, b, tolerance):
+            return True
+    except Exception:
+        pass  # The existing bounded UV proof can still verify this pair.
     try:
         convert=cache.get if cache is not None else _surface_face
         x,y=convert(a),convert(b)
@@ -66,7 +120,6 @@ def equivalent(a,b,tolerance,progress=None):
     faces_a=items(a,TopAbs_FACE,TopoDS.Face_s)
     faces_b=items(b,TopAbs_FACE,TopoDS.Face_s)
     cache=SurfaceCache()
-    def cached_surface(a,b,tol):return surface_equal(a,b,tol,cache)
     options=[]
     for index,f in enumerate(fa):
         dc=np.linalg.norm(centers-f[3],axis=1);db=np.max(np.abs(boxes-f[4]),axis=1)
@@ -75,16 +128,29 @@ def equivalent(a,b,tolerance,progress=None):
         options.append(sorted(map(int,candidates),key=lambda j:min(dc[j],db[j])))
     from .boundary_work import verified_face_owner
     attempted=0
+    first_rejections={}
     def verify(i,j):
         nonlocal attempted
         attempted+=1
         if attempted==1 or attempted%16==0:
             report(f'original_boundary_face_{i+1}_of_{len(fa)}_candidate_{j+1}_attempt_{attempted}')
-        return prove(faces_a[i],faces_b[j],{0:0},[fa[i]],tolerance,
-                     strict_repair=False,allow_original_micro_degenerate=True,
-                     surface_prover=cached_surface)
+        stage='face_precheck'
+        def cached_surface(left,right,tol):
+            nonlocal stage
+            stage='surface'
+            matched=surface_equal(left,right,tol,cache)
+            if matched:stage='trims'
+            return matched
+        matched=prove(faces_a[i],faces_b[j],{0:0},[fa[i]],tolerance,
+                      strict_repair=False,allow_original_micro_degenerate=True,
+                      surface_prover=cached_surface)
+        if not matched:first_rejections.setdefault(stage,(i,j))
+        return matched
     owner=verified_face_owner(options,verify)
-    if owner is None:return False
+    if owner is None:
+        for stage,(i,j) in first_rejections.items():
+            report(f'original_boundary_candidate_rejected_{stage} A[{i+1}] {fa[i][0]} / B[{j+1}] {fb[j][0]}')
+        return False
     # Matching uses only fully verified face/wire pairs. A greedy geometric
     # choice cannot hide a valid alternate correspondence between near faces.
     report('original_boundary_proven')
