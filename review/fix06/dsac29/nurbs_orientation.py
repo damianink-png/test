@@ -7,10 +7,51 @@ import numpy as np
 from itertools import product
 
 
+def patch_equal(left, right, tolerance):
+    """Uniform rational Bézier bound, allowing a monotone UV reparameterization."""
+    from .parametric_identity import pole_bound
+    from .cylindrical_boundary import _multiply
+
+    p, w = left
+    q, v = right
+    if not all(np.isfinite(a).all() for a in (p, w, q, v)) or min(w.min(), v.min()) <= 0:
+        return False
+    corners = ([0, 0, -1, -1], [0, -1, 0, -1])
+    if np.max(np.linalg.norm(p[corners]-q[corners], axis=-1)) > tolerance:
+        return False
+    if pole_bound(left, right) <= tolerance:
+        return True
+    if max(*w.shape, *v.shape) > 9:
+        return False
+
+    # Scaling weights by c**i * d**j is a bijective, increasing change of
+    # each Bézier parameter fixing 0 and 1. Normalize each patch separately.
+    def normalized(weights):
+        u, v = weights.shape
+        log_w = np.log(weights)
+        log_w = (log_w + np.linspace(0., log_w[0,0]-log_w[-1,0], u)[:, None]
+                 + np.linspace(0., log_w[0,0]-log_w[0,-1], v))
+        return np.exp(log_w-log_w.max())
+
+    # (P/W - Q/V) = (PV - QW)/(WV). Positive denominator coefficients
+    # give a convex hull of difference vectors covering the entire patch.
+    origin = p[0,0]
+    left_points, right_points = p-origin, q-origin
+    rounding = 1e-12 * max(1., np.max(abs(left_points)), np.max(abs(right_points)))
+    for lw,rw in ((w/w.max(),v/v.max()), (normalized(w),normalized(v))):
+        if min(lw.min(), rw.min()) < 1e-8:
+            continue
+        denominator = _multiply(lw, rw)
+        differences = [(_multiply(left_points[...,k]*lw, rw)
+                        - _multiply(right_points[...,k]*rw, lw))/denominator for k in range(3)]
+        if np.max(np.linalg.norm(differences, axis=0)) + rounding <= tolerance:
+            return True
+    return False
+
+
 def oriented_surface_equal(left,right,tolerance):
     from OCP.BRepAdaptor import BRepAdaptor_Surface
     from OCP.GeomConvert import GeomConvert_BSplineSurfaceToBezierSurface
-    from .parametric_identity import pole_bound
     a,b=BRepAdaptor_Surface(left),BRepAdaptor_Surface(right)
     if not all('BSpline' in str(s.GetType()) for s in (a,b)):return False
     if int(left.Orientation()) not in (0,1) or int(right.Orientation()) not in (0,1):return False
@@ -41,7 +82,7 @@ def oriented_surface_equal(left,right,tolerance):
                 if swap:p,w=p.swapaxes(0,1),w.swapaxes(0,1)
                 if reverse_u:p,w=p[::-1],w[::-1]
                 if reverse_v:p,w=p[:,::-1],w[:,::-1]
-                if pole_bound(x[i][j],(p,w))>tolerance:
+                if not patch_equal(x[i][j],(p,w),tolerance):
                     good=False;break
             if not good:break
         if good:return True

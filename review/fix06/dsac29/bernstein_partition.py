@@ -4,7 +4,7 @@ from itertools import product
 
 
 def curves_equal(left,right,tolerance):
-    from .parametric_identity import pole_bound
+    from .nurbs_orientation import patch_equal
     def valid(data):
         k=np.asarray(data[2],float)
         return len(k)==len(data[1])+1 and np.isfinite(k).all() and np.all(np.diff(k)>0) and k[0]==0 and k[-1]==1
@@ -25,15 +25,19 @@ def curves_equal(left,right,tolerance):
         if u>0:_,h=split(h,u/v)
         return h[:,:3]/h[:,3,None],h[:,3]
     try:
-        return all(pole_bound(restrict(left,u,v),restrict(right,u,v))<=tolerance for u,v in zip(union,union[1:]))
+        for u,v in zip(union,union[1:]):
+            p,w = restrict(left,u,v)
+            q,t = restrict(right,u,v)
+            if not patch_equal((p[:,None,:],w[:,None]),(q[:,None,:],t[:,None]),tolerance):
+                return False
+        return True
     except (ValueError,IndexError,FloatingPointError):return False
 
 
 def surfaces_equal(a,b,required_flip,tolerance):
     from OCP.TColStd import TColStd_Array1OfReal,TColStd_Array1OfInteger
     from OCP.GeomConvert import GeomConvert_BSplineSurfaceToBezierSurface
-    from .parametric_identity import pole_bound
-    if a.IsUPeriodic() or a.IsVPeriodic() or b.IsUPeriodic() or b.IsVPeriodic():return False
+    from .nurbs_orientation import patch_equal
     def array(values,kind):
         result=kind(1,len(values))
         for i,x in enumerate(values,1):result.SetValue(i,x)
@@ -51,10 +55,18 @@ def surfaces_equal(a,b,required_flip,tolerance):
         if bool(swap^ru^rv)!=required_flip:continue
         try:
             x,y=a.Copy(),b.Copy()
+            # Segment copies over their actual parameter intervals. This
+            # opens a periodic surface at its seam and clamps its end knots.
+            for surface in (x, y):
+                if surface.IsUPeriodic() or surface.IsVPeriodic():
+                    surface.Segment(*surface.Bounds(), 0., 0.)
             if swap:y.ExchangeUV()
             if ru:y.UReverse()
             if rv:y.VReverse()
             normalize(x);normalize(y)
+            if any(x.Value(u,v).Distance(y.Value(u,v)) > tolerance
+                   for u,v in product((0.,1.),repeat=2)):
+                continue
             unions={axis:sorted(set(getattr(s,axis+'Knot')(i) for s in (x,y) for i in range(1,getattr(s,'Nb'+axis+'Knots')()+1))) for axis in ('U','V')}
             if (len(unions['U'])-1)*(len(unions['V'])-1)>10000:continue
             for axis,values in unions.items():
@@ -63,6 +75,6 @@ def surfaces_equal(a,b,required_flip,tolerance):
                     getattr(s,'Insert'+axis+'Knots')(array(values,TColStd_Array1OfReal),array([degree]*len(values),TColStd_Array1OfInteger),0.,False)
             xx,yy=GeomConvert_BSplineSurfaceToBezierSurface(x),GeomConvert_BSplineSurfaceToBezierSurface(y)
             if (xx.NbUPatches(),xx.NbVPatches())!=(yy.NbUPatches(),yy.NbVPatches()):continue
-            if all(pole_bound(net(xx.Patch(i,j)),net(yy.Patch(i,j)))<=tolerance for i in range(1,xx.NbUPatches()+1) for j in range(1,xx.NbVPatches()+1)):return True
+            if all(patch_equal(net(xx.Patch(i,j)),net(yy.Patch(i,j)),tolerance) for i in range(1,xx.NbUPatches()+1) for j in range(1,xx.NbVPatches()+1)):return True
         except Exception:continue
     return False

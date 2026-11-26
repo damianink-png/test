@@ -82,6 +82,56 @@ def _planar_surface_equal(a, b, tolerance):
     return bool(np.all(jacobian > 1e-10 * scale))
 
 
+def _shared_spline_carrier(a, b, tolerance):
+    """Use an inferred carrier only after both original splines prove it."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+    from OCP.Geom import Geom_Plane, Geom_CylindricalSurface
+    from OCP.GeomAbs import GeomAbs_BSplineSurface
+    from OCP.GeomConvert import GeomConvert_SurfToAnaSurf
+    from OCP.TopoDS import TopoDS
+    from .cylindrical_boundary import equivalent as cylinder_equal
+
+    left, right = BRepAdaptor_Surface(a), BRepAdaptor_Surface(b)
+    if any(s.GetType() != GeomAbs_BSplineSurface for s in (left, right)):
+        return False
+    spline = left.BSpline()
+    if spline.NbUPoles()*spline.NbVPoles() > 4096:
+        return False
+    half = tolerance/2
+    def candidates():
+        from OCP.GC import GC_MakeCircle
+        from OCP.gp import gp_Ax3
+        u0, u1 = left.FirstUParameter(), left.LastUParameter()
+        v0, v1 = left.FirstVParameter(), left.LastVParameter()
+        yield GeomConvert_SurfToAnaSurf(spline).ConvertToAnalytical(half, u0, u1, v0, v1)
+        # STEP can encode a cylinder as a general rational extrusion. Its
+        # isocircles give a carrier proposal; only whole-patch bounds count.
+        for varying_u in (True, False):
+            points = [left.Value(u0+t*(u1-u0), (v0+v1)/2) if varying_u else
+                      left.Value((u0+u1)/2, v0+t*(v1-v0)) for t in (0., 1/3, 2/3)]
+            guess = GC_MakeCircle(*points)
+            if guess.IsDone():
+                circle = guess.Value().Circ()
+                yield Geom_CylindricalSurface(gp_Ax3(circle.Position()), circle.Radius())
+
+    for carrier in candidates():
+        if isinstance(carrier, Geom_Plane):
+            verify = _planar_surface_equal
+        elif isinstance(carrier, Geom_CylindricalSurface):
+            verify = cylinder_equal
+        else:
+            continue
+        builder = BRepBuilderAPI_MakeFace(carrier, 0., 1., 0., 1., 1e-7)
+        if not builder.IsDone():
+            continue
+        reference = builder.Face()
+        for oriented in (reference, TopoDS.Face_s(reference.Reversed())):
+            if verify(oriented, a, half) and verify(oriented, b, half):
+                return True
+    return False
+
+
 def surface_equal(a,b,tolerance,cache=None):
     from .cylindrical_boundary import equivalent as cylinder_equal
     from .nurbs_orientation import oriented_surface_equal
@@ -94,7 +144,12 @@ def surface_equal(a,b,tolerance,cache=None):
     try:
         convert=cache.get if cache is not None else _surface_face
         x,y=convert(a),convert(b)
-        return x is not None and y is not None and oriented_surface_equal(x,y,tolerance)
+        if x is not None and y is not None and oriented_surface_equal(x,y,tolerance):
+            return True
+    except Exception:
+        pass
+    try:
+        return _shared_spline_carrier(a,b,tolerance)
     except Exception:
         return False
 
@@ -151,7 +206,17 @@ def equivalent(a,b,tolerance,progress=None):
     owner=verified_face_owner(options,verify)
     if owner is None:
         for stage,(i,j) in first_rejections.items():
-            report(f'original_boundary_candidate_rejected_{stage} A[{i+1}] {fa[i][0]} / B[{j+1}] {fb[j][0]}')
+            detail = ''
+            if stage == 'surface' and 'BSpline' in fa[i][0] and 'BSpline' in fb[j][0]:
+                from OCP.BRepAdaptor import BRepAdaptor_Surface
+                for label, face in (('A', faces_a[i]), ('B', faces_b[j])):
+                    spline = BRepAdaptor_Surface(face).BSpline()
+                    detail += (f' {label}: degree={spline.UDegree()}x{spline.VDegree()}'
+                               f' poles={spline.NbUPoles()}x{spline.NbVPoles()}'
+                               f' knots={spline.NbUKnots()}x{spline.NbVKnots()}'
+                               f' periodic={int(spline.IsUPeriodic())},{int(spline.IsVPeriodic())}'
+                               f' rational={int(spline.IsURational())},{int(spline.IsVRational())}')
+            report(f'original_boundary_candidate_rejected_{stage} A[{i+1}] {fa[i][0]} / B[{j+1}] {fb[j][0]}{detail}')
         return False
     # Matching uses only fully verified face/wire pairs. A greedy geometric
     # choice cannot hide a valid alternate correspondence between near faces.

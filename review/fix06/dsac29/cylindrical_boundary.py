@@ -159,6 +159,27 @@ def circular_edge_equal(a, b, tolerance):
 
     try:
         left, right = BRepAdaptor_Curve(a), BRepAdaptor_Curve(b)
+        if left.GetType() == right.GetType() == GeomAbs_BSplineCurve:
+            from OCP.GC import GC_MakeCircle
+            from OCP.ElCLib import ElCLib
+            from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+            from OCP.TopoDS import TopoDS
+            lo, hi = left.FirstParameter(), left.LastParameter()
+            start, end = left.Value(lo), left.Value(hi)
+            guess = GC_MakeCircle(start, left.Value(lo+(hi-lo)/3), left.Value(lo+2*(hi-lo)/3))
+            if not guess.IsDone():
+                return False
+            circle = guess.Value().Circ()
+            first = ElCLib.Parameter_s(circle, start)
+            sweep = (ElCLib.Parameter_s(circle, end)-first) % (2*np.pi)
+            if start.Distance(end) < 1e-8:
+                sweep = 2*np.pi
+            builder = BRepBuilderAPI_MakeEdge(circle, first, first+sweep)
+            if not builder.IsDone():
+                return False
+            reference = TopoDS.Edge_s(builder.Edge().Oriented(a.Orientation()))
+            return (circular_edge_equal(reference, a, tolerance/2)
+                    and circular_edge_equal(reference, b, tolerance/2))
         if left.GetType() != GeomAbs_Circle:
             a, b = b, a
             left, right = right, left

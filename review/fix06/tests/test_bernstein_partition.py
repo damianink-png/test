@@ -45,3 +45,32 @@ def test_native_edge_data_retains_real_partition_for_comparison():
     assert edge_equal(edge_data(a),edge_data(b),1e-6)
     p=curve.Pole(2);p.SetY(.2);curve.SetPole(2,p)
     assert not edge_equal(edge_data(a),edge_data(BRepBuilderAPI_MakeEdge(curve).Edge()),.001)
+
+
+def test_curved_face_with_reweighted_uv_preserves_trims_and_rejects_local_bulge():
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+    from OCP.Geom import Geom_BezierSurface
+    from OCP.GeomConvert import GeomConvert
+    from OCP.TColgp import TColgp_Array2OfPnt
+    from OCP.TColStd import TColStd_Array2OfReal
+    from OCP.TopoDS import TopoDS
+    from OCP.gp import gp_Pnt
+    from dsac29.original_boundary import surface_equal
+    from dsac29.parametric_identity import prove
+
+    def face(scale_u, scale_v, bulge=0.):
+        poles = TColgp_Array2OfPnt(1,3,1,3)
+        weights = TColStd_Array2OfReal(1,3,1,3)
+        for i in range(3):
+            for j in range(3):
+                z = 2*i*j + (bulge if (i,j)==(1,1) else 0.)
+                poles.SetValue(i+1,j+1,gp_Pnt(10*i,6*j,z))
+                weights.SetValue(i+1,j+1,(1+.1*i*j)*scale_u**i*scale_v**j)
+        surface = GeomConvert.SurfaceToBSplineSurface_s(Geom_BezierSurface(poles,weights))
+        return BRepBuilderAPI_MakeFace(surface,1e-7).Face()
+
+    old = face(1.,1.)
+    exported = face(1.8,.7)
+    assert prove(old,exported,{0:0},[],.01,strict_repair=False,surface_prover=surface_equal)
+    assert not surface_equal(old,TopoDS.Face_s(exported.Reversed()),.005)
+    assert not surface_equal(old,face(1.8,.7,bulge=.5),.005)

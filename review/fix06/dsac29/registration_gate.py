@@ -22,6 +22,7 @@ class FrameProofCache:
   self.sample_pairs=[]
   self.deadline=None;self.pair_timeout=None;self.lookup_points=None
   self.failed_definition_pairs={};self.skipped_repeat_failures=0
+  self.solid_difference_timeouts={}
   self._binding=None
   self.hits=0;self.proof_calls=0
   self.completed_negative_pairs=set()
@@ -178,6 +179,15 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
       remaining=proof_cache.deadline-monotonic()
       if remaining<=0:raise native_guard.NativeGeometryFailure('Limit czasu wyszukiwania CAD')
       timeout['timeout_s']=max(.1,min(proof_cache.pair_timeout or 90.,remaining))
+      for ii,jj in previous:
+       budget=proof_cache.solid_difference_timeouts.get((ii,jj),0.)
+       if budget >= timeout['timeout_s'] and _relative_location_is_same(left,a[ii],right,b[jj],1e-8):
+        # Same definitions and pose, with no more time for the same final
+        # operation. An unknown contributes no vote to frame acceptance.
+        unverified.add((i,j))
+        proof_cache.skipped_repeat_failures+=1
+        proof_cache.native_errors[i,j]=proof_cache.native_errors[ii,jj]
+        return False
      same=trace.brep_call('verify_reexport_guarded',i,j,
          (native_guard.guarded_registered_world if proof_cache is not None and proof_cache.deadline is not None
           else native_guard.guarded_world_reexport),left,right,tolerance,allow_boolean=False,**timeout)
@@ -185,7 +195,10 @@ def _frame_support(a,b,tolerance,proofs=8,verify_all=False,progress=None,cancell
      if proof_cache is not None:
       proof_cache.failed_pairs.add((i,j))
       proof_cache.native_errors[i,j]=str(exc)
-      if 'timeout' in str(exc).casefold():proof_cache.timed_out_pairs.add((i,j))
+      if 'timeout' in str(exc).casefold():
+       proof_cache.timed_out_pairs.add((i,j))
+       if 'validated_solid_symmetric_difference' in str(exc) and 'timeout_s' in timeout:
+        proof_cache.solid_difference_timeouts[i,j]=timeout['timeout_s']
      unverified.add((i,j));failed_groups.setdefault(key,[]).append((i,j))
      trace.mark('registration_proof','UNVERIFIED',a_id=i,b_id=j,
                  error=str(exc),unverified_count=len(unverified))

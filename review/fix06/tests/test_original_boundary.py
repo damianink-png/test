@@ -201,3 +201,37 @@ def test_surface_conversion_reused_without_reusing_movement_verdict(monkeypatch)
     reversed_face=TopoDS.Face_s(b.Reversed())
     assert not module.surface_equal(a,reversed_face,.01,cache)
     assert len(calls)==4
+
+
+def test_different_spline_exports_keep_the_53_stationary_occurrences():
+    from collections import Counter
+    import numpy as np
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid, BRepBuilderAPI_Sewing
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopoDS import TopoDS
+    from dsac29.parametric_identity import items
+    from dsac29.compare import compare
+    from dsac29.geometry import describe
+    from dsac29.alignment import _relocate
+
+    source = BRepBuilderAPI_NurbsConvert(BRepPrimAPI_MakeCylinder(5.,10.).Shape(), True).Shape()
+    _, *caps = items(source, TopAbs_FACE, TopoDS.Face_s)
+    sewing = BRepBuilderAPI_Sewing(1e-6)
+    for face in [_rational_cylinder_face(5., tau), *caps]:
+        sewing.Add(face)
+    sewing.Perform()
+    assert sewing.NbFreeEdges() == 0
+    target = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(sewing.SewedShape())).Solid()
+    assert equivalent(source, target, .01)
+
+    def occurrences(shape, name, positions):
+        part = describe(shape, name, name)
+        return [_relocate(part, np.eye(3), np.array([130.+i*30.,280.,410.])) for i in positions]
+
+    old = occurrences(source, '04156745', range(75))
+    new = occurrences(target, 'C04156745', [*range(53), *range(100,156)])
+    from dsac29.revision_rules import classify_revisions
+    rows = compare(old, new, revision_only=True, registered_frame=True)
+    rows = classify_revisions(old, new, rows, geometry_first=True)
+    assert Counter(row.status for row in rows) == {'SAME':53,'REMOVED':22,'ADDED':56}
+    assert {(row.a_index,row.b_index) for row in rows if row.status=='SAME'} == {(i,i) for i in range(53)}

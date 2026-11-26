@@ -75,3 +75,28 @@ def test_transient_native_failure_in_one_repeated_copy_can_recover_on_next(monke
     assert result['count']>=5,result
     assert len(tries)==2, 'One failure must not poison later occurrences'
     assert not cache.skipped_repeat_failures
+
+
+def test_registered_repeat_uses_larger_budget_after_solid_difference_timeout(monkeypatch):
+    from dsac29.alignment import _relocate
+    def copies():
+        part=describe(BRepPrimAPI_MakeBox(15,12,10).Shape(),'P','P')
+        return [_relocate(part,np.eye(3),np.array([i*40.,0.,0.])) for i in range(5)]
+    a,b=copies(),copies()
+    monkeypatch.setattr(GeometryRegistry,'same_definition',lambda *args:False)
+    monkeypatch.setattr(GeometryRegistry,'exact_digest',lambda *args:None)
+    calls=[]
+    def native(*args,timeout_s,**kwargs):
+        calls.append(timeout_s)
+        if timeout_s <= 5:
+            raise native_guard.NativeGeometryFailure('Timeout; etap: validated_solid_symmetric_difference')
+        return True
+    monkeypatch.setattr(native_guard,'guarded_registered_world',native)
+    cache=FrameProofCache()
+    cache.deadline=monotonic()+60
+    cache.pair_timeout=5
+    result=frame_support(a,b,.01,verify_all=True,proof_cache=cache)
+    assert result['proofs']==0 and calls==[5]
+    cache.pair_timeout=15
+    result=frame_support(a,b,.01,verify_all=True,proof_cache=cache)
+    assert result['proofs']>0 and calls==[5,15]
