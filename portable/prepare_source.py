@@ -3,6 +3,7 @@ import hashlib,json,re,sys,zipfile
 from pathlib import Path
 BASE_SHA='3a21c5e7f917e5b64223e2e11a32991ebc677262a4683e9e92d34af234eaeb3f'
 base=Path(sys.argv[1]);out=Path(sys.argv[2]);here=Path(__file__).resolve().parent
+version=(here/'VERSION').read_text(encoding='utf8').strip()
 assert hashlib.sha256(base.read_bytes()).hexdigest()==BASE_SHA,'Unverified source baseline'
 with zipfile.ZipFile(base) as archive:
  manifest=json.loads(archive.read('dscompare_rc9_manual/SOURCE_MANIFEST.json'))
@@ -22,13 +23,13 @@ assert s.count(old)==1,'Progress reader baseline changed'
 s=s.replace(old,'progress_tail::read(&job.folder.join("_POSTEP_V37.jsonl"),100).unwrap_or_default()')
 p.write_text(s+'\npub mod progress_tail;\n',encoding='utf8')
 for name in ('desktop/package.json','desktop/package-lock.json','desktop/src-tauri/tauri.conf.json'):
- p=out/name;d=json.loads(p.read_text(encoding='utf8'));d['version']='0.6.59'
- if name.endswith('package-lock.json'):d['packages']['']['version']='0.6.59'
+ p=out/name;d=json.loads(p.read_text(encoding='utf8'));d['version']=version
+ if name.endswith('package-lock.json'):d['packages']['']['version']=version
  if name.endswith('tauri.conf.json'):
   w=d['app']['windows'][0];w.update(title='DS Compare',width=1280,height=820,minWidth=480,minHeight=360,dragDropEnabled=True)
  p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n',encoding='utf8')
-p=out/'desktop/src-tauri/Cargo.toml';p.write_text(p.read_text(encoding='utf8').replace('version = "0.5.1"','version = "0.6.59"',1),encoding='utf8')
-p=out/'desktop/src-tauri/Cargo.lock';s,n=re.subn(r'(\[\[package\]\]\nname = "dscompare-desktop"\nversion = )"0\.5\.1"',r'\g<1>"0.6.59"',p.read_text(encoding='utf8'));assert n==1;p.write_text(s,encoding="utf8")
+p=out/'desktop/src-tauri/Cargo.toml';p.write_text(p.read_text(encoding='utf8').replace('version = "0.5.1"',f'version = "{version}"',1),encoding='utf8')
+p=out/'desktop/src-tauri/Cargo.lock';s,n=re.subn(r'(\[\[package\]\]\nname = "dscompare-desktop"\nversion = )"0\.5\.1"',rf'\g<1>"{version}"',p.read_text(encoding='utf8'));assert n==1;p.write_text(s,encoding="utf8")
 (out/'desktop/tests/usability.test.ts').write_bytes((here/'tests/model.test.ts').read_bytes())
 checked=0
 for name,digest in manifest['sha256'].items():

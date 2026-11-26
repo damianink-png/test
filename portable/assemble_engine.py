@@ -13,6 +13,7 @@ PATCHES = [('patch_partial_mass.py', ''),('patch_geometry_registry_streaming.py'
 
 def assemble(target):
     repo=Path(__file__).resolve().parent.parent
+    version=(repo/'portable/VERSION').read_text(encoding='utf8').strip()
     overlays=repo/'review/fix06'
     for directory,names in [('dsac29',MODULES),('tests',TESTS)]:
         for name in names:
@@ -36,7 +37,8 @@ def assemble(target):
         raise RuntimeError('CAD source syntax failed')
     info_path=target/'build_info.json'
     info=json.loads(info_path.read_text(encoding='utf-8-sig'))
-    info.update(revision='Portable 0.6.59 — dowód płaskich ścian niezależny od osi UV 2026-11-26',
+    info.update(revision=f'Portable {version} — dowód płaskich ścian niezależny od osi UV 2026-11-26',
+                portable_version=version,
                 source_commit=os.environ.get('GITHUB_SHA','local_uncommitted'),
                 source_assembly='portable/prepare_source.py + portable/assemble_engine.py')
     info_path.write_text(json.dumps(info,indent=2,ensure_ascii=False),encoding='utf-8')
