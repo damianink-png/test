@@ -143,9 +143,6 @@ s=s.replace(anchor,"""            failure = sys.exc_info()[1]
                 except OSError:
                     pass
 """+anchor)
-old="                if not matched:\n                    report('validated_solid_symmetric_difference')"
-assert s.count(old)==1
-s=s.replace(old,"                if not matched and not getattr(report,'inventory_unresolved',False):\n                    report('validated_solid_symmetric_difference')")
 old="response = dict(ok=True, match=matched, proof_stages=proof_stages)"
 assert s.count(old)==1
 s=s.replace(old,"response = dict(ok=True, match=matched, proof_stages=proof_stages,inventory_unresolved=getattr(report,'inventory_unresolved',False))")

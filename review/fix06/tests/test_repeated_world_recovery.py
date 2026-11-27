@@ -434,7 +434,44 @@ def test_inventory_reports_all_blocking_faces_and_keeps_partial_matches_out_of_s
     assert 'old / new' in txt and 'Ściany A=6, B=6' in txt
     assert txt.count('Nierozstrzygnięta A[')>=2 and 'Zakończono przegląd' in txt
     assert 'family_inventory_unresolved' in exc.value.proof_stages
-    assert 'validated_solid_symmetric_difference' not in stages
+    assert stages.count('validated_solid_symmetric_difference') == 1
+    assert 'solid_symmetric_difference_unproven' in stages
+
+
+def test_repeated_torus_with_different_step_seam_proves_stationary_copies_once(monkeypatch):
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeTorus
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
+    from dsac29 import compare as engine
+    from dsac29.geometry import describe
+    from dsac29.revision_rules import classify_revisions
+
+    # Moving the parametric seam changes the boundary correspondence of this
+    # mixed STEP representation while preserving exactly the same material.
+    source = BRepPrimAPI_MakeTorus(8.25, 1.).Shape()
+    axes = gp_Ax2(gp_Pnt(), gp_Dir(0, 0, 1), gp_Dir(0, 1, 0))
+    target = BRepBuilderAPI_NurbsConvert(BRepPrimAPI_MakeTorus(axes, 8.25, 1.).Shape(), True).Shape()
+
+    def occurrences(shape, name, positions):
+        part = describe(shape, name, name)
+        return [_relocate(part, np.eye(3), np.array([130. + 30.*i, 280., 524.])) for i in positions]
+
+    old = occurrences(source, '03143777', range(85))
+    new = occurrences(target, 'C03143777', [*range(50), *range(100, 193)])
+    stages = []
+
+    def verify(*args, **kwargs):
+        return native_guard.guarded_world_reexport(*args, **kwargs, proof_stages_out=stages)
+
+    monkeypatch.setattr(engine, 'guarded_world_reexport', verify)
+    rows = classify_revisions(old, new, compare(old, new, revision_only=True, registered_frame=True),
+                              geometry_first=True)
+
+    assert stages.count('family_inventory_unresolved') == 1
+    assert stages.count('validated_solid_symmetric_difference') == 1
+    assert stages.count('solid_symmetric_difference_proven') == 1
+    assert {(r.a_index, r.b_index) for r in rows if r.status == 'SAME'} == {(i, i) for i in range(50)}
+    assert Counter(r.status for r in rows) == {'SAME': 50, 'REMOVED': 35, 'ADDED': 93}
 
 
 @pytest.mark.parametrize('phase',['family_inventory_started','family_inventory_unresolved'])
