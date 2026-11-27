@@ -56,5 +56,5 @@ s=s.replace(anchor,' if r.mode=="diagnostic"&&!r.files.is_empty()&&r.files.len()
 anchor=' }else if r.mode=="mass"{let list=out.join("inputs.json");'
 assert s.count(anchor)==1
 s=s.replace(anchor,' }else if r.mode=="diagnostic"&&r.files.len()==2{a.extend(["--a".into(),r.files[0].clone(),"--b".into(),r.files[1].clone()]);'+anchor)
-s=s.replace('"RAPORT_TESTOW.html"]','"RAPORT_TESTOW.html","DIAGNOSTYKA_MODELI.txt"]')
+s=s.replace('"RAPORT_TESTOW.html"]','"RAPORT_TESTOW.html","DIAGNOSTYKA_MODELI.txt","DIAGNOSTYKA_SCIAN.txt"]')
 p.write_text(s,encoding='utf8')

@@ -30,7 +30,7 @@ def cached_faces(part, build):
     return result
 
 
-def verified_face_owner(options, verify, on_unmatched=None):
+def verified_face_owner(options, verify, on_unmatched=None, *, scan_all=False):
     """Find a complete bijection, evaluating geometry only on traversed edges.
 
     Candidate adjacency is not evidence. Every assigned edge must return True
@@ -61,6 +61,8 @@ def verified_face_owner(options, verify, on_unmatched=None):
         if free is None:
             if on_unmatched is not None:
                 on_unmatched(first, seen_left)
+            if scan_all:
+                continue
             return None
         while True:
             i = parent[free]; old = reverse.get(i)

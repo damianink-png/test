@@ -90,7 +90,7 @@ def _shared_spline_carrier(a, b, tolerance):
     from OCP.GeomAbs import GeomAbs_BSplineSurface
     from OCP.GeomConvert import GeomConvert_SurfToAnaSurf
     from OCP.TopoDS import TopoDS
-    from .cylindrical_boundary import equivalent as cylinder_equal
+    from .cylindrical_boundary import equivalent as revolution_equal
 
     left, right = BRepAdaptor_Surface(a), BRepAdaptor_Surface(b)
     if any(s.GetType() != GeomAbs_BSplineSurface for s in (left, right)):
@@ -119,7 +119,7 @@ def _shared_spline_carrier(a, b, tolerance):
         if isinstance(carrier, Geom_Plane):
             verify = _planar_surface_equal
         elif isinstance(carrier, Geom_CylindricalSurface):
-            verify = cylinder_equal
+            verify = revolution_equal
         else:
             continue
         builder = BRepBuilderAPI_MakeFace(carrier, 0., 1., 0., 1., 1e-7)
@@ -133,11 +133,11 @@ def _shared_spline_carrier(a, b, tolerance):
 
 
 def surface_equal(a,b,tolerance,cache=None,diagnostic=None):
-    from .cylindrical_boundary import equivalent as cylinder_equal
+    from .cylindrical_boundary import equivalent as revolution_equal
     from .nurbs_orientation import oriented_surface_equal
     if not np.isfinite(tolerance) or tolerance<=0:return False
     try:
-        if _planar_surface_equal(a, b, tolerance) or cylinder_equal(a, b, tolerance, diagnostic):
+        if _planar_surface_equal(a, b, tolerance) or revolution_equal(a, b, tolerance, diagnostic):
             return True
     except Exception as exc:
         if diagnostic is not None:
@@ -168,12 +168,17 @@ def equivalent(a,b,tolerance,progress=None):
     if not np.isfinite(tolerance) or tolerance<=0:raise ValueError('Invalid tolerance')
     if not all(is_valid(s) and _count(s,TopAbs_SOLID)==1 for s in (a,b)):return False
     report=progress or (lambda phase:None)
+    inventory = getattr(report,'inventory',None)
+    if inventory:
+        report('family_inventory_started')
     report('original_boundary_surface_candidates')
     report('original_boundary_face_descriptors_A')
     fa=_faces(SimpleNamespace(shape=a))
     report('original_boundary_face_descriptors_B')
     fb=_faces(SimpleNamespace(shape=b))
-    if not fa or len(fa)!=len(fb):return False
+    if inventory:
+        inventory(f'Ściany A={len(fa)}, B={len(fb)}. Tolerancja {tolerance:g} mm.')
+    if not fa or not fb or (len(fa)!=len(fb) and not inventory):return False
     centers=np.array([f[3] for f in fb]);boxes=np.array([f[4] for f in fb])
     faces_a=items(a,TopAbs_FACE,TopoDS.Face_s)
     faces_b=items(b,TopAbs_FACE,TopoDS.Face_s)
@@ -182,12 +187,12 @@ def equivalent(a,b,tolerance,progress=None):
     for index,f in enumerate(fa):
         dc=np.linalg.norm(centers-f[3],axis=1);db=np.max(np.abs(boxes-f[4]),axis=1)
         candidates=np.flatnonzero(np.minimum(dc,db)<=max(.03,3*tolerance))
-        if not len(candidates):return False
+        if not len(candidates) and not inventory:return False
         options.append(sorted(map(int,candidates),key=lambda j:min(dc[j],db[j])))
     from .boundary_work import verified_face_owner
     attempted=0
     first_rejections={}
-    def verify(i,j):
+    def check(i,j):
         nonlocal attempted
         attempted+=1
         if attempted==1 or attempted%16==0:
@@ -218,22 +223,49 @@ def equivalent(a,b,tolerance,progress=None):
                 if trim == tolerance/2:
                     # The fallback uses the same oriented wires and edge budget.
                     first_rejections.setdefault(i,{}).setdefault('trims',(i,j,diagnostic))
+                    if inventory:
+                        inventory(f'  A[{i+1}]/B[{j+1}] etap=trims {diagnostic}')
                     return False
         matched=prove(faces_a[i],faces_b[j],{0:0},[fa[i]],tolerance,
                       strict_repair=False,allow_original_micro_degenerate=True,
                       surface_prover=cached_surface,edge_prover=circular_edge_equal)
-        if not matched:first_rejections.setdefault(i,{}).setdefault(stage,(i,j,diagnostic))
+        if not matched:
+            first_rejections.setdefault(i,{}).setdefault(stage,(i,j,diagnostic))
+            if inventory:
+                inventory(f'  A[{i+1}]/B[{j+1}] etap={stage} {diagnostic}')
         return matched
+    verify = check
+    if inventory:
+        from time import perf_counter
+        def verify(i,j):
+            start = perf_counter()
+            ok = check(i,j)
+            inventory(f'A[{i+1}] {fa[i][0]} / B[{j+1}] {fb[j][0]} | '
+                      f'{"powierzchnia i obrys zgodne" if ok else "brak potwierdzenia"} | '
+                      f'{perf_counter()-start:.3f} s')
+            return ok
     blocked = {}
+    logged_unmatched = False
     def unmatched(root, visited):
-        report(f'original_boundary_unmatched A[{root+1}] candidates={len(options[root])} visited={len(visited)}')
+        nonlocal logged_unmatched
+        if inventory:
+            inventory(f'Nierozstrzygnięta A[{root+1}] {fa[root][0]}, kandydaci={len(options[root])}')
+        if not logged_unmatched:
+            logged_unmatched = True
+            report(f'original_boundary_unmatched A[{root+1}] candidates={len(options[root])} visited={len(visited)}')
         # A rejection elsewhere may already have been resolved by a different
         # partner. Report only failures from this unsuccessful augmenting path.
         for index in [root,*sorted(visited-{root})]:
             for stage,rejection in first_rejections.get(index,{}).items():
                 blocked.setdefault(stage,rejection)
-    owner=verified_face_owner(options,verify,unmatched)
-    if owner is None:
+    owner=verified_face_owner(options,verify,unmatched,scan_all=bool(inventory))
+    if inventory:
+        unmatched_b = [j+1 for j in range(len(fb)) if j not in owner]
+        inventory(f'Zakończono przegląd. Przypisano 1:1 {len(owner)}. Ściany B bez pary: {unmatched_b}')
+    if owner is None or len(owner)!=len(fa) or len(owner)!=len(fb):
+        if inventory:
+            report.inventory_unresolved = True
+            report('family_inventory_unresolved')
         for stage,(i,j,diagnostic) in blocked.items():
             detail = ''
             if 'BSpline' in fa[i][0] and 'BSpline' in fb[j][0]:
@@ -267,8 +299,8 @@ def equivalent(a,b,tolerance,progress=None):
                         kinds[kind] += 1
                     detail += (f' {label}_wires={len(wires)} edges={dict(kinds)}'
                                f' closed={sum(BRep_Tool.IsClosed_s(e) for e in edges)}')
-            for key in ('reason','radius_mm','tol_mm','degree','knots','trim','support','orientations','patch',
-                        'squared_radius_ratio_hull','probe_radial_error_mm','jacobian_hull','A','B','native_exception','span_layout','max_overhang_spans','corner_gap_mm','trimmed_patch_mm','cell_budget','certified','trim_proof'):
+            for key in ('reason','radius_mm','minor_radius_mm','tol_mm','degree','knots','trim','support','orientations','patch',
+                        'squared_radius_ratio_hull','probe_radial_error_mm','probe_tube_error_mm','jacobian_hull','A','B','native_exception','span_layout','max_overhang_spans','corner_gap_mm','trimmed_patch_mm','cell_budget','certified','trim_proof'):
                 if key in diagnostic:
                     detail += f' {key}={diagnostic[key]}'
             if 'bound' in diagnostic:

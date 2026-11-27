@@ -19,6 +19,14 @@ class RepeatedWorldRecovery:
         self.attempts=set()
         self.exhausted_pairs=set()
         self.alternatives=set()
+        self.inventories=set()
+
+    def first_inventory(self,i,j):
+        family=self.groups_a[i],self.groups_b[j]
+        if family in self.inventories or min(self.counts_a[family[0]],self.counts_b[family[1]])<2:
+            return False
+        self.inventories.add(family)
+        return True
 
     def alternative(self,i,j,failed):
         family=(self.groups_a[i],self.groups_b[j])
@@ -32,7 +40,7 @@ class RepeatedWorldRecovery:
                 return (i,j)
         return None
 
-    def verify_alternative(self,i,j,progress=None):
+    def verify_alternative(self,i,j,progress=None,*,single_partition=False):
         from .alignment import _relocate
         from .native_guard import guarded_world_reexport
         from . import trace_r22 as trace
@@ -49,7 +57,7 @@ class RepeatedWorldRecovery:
         timeout_s = 120. if min(count_a, count_b) >= 16 else 30.
         problems = []
         alerts = []
-        for baked in (False, True):
+        for baked in ((False,) if single_partition else (False,True)):
             operation = 'world_fixed_partition_baked' if baked else 'world_fixed_partition'
             stage = ('repeated_alternative_baked_partition' if baked
                      else 'repeated_alternative_material_partition')
@@ -87,6 +95,21 @@ class RepeatedWorldRecovery:
         family=(self.groups_a[i],self.groups_b[j])
         if min(self.counts_a[family[0]],self.counts_b[family[1]])<2:
             return None
+        stages = getattr(error,'proof_stages',())
+        if family in self.inventories and any(s.startswith('family_inventory_') for s in stages):
+            # Full or interrupted inventory is recorded. Use
+            # one independent material partition, including for a lone pair
+            # of stationary occurrences among many moved copies.
+            self.exhausted_pairs.add((i,j))
+            if family in self.alternatives:
+                return None
+            self.alternatives.add(family)
+            self.attempts.add(family)
+            try:
+                return self.verify_alternative(i,j,progress,single_partition=True)
+            except NativeGeometryFailure as exc:
+                trace.mark('repeated_inventory_partition','UNVERIFIED',a_id=i,b_id=j,error=str(exc))
+                return None
         if 'timeout' not in str(error).casefold() and 'limit' not in str(error).casefold():
             return None
         # The full registered proof has already reached (and timed out in)

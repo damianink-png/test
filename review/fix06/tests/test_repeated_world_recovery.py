@@ -415,3 +415,42 @@ def test_fixed_partition_retries_a_native_warning_at_same_pose(monkeypatch, loca
     assert calls == [(True, .0001), (False, .0001)]
     assert 'fixed_partition_warning BOPAlgo_AlertBadPositioning' in phases
     assert not a.shape.Location().IsIdentity()
+
+
+def test_inventory_reports_all_blocking_faces_and_keeps_partial_matches_out_of_same(tmp_path,monkeypatch):
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from dsac29.geometry import describe
+    from dsac29 import trace_r22
+    a=describe(BRepPrimAPI_MakeBox(20.,10.,7.).Shape(),'old','old')
+    # Two displaced sides prevent a complete 1:1 assignment.
+    b=describe(BRepBuilderAPI_NurbsConvert(BRepPrimAPI_MakeBox(20.2,10.2,7.).Shape(),True).Shape(),'new','new')
+    monkeypatch.setattr(trace_r22,'_path',tmp_path/'stages.jsonl')
+    stages=[]
+    with pytest.raises(native_guard.NativeGeometryFailure) as exc:
+        native_guard.guarded_world_reexport(a,b,.01,operation='world_family_reexport',
+            timeout_s=30,allow_solid_set_proof=True,proof_stages_out=stages)
+    txt=(tmp_path/'DIAGNOSTYKA_SCIAN.txt').read_text(encoding='utf-8')
+    assert 'old / new' in txt and 'Ściany A=6, B=6' in txt
+    assert txt.count('Nierozstrzygnięta A[')>=2 and 'Zakończono przegląd' in txt
+    assert 'family_inventory_unresolved' in exc.value.proof_stages
+    assert 'validated_solid_symmetric_difference' not in stages
+
+
+@pytest.mark.parametrize('phase',['family_inventory_started','family_inventory_unresolved'])
+def test_rejected_inventory_uses_one_partition_per_family(monkeypatch,phase):
+    a,b=parts(count=5),parts(count=5)
+    policy=RepeatedWorldRecovery(a,b,[0]*5,[1]*5,.01)
+    assert policy.first_inventory(0,0) and not policy.first_inventory(1,1)
+    error=native_guard.NativeGeometryFailure('incomplete')
+    error.proof_stages=[phase]
+    calls=[]
+    def partition(*args, operation,proof_stages_out,**kwargs):
+        calls.append(operation)
+        proof_stages_out.extend(('fixed_partition_warning BOPAlgo_AlertIntersectionOfPairOfShapesFailed',
+                                 'fixed_partition_unverified_intersections'))
+        return False
+    monkeypatch.setattr(native_guard,'guarded_world_reexport',partition)
+    assert policy.recover(0,0,error) is None
+    assert policy.recover(1,1,error) is None
+    assert calls==['world_fixed_partition']

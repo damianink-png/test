@@ -1,4 +1,4 @@
-"""Bounds for a rational surface projected onto an analytic cylinder."""
+"""Bound rational patches against analytic surfaces of revolution."""
 from functools import lru_cache
 from math import comb
 
@@ -69,19 +69,27 @@ def _product_range(a, b):
     return min(products), max(products)
 
 
-def _patch_matches(patch, frame, origin, radius, radius_error, orientation, details):
+def _local_net(patch,frame,origin):
     u_count, v_count = patch.NbUPoles(), patch.NbVPoles()
     poles = np.array([[patch.Pole(u, v).Coord() for v in range(1, v_count+1)]
                       for u in range(1, u_count+1)])
     w = np.array([[patch.Weight(u, v) for v in range(1, v_count+1)]
                   for u in range(1, u_count+1)])
     if not np.isfinite(poles).all() or not np.isfinite(w).all() or w.min() <= 0:
-        return False
+        return None
     w /= w.max()
     if w.min() < 1e-8:
-        return False
+        return None
 
     points = (poles-origin) @ frame.T
+    return points,w
+
+
+def _patch_matches(patch, frame, origin, radius, radius_error, orientation, details):
+    net = _local_net(patch,frame,origin)
+    if net is None:
+        return False
+    points,w = net
     points[..., :2] /= radius
     heights = points[..., 2] - points[0, 0, 2]
     height = np.abs(heights).max()
@@ -114,6 +122,81 @@ def _patch_matches(patch, frame, origin, radius, radius_error, orientation, deta
     if not good and details is not None:
         details.update(reason='oriented_jacobian',jacobian_hull=(float(jacobian.min()),float(jacobian.max())))
     return good
+
+
+def _torus_orientation(points,w,sense,depth=0):
+    """Bound the signed surface normal against the normal of the torus tube."""
+    h = points*w[...,None]
+    # A common offset cancels in rational derivatives and tightens the bounds.
+    local = (points-points[0,0])*w[...,None]
+    tangents = []
+    for axis in (0,1):
+        dw = np.diff(w,axis=axis)
+        tangents.append([_multiply(w,np.diff(local[...,k],axis=axis))-_multiply(local[...,k],dw)
+                         for k in range(3)])
+    du,dv = tangents
+    def bounds(v):
+        return np.array([v.min(),v.max()])
+    cross = []
+    for i,j in ((1,2),(2,0),(0,1)):
+        cross.append(np.array(_product_range(du[i],dv[j]))-np.array(_product_range(du[j],dv[i]))[::-1])
+    xyz = [bounds(points[...,k]) for k in range(3)]
+    # With the major radius normalized to one, the nearest tube normal
+    # is proportional to (x*(1-1/rho), y*(1-1/rho), z).
+    low = np.hypot(*(max(0.,v[0],-v[1]) for v in xyz[:2]))
+    high = np.hypot(*(max(abs(v)) for v in xyz[:2]))
+    if low>1e-12:
+        factor = 1.-1./np.array([low,high])
+        normal = [np.array(_product_range(v,factor)) for v in xyz[:2]]+[xyz[2]]
+        terms = np.array([_product_range(c,n*sense) for c,n in zip(cross,normal)])
+        margin = 1e-12*max(1e-15,np.abs(terms).sum())
+        if terms[:,0].sum()>margin:
+            return True
+        if terms[:,1].sum()<=margin:
+            return False
+    if depth>=10:
+        return False
+    axis = depth%2
+    level = np.moveaxis(np.concatenate((h,w[...,None]),axis=-1),axis,0)
+    left,right = [level[0]],[level[-1]]
+    while len(level)>1:
+        level = (level[:-1]+level[1:])*.5
+        left.append(level[0])
+        right.append(level[-1])
+    for half in (left,right[::-1]):
+        part = np.moveaxis(np.array(half),0,axis)
+        weights = part[...,3]
+        if not _torus_orientation(part[...,:3]/weights[...,None],weights,sense,depth+1):
+            return False
+    return True
+
+
+def _torus_patch(patch,frame,origin,major,minor,tolerance,orientation,details):
+    net = _local_net(patch,frame,origin)
+    if net is None:
+        return False
+    points,w = net
+    points /= major
+    x,y,z = np.moveaxis(points*w[...,None],-1,0)
+    ww = _multiply(w,w)
+    xy = _multiply(x,x)+_multiply(y,y)
+    base = xy+_multiply(z,z)+ww
+    radial = 4.*_multiply(xy,ww)
+    # For a ring torus F(s) factors as (distance_to_core**2-s**2)
+    # times a strictly positive factor. Test both bounding tubes in mm.
+    for radius,sign in ((minor-tolerance,1.),(minor+tolerance,-1.)):
+        offset = base-(radius/major)**2*ww
+        square = _multiply(offset,offset)
+        margin = 256*np.finfo(float).eps*max(1.,abs(square).max(),abs(radial).max())
+        if not _positive(sign*(square-radial),margin):
+            if details is not None:
+                details['reason']='torus_tube_bound'
+            return False
+    if not _torus_orientation(points,w,orientation):
+        if details is not None:
+            details['reason']='torus_orientation'
+        return False
+    return True
 
 
 def _axis_segments(knots, lo, hi, periodic):
@@ -149,21 +232,28 @@ def _axis_segments(knots, lo, hi, periodic):
 
 def equivalent(a, b, tolerance, details=None):
     from OCP.BRepAdaptor import BRepAdaptor_Surface
-    from OCP.GeomAbs import GeomAbs_BSplineSurface, GeomAbs_Cylinder
+    from OCP.GeomAbs import GeomAbs_BSplineSurface, GeomAbs_Cylinder, GeomAbs_Torus
     from OCP.GeomConvert import GeomConvert_BSplineSurfaceToBezierSurface
     from OCP.Precision import Precision
     from OCP.TColStd import TColStd_Array1OfReal
 
     left, right = BRepAdaptor_Surface(a), BRepAdaptor_Surface(b)
-    if left.GetType() != GeomAbs_Cylinder:
+    if left.GetType() not in (GeomAbs_Cylinder,GeomAbs_Torus):
         a, b = b, a
         left, right = right, left
-    if left.GetType() != GeomAbs_Cylinder or right.GetType() != GeomAbs_BSplineSurface:
+    if left.GetType() not in (GeomAbs_Cylinder,GeomAbs_Torus) or right.GetType() != GeomAbs_BSplineSurface:
         return False
     if any(int(face.Orientation()) not in (0, 1) for face in (a, b)):
         return False
-    cylinder = left.Cylinder()
-    radius = cylinder.Radius()
+    toroidal = left.GetType()==GeomAbs_Torus
+    carrier = left.Torus() if toroidal else left.Cylinder()
+    radius = carrier.MajorRadius() if toroidal else carrier.Radius()
+    if toroidal:
+        minor = carrier.MinorRadius()
+        if details is not None:
+            details.update(minor_radius_mm=minor,reason='unsupported_torus')
+        if not tolerance < minor < radius-tolerance:
+            return False
     if radius <= Precision.Confusion_s():
         return False
     radius_error = min(.25, tolerance/radius)-1e-12
@@ -188,33 +278,40 @@ def equivalent(a, b, tolerance, details=None):
     if not 0 < len(axes_segments[0])*len(axes_segments[1]) <= 1024:
         return False
 
-    axes = cylinder.Position()
+    axes = carrier.Position()
     x, y = axes.XDirection().Coord(), axes.YDirection().Coord()
     normal = np.cross(x, y)
     frame = np.asarray((x, y, normal))
     orientation = np.dot(normal, axes.Direction().Coord())
     if a.Orientation() != b.Orientation():
         orientation = -orientation
-    origin = np.array(cylinder.Location().Coord())
+    origin = np.array(carrier.Location().Coord())
     for i,u0,u1 in axes_segments[0]:
         for j,v0,v1 in axes_segments[1]:
             patch = spans.Patch(i,j)
             if (u0,u1,v0,v1) != (0.,1.,0.,1.):
                 patch = patch.Copy()
                 patch.Segment(u0,u1,v0,v1)
-            if not _patch_matches(patch,frame,origin,radius,radius_error,orientation,details):
+            good = (_torus_patch(patch,frame,origin,radius,minor,tolerance,orientation,details)
+                    if toroidal else _patch_matches(patch,frame,origin,radius,radius_error,orientation,details))
+            if not good:
                 if details is not None:
                     details['patch'] = (i,j)
-                    if details['reason']=='radial_bound':
+                    if details['reason'] in ('radial_bound','torus_tube_bound'):
                         # Diagnostics only. Samples do not certify a surface.
                         probes = np.array([patch.Value(u,v).Coord() for u in (0.,.5,1.) for v in (0.,.5,1.)])
-                        radii = np.linalg.norm((probes-origin) @ frame[:2].T,axis=1)
-                        details['probe_radial_error_mm'] = float(np.max(np.abs(radii-radius)))
+                        local = (probes-origin) @ frame.T
+                        radii = np.linalg.norm(local[:,:2],axis=1)
+                        if toroidal:
+                            tube_radii = np.hypot(radii-radius,local[:,2])
+                            details['probe_tube_error_mm'] = float(np.max(np.abs(tube_radii-minor)))
+                        else:
+                            details['probe_radial_error_mm'] = float(np.max(np.abs(radii-radius)))
                     if details['reason']=='spline_layout':
                         details['reason'] = 'degenerate_or_weights'
                 return False
     if details is not None:
-        details['reason'] = 'cylinder_surface_proven'
+        details['reason'] = 'torus_surface_proven' if toroidal else 'cylinder_surface_proven'
     return True
 
 

@@ -66,6 +66,19 @@ assert s.count(anchor)==1
 s=s.replace(anchor,"""            completed=name_pass*len(a)+i+1
             if progress and (completed%25==0 or completed==total_positions):
                 progress(f'Etap zgodności: {completed}/{total_positions}; B-Rep: {checks}; pamięć: {memo_hits}; {perf_counter()-started:.1f}s')""")
+# Record the full face inventory in the native session of the first mixed
+# representative. Keep the normal verification chain and all its proofs.
+old="""                            same=trace.brep_call('mixed_export_boundary',i,j,
+                                bounded_reexport,s,b[j],tolerance)"""
+assert s.count(old)==1
+s=s.replace(old,"""                            if repeated_world_recovery.first_inventory(i,j):
+                                same=trace.brep_call('mixed_export_boundary',i,j,guarded_world_reexport,
+                                    s,b[j],tolerance,timeout_s=120.,operation='world_family_reexport',
+                                    allow_solid_set_proof=True)
+                            else:
+                                same=trace.brep_call('mixed_export_boundary',i,j,
+                                    bounded_reexport,s,b[j],tolerance)""")
+
 compile(s,str(p),'exec');p.write_text(s)
 print('REPEATED_FIXED_WORLD_RECOVERY_PASS')
 
@@ -100,5 +113,48 @@ changes=[
 for old,new in changes:
     assert s.count(old)==1
     s=s.replace(old,new)
+old="    elif req.get('operation') == 'world_reexport':"
+assert s.count(old)==1
+s=s.replace(old,"""    elif req.get('operation') in ('world_reexport','world_family_reexport'):
+        if req['operation']=='world_family_reexport':
+            def inventory(text):
+                try:
+                    with Path(result_path).with_name('faces.txt').open('a',encoding='utf-8') as f:
+                        print(text,file=f)
+                except OSError:
+                    pass
+            report.inventory = inventory""")
+anchor="            if proof_stages_out is not None:"
+assert s.count(anchor)==1
+s=s.replace(anchor,"""            failure = sys.exc_info()[1]
+            if isinstance(failure,NativeGeometryFailure):
+                failure.proof_stages = stages
+            if operation=='world_family_reexport' and trace._path is not None:
+                try:
+                    txt=root/'faces.txt'
+                    with (trace._path.parent/'DIAGNOSTYKA_SCIAN.txt').open('a',encoding='utf-8') as f:
+                        print(f'\\n{a.path} / {b.path}',file=f)
+                        if txt.exists():
+                            print(txt.read_text(encoding='utf-8'),file=f)
+                        else:
+                            print('Weryfikacja nie dotarła do porównania poszczególnych ścian.',file=f)
+                        if failure is not None:
+                            print(f'Przerwano próbę B-Rep: {failure}',file=f)
+                except OSError:
+                    pass
+"""+anchor)
+old="                if not matched:\n                    report('validated_solid_symmetric_difference')"
+assert s.count(old)==1
+s=s.replace(old,"                if not matched and not getattr(report,'inventory_unresolved',False):\n                    report('validated_solid_symmetric_difference')")
+old="response = dict(ok=True, match=matched, proof_stages=proof_stages)"
+assert s.count(old)==1
+s=s.replace(old,"response = dict(ok=True, match=matched, proof_stages=proof_stages,inventory_unresolved=getattr(report,'inventory_unresolved',False))")
+anchor="        return data['match']"
+idx=s.index(anchor,s.index('def guarded_world_reexport('))
+s=s[:idx]+"""        if operation=='world_family_reexport' and not data['match'] and data.get('inventory_unresolved'):
+            failure=NativeGeometryFailure('Nie potwierdzono rodziny po pełnym przeglądzie ścian')
+            failure.proof_stages=(*stages,'family_inventory_unresolved')
+            raise failure
+"""+s[idx:]
 compile(s,str(native),'exec')
 native.write_text(s)

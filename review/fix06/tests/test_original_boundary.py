@@ -427,9 +427,56 @@ def test_reported_sixth_face_checks_reflected_trim_rectangles():
     assert not native_polynomial_equal(a,_reported_cap(False,.09),.00875)
 
 
+def _torus_exports():
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeSolid
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeTorus
+    from OCP.Convert import Convert_QuasiAngular
+    from OCP.Geom import Geom_Circle, Geom_SurfaceOfRevolution
+    from OCP.GeomConvert import GeomConvert
+    from OCP.TopoDS import TopoDS_Shell
+    from OCP.gp import gp_Ax1, gp_Ax2, gp_Pnt, gp_Dir
+
+    axes = gp_Ax2(gp_Pnt(10,0,0),gp_Dir(0,-1,0),gp_Dir(1,0,0))
+    meridian = GeomConvert.CurveToBSplineCurve_s(Geom_Circle(axes,2.),Convert_QuasiAngular)
+    surface = Geom_SurfaceOfRevolution(meridian,gp_Ax1(gp_Pnt(),gp_Dir(0,0,1)))
+    spline = GeomConvert.SurfaceToBSplineSurface_s(surface)
+    builder, shell = BRep_Builder(), TopoDS_Shell()
+    builder.MakeShell(shell)
+    builder.Add(shell,BRepBuilderAPI_MakeFace(spline,1e-7).Face())
+    return BRepPrimAPI_MakeTorus(10.,2.).Shape(),BRepBuilderAPI_MakeSolid(shell).Solid()
+
+
+def test_torus_spline_certifies_complete_surface_and_respects_cuts():
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeTorus
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopoDS import TopoDS
+    from OCP.gp import gp_Vec
+    from dsac29.parametric_identity import items,prove
+    from dsac29.cylindrical_boundary import equivalent as carrier_equal,circular_edge_equal
+    def face(shape):
+        return items(shape,TopAbs_FACE,TopoDS.Face_s)[0]
+    a,b = map(face,_torus_exports())
+    d = {}
+    assert carrier_equal(a,b,.005,d) and d['reason']=='torus_surface_proven'
+    assert carrier_equal(b,a,.005)
+    assert not carrier_equal(a,TopoDS.Face_s(b.Reversed()),.005)
+    assert not carrier_equal(face(BRepPrimAPI_MakeTorus(10.03,2.).Shape()),b,.005)
+    assert not carrier_equal(face(BRepPrimAPI_MakeTorus(10.,2.03).Shape()),b,.005)
+    spline=BRepAdaptor_Surface(b).BSpline()
+    trimmed=BRepBuilderAPI_MakeFace(spline,0.,1.5,0.,2.,1e-7).Face()
+    assert carrier_equal(a,trimmed,.005)
+    assert not prove(a,trimmed,{0:0},[],.01,strict_repair=False,
+                     surface_prover=carrier_equal,edge_prover=circular_edge_equal)
+    spline.SetPole(3,3,spline.Pole(3,3).Translated(gp_Vec(.3,.3,.3)))
+    assert not carrier_equal(a,BRepBuilderAPI_MakeFace(spline,1e-7).Face(),.005)
+
+
 @pytest.mark.parametrize('solids', [_cylindrical_solids, lambda: (_bicubic_solid(0.), _bicubic_solid(.015)),
-                                     lambda: (_bicubic_solid(0.), _bicubic_solid(.015, 1e-9)), _reported_solids,_mixed_cylindrical_solids],
-                         ids=['rational-cylinder', 'polynomial-23x7','pcurve-outside-knots','reported-reflected-overhang','analytic-vs-cubic-cylinder'])
+                                     lambda: (_bicubic_solid(0.), _bicubic_solid(.015, 1e-9)), _reported_solids,_mixed_cylindrical_solids,_torus_exports],
+                         ids=['rational-cylinder', 'polynomial-23x7','pcurve-outside-knots','reported-reflected-overhang','analytic-vs-cubic-cylinder','analytic-vs-spline-torus'])
 def test_different_spline_exports_keep_the_53_stationary_occurrences(solids):
     from collections import Counter
     import numpy as np
