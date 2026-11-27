@@ -220,6 +220,62 @@ def _cylindrical_solids():
     return source, target
 
 
+def _cubic_cylinder_export(radius=5., tangent=None):
+    """Four polynomial cubic arcs as used to approximate a circular profile."""
+    from math import tan, pi
+    import numpy as np
+    from OCP.Geom import Geom_BSplineCurve
+    from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal
+    from OCP.TColgp import TColgp_Array1OfPnt
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge,BRepBuilderAPI_MakeWire,BRepBuilderAPI_MakeFace
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakePrism
+    from OCP.gp import gp_Pnt,gp_Vec,gp_Pln,gp_Dir
+
+    points = np.array([(1.,0.),(0.,1.),(-1.,0.),(0.,-1.)])
+    tangents = np.column_stack((-points[:,1],points[:,0]))
+    handle = (4./3*tan(pi/8)) if tangent is None else tangent
+    coords = [points[0]]
+    for i in range(4):
+        j = (i+1)%4
+        coords.extend([points[i]+handle*tangents[i],points[j]-handle*tangents[j],points[j]])
+    poles = TColgp_Array1OfPnt(1,len(coords))
+    for i,(x,y) in enumerate(coords,1):
+        poles.SetValue(i,gp_Pnt(x*radius,y*radius,0))
+    knots = TColStd_Array1OfReal(1,5)
+    mults = TColStd_Array1OfInteger(1,5)
+    for i in range(1,6):
+        knots.SetValue(i,i-1)
+        mults.SetValue(i,4 if i in (1,5) else 3)
+    curve = Geom_BSplineCurve(poles,knots,mults,3,False)
+    wire = BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(curve).Edge()).Wire()
+    face = BRepBuilderAPI_MakeFace(gp_Pln(gp_Pnt(),gp_Dir(0,0,1)),wire,True).Face()
+    return BRepBuilderAPI_NurbsConvert(BRepPrimAPI_MakePrism(face,gp_Vec(0,0,10)).Shape(),True).Shape()
+
+
+def _mixed_cylindrical_solids():
+    return BRepPrimAPI_MakeCylinder(5.,10.).Shape(),_cubic_cylinder_export()
+
+
+def test_cylinder_polynomial_export_requires_radius_and_orientation():
+    from OCP.GeomAbs import GeomAbs_Cylinder,GeomAbs_BSplineSurface
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopoDS import TopoDS
+    from dsac29.parametric_identity import items
+    from dsac29.cylindrical_boundary import equivalent as cylinder_equal
+    def side(s,kind):
+        return next(f for f in items(s,TopAbs_FACE,TopoDS.Face_s)
+                    if BRepAdaptor_Surface(f).GetType()==kind and
+                    abs(BRepAdaptor_Surface(f).Value(0,0).Z()-BRepAdaptor_Surface(f).Value(0,1).Z())>.1)
+    a,b = _mixed_cylindrical_solids()
+    left,right = side(a,GeomAbs_Cylinder),side(b,GeomAbs_BSplineSurface)
+    assert cylinder_equal(left,right,.005)
+    assert cylinder_equal(right,left,.005)
+    assert not cylinder_equal(left,TopoDS.Face_s(right.Reversed()),.005)
+    assert not cylinder_equal(left,side(_cubic_cylinder_export(tangent=.63),GeomAbs_BSplineSurface),.005)
+    assert not cylinder_equal(left,side(_cubic_cylinder_export(radius=5.02),GeomAbs_BSplineSurface),.005)
+
+
 def _bicubic_cap(offset):
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
     from OCP.Geom import Geom_BSplineSurface
@@ -372,8 +428,8 @@ def test_reported_sixth_face_checks_reflected_trim_rectangles():
 
 
 @pytest.mark.parametrize('solids', [_cylindrical_solids, lambda: (_bicubic_solid(0.), _bicubic_solid(.015)),
-                                     lambda: (_bicubic_solid(0.), _bicubic_solid(.015, 1e-9)), _reported_solids],
-                         ids=['rational-cylinder', 'polynomial-23x7','pcurve-outside-knots','reported-reflected-overhang'])
+                                     lambda: (_bicubic_solid(0.), _bicubic_solid(.015, 1e-9)), _reported_solids,_mixed_cylindrical_solids],
+                         ids=['rational-cylinder', 'polynomial-23x7','pcurve-outside-knots','reported-reflected-overhang','analytic-vs-cubic-cylinder'])
 def test_different_spline_exports_keep_the_53_stationary_occurrences(solids):
     from collections import Counter
     import numpy as np
@@ -459,3 +515,32 @@ def test_disk_with_a_new_seam_needs_its_full_oriented_circle():
                      surface_prover=surface_equal,edge_prover=circular_edge_equal)
         assert not circular_edge_equal(a,TopoDS.Edge_s(b.Reversed()),.005)
         assert not circular_edge_equal(a,edge(1.2,5.03,True),.005)
+
+
+def test_cylinder_checks_the_terminal_span_outside_the_support():
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+    from OCP.Geom import Geom_CylindricalSurface
+    from OCP.gp import gp_Ax3
+    from dsac29.cylindrical_boundary import equivalent as cylinder_equal
+
+    cylinder = Geom_CylindricalSurface(gp_Ax3(),5.)
+    reference = BRepBuilderAPI_MakeFace(cylinder,0.,2.3,-.15,10.,1e-7).Face()
+    spline = BRepAdaptor_Surface(_rational_cylinder_face(5.,2.3)).BSpline()
+    u0,u1,_,_ = spline.Bounds()
+    overhang = _rectangular_pcurves(spline,(u0,u1,-.15,10.))
+    assert cylinder_equal(reference,overhang,.005)
+    # Keep the support inside tolerance but let its sloped terminal patch
+    # continue beyond it. Clamping V to the last knot would hide the change.
+    for u in range(1,spline.NbUPoles()+1):
+        point = spline.Pole(u,spline.NbVPoles())
+        point.SetX(point.X()*1.0005)
+        point.SetY(point.Y()*1.0005)
+        spline.SetPole(u,spline.NbVPoles(),point)
+    inside = _rectangular_pcurves(spline,(u0,u1,0.,10.))
+    beyond = _rectangular_pcurves(spline,(u0,u1,0.,30.))
+    assert cylinder_equal(reference,inside,.005)
+    info = {}
+    assert not cylinder_equal(reference,beyond,.005,info)
+    assert info['reason']=='radial_bound'
+    assert info['probe_radial_error_mm'] > .005

@@ -132,15 +132,16 @@ def _shared_spline_carrier(a, b, tolerance):
     return False
 
 
-def surface_equal(a,b,tolerance,cache=None):
+def surface_equal(a,b,tolerance,cache=None,diagnostic=None):
     from .cylindrical_boundary import equivalent as cylinder_equal
     from .nurbs_orientation import oriented_surface_equal
     if not np.isfinite(tolerance) or tolerance<=0:return False
     try:
-        if _planar_surface_equal(a, b, tolerance) or cylinder_equal(a, b, tolerance):
+        if _planar_surface_equal(a, b, tolerance) or cylinder_equal(a, b, tolerance, diagnostic):
             return True
-    except Exception:
-        pass  # The existing bounded UV proof can still verify this pair.
+    except Exception as exc:
+        if diagnostic is not None:
+            diagnostic['native_exception'] = f'{type(exc).__name__} {str(exc)[:100]}'
     try:
         convert=cache.get if cache is not None else _surface_face
         x,y=convert(a),convert(b)
@@ -195,7 +196,7 @@ def equivalent(a,b,tolerance,progress=None):
         def cached_surface(left,right,tol):
             nonlocal stage
             stage='surface'
-            matched=surface_equal(left,right,tol,cache)
+            matched=surface_equal(left,right,tol,cache,diagnostic)
             if matched:stage='trims'
             return matched
         diagnostic = {}
@@ -266,7 +267,8 @@ def equivalent(a,b,tolerance,progress=None):
                         kinds[kind] += 1
                     detail += (f' {label}_wires={len(wires)} edges={dict(kinds)}'
                                f' closed={sum(BRep_Tool.IsClosed_s(e) for e in edges)}')
-            for key in ('A','B','native_exception','span_layout','max_overhang_spans','corner_gap_mm','trimmed_patch_mm','cell_budget','certified','trim_proof'):
+            for key in ('reason','radius_mm','tol_mm','degree','knots','trim','support','orientations','patch',
+                        'squared_radius_ratio_hull','probe_radial_error_mm','jacobian_hull','A','B','native_exception','span_layout','max_overhang_spans','corner_gap_mm','trimmed_patch_mm','cell_budget','certified','trim_proof'):
                 if key in diagnostic:
                     detail += f' {key}={diagnostic[key]}'
             if 'bound' in diagnostic:

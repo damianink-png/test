@@ -29,12 +29,39 @@ def _multiply(a, b):
     return np.bincount(bins, terms.ravel(), minlength=shape[0]*shape[1]).reshape(shape)
 
 
-def _radial_match(x, y, w, error):
-    # A quotient of Bernstein polynomials with positive denominator
-    # coefficients is bounded by the ratios of corresponding coefficients.
-    radial = (_multiply(x, x) + _multiply(y, y)) / _multiply(w, w)
-    return bool(np.isfinite(radial).all() and radial.min() >= (1-error)**2
-                and radial.max() <= (1+error)**2)
+def _positive(net, margin, depth=0):
+    """Prove positivity everywhere by convex hulls of Bernstein coefficients."""
+    if net.min() > margin:
+        return True
+    if depth >= 10 or np.min(net[np.ix_([0,-1],[0,-1])]) <= margin:
+        return False
+    variation = [np.max(abs(np.diff(net,axis=k))) if net.shape[k]>1 else 0. for k in (0,1)]
+    axis = int(np.argmax(variation))
+    level = np.moveaxis(net,axis,0)
+    left, right = [level[0]], [level[-1]]
+    while len(level)>1:
+        level = (level[:-1]+level[1:])*.5
+        left.append(level[0])
+        right.append(level[-1])
+    return all(_positive(np.moveaxis(np.array(half),0,axis),margin,depth+1)
+               for half in (left,right[::-1]))
+
+
+def _radial_match(x, y, w, error, details=None):
+    # With positive weights, these two polynomials enclose the squared
+    # radius over the complete rational patch. The original control hull
+    # can straddle the limit even for a very accurate cubic arc.
+    numerator = _multiply(x, x) + _multiply(y, y)
+    denominator = _multiply(w, w)
+    if not np.isfinite(numerator).all() or not np.isfinite(denominator).all():
+        return False
+    margin = 64*np.finfo(float).eps*max(1.,np.max(abs(numerator)),np.max(denominator))
+    good = (_positive(numerator-(1.-error)**2*denominator,margin)
+            and _positive((1.+error)**2*denominator-numerator,margin))
+    if not good and details is not None:
+        ratio = numerator/denominator
+        details.update(reason='radial_bound', squared_radius_ratio_hull=(float(ratio.min()),float(ratio.max())))
+    return good
 
 
 def _product_range(a, b):
@@ -42,7 +69,7 @@ def _product_range(a, b):
     return min(products), max(products)
 
 
-def _patch_matches(patch, frame, origin, radius, radius_error, orientation):
+def _patch_matches(patch, frame, origin, radius, radius_error, orientation, details):
     u_count, v_count = patch.NbUPoles(), patch.NbVPoles()
     poles = np.array([[patch.Pole(u, v).Coord() for v in range(1, v_count+1)]
                       for u in range(1, u_count+1)])
@@ -62,7 +89,7 @@ def _patch_matches(patch, frame, origin, radius, radius_error, orientation):
         return False
     x, y = np.moveaxis(points[..., :2] * w[..., None], -1, 0)
     z = heights / height * w
-    if not _radial_match(x, y, w, radius_error):
+    if not _radial_match(x, y, w, radius_error, details):
         return False
 
     # Bound the local Jacobian of (angle, height) in homogeneous coordinates.
@@ -78,14 +105,54 @@ def _patch_matches(patch, frame, origin, radius, radius_error, orientation):
     lo, hi = _product_range(angle_u, height_v)
     other_lo, other_hi = _product_range(angle_v, height_u)
     margin = 1e-12 * max(1., abs(lo), abs(hi), abs(other_lo), abs(other_hi))
-    return bool(lo-other_hi > margin if orientation > 0 else other_lo-hi > margin)
+    if (lo-other_hi > margin if orientation > 0 else other_lo-hi > margin):
+        return True
+    # Products taken separately lose their correlation for a skewed UV
+    # parameterization. Bound the signed determinant itself before rejecting.
+    jacobian = orientation*(_multiply(angle_u,height_v)-_multiply(angle_v,height_u))
+    good = np.isfinite(jacobian).all() and _positive(jacobian,margin)
+    if not good and details is not None:
+        details.update(reason='oriented_jacobian',jacobian_hull=(float(jacobian.min()),float(jacobian.max())))
+    return good
 
 
-def equivalent(a, b, tolerance):
+def _axis_segments(knots, lo, hi, periodic):
+    # Outside a nonperiodic domain OCCT evaluates the terminal polynomial.
+    # A periodic domain instead wraps the requested interval around the seam.
+    if not np.isfinite([lo,hi]).all() or not lo < hi or not np.all(np.diff(knots)>0):
+        return []
+    shifts = (0.,)
+    if periodic:
+        period = knots[-1]-knots[0]
+        if hi-lo > period*(1.+1e-12):
+            return []
+        shift = np.floor((lo-knots[0])/period)*period
+        shifts = (shift,shift+period,shift+2*period)
+    result = []
+    for shift in shifts:
+        for i,(first,last) in enumerate(zip(knots[:-1],knots[1:])):
+            a,b = first+shift,last+shift
+            low = lo if i==0 and not periodic else max(lo,a)
+            high = hi if i==len(knots)-2 and not periodic else min(hi,b)
+            if high > low:
+                result.append((i+1,(low-a)/(last-first),(high-a)/(last-first)))
+    if not periodic:
+        return result
+    merged = []
+    for i,a,b in sorted(result):
+        if merged and merged[-1][0]==i and a<=merged[-1][2]:
+            merged[-1] = (i,merged[-1][1],max(b,merged[-1][2]))
+        else:
+            merged.append((i,a,b))
+    return merged
+
+
+def equivalent(a, b, tolerance, details=None):
     from OCP.BRepAdaptor import BRepAdaptor_Surface
     from OCP.GeomAbs import GeomAbs_BSplineSurface, GeomAbs_Cylinder
     from OCP.GeomConvert import GeomConvert_BSplineSurfaceToBezierSurface
     from OCP.Precision import Precision
+    from OCP.TColStd import TColStd_Array1OfReal
 
     left, right = BRepAdaptor_Surface(a), BRepAdaptor_Surface(b)
     if left.GetType() != GeomAbs_Cylinder:
@@ -104,14 +171,21 @@ def equivalent(a, b, tolerance):
         return False
 
     spline = right.BSpline()
-    if max(spline.UDegree(), spline.VDegree()) > 8 or spline.NbUKnots()*spline.NbVKnots() > 512:
-        return False
     bounds = (right.FirstUParameter(), right.LastUParameter(),
               right.FirstVParameter(), right.LastVParameter())
-    if not np.isfinite(bounds).all():
+    if details is not None:
+        details.update(reason='spline_layout',radius_mm=radius,tol_mm=tolerance,
+                       degree=(spline.UDegree(),spline.VDegree()),knots=(spline.NbUKnots(),spline.NbVKnots()),
+                       trim=bounds,support=spline.Bounds(), orientations=(int(a.Orientation()),int(b.Orientation())))
+    if max(spline.UDegree(), spline.VDegree()) > 8 or spline.NbUKnots()*spline.NbVKnots() > 4096:
         return False
-    spans = GeomConvert_BSplineSurfaceToBezierSurface(spline, *bounds, Precision.PConfusion_s())
-    if not 0 < spans.NbUPatches()*spans.NbVPatches() <= 256:
+    spans = GeomConvert_BSplineSurfaceToBezierSurface(spline)
+    axes_segments = []
+    for axis,lo,hi in (('U',*bounds[:2]),('V',*bounds[2:])):
+        knots = TColStd_Array1OfReal(1,getattr(spans,'Nb'+axis+'Patches')()+1)
+        getattr(spans,axis+'Knots')(knots)
+        axes_segments.append(_axis_segments(np.asarray(list(knots)),lo,hi,getattr(spline,'Is'+axis+'Periodic')()))
+    if not 0 < len(axes_segments[0])*len(axes_segments[1]) <= 1024:
         return False
 
     axes = cylinder.Position()
@@ -122,8 +196,26 @@ def equivalent(a, b, tolerance):
     if a.Orientation() != b.Orientation():
         orientation = -orientation
     origin = np.array(cylinder.Location().Coord())
-    return all(_patch_matches(spans.Patch(u, v), frame, origin, radius, radius_error, orientation)
-               for u in range(1, spans.NbUPatches()+1) for v in range(1, spans.NbVPatches()+1))
+    for i,u0,u1 in axes_segments[0]:
+        for j,v0,v1 in axes_segments[1]:
+            patch = spans.Patch(i,j)
+            if (u0,u1,v0,v1) != (0.,1.,0.,1.):
+                patch = patch.Copy()
+                patch.Segment(u0,u1,v0,v1)
+            if not _patch_matches(patch,frame,origin,radius,radius_error,orientation,details):
+                if details is not None:
+                    details['patch'] = (i,j)
+                    if details['reason']=='radial_bound':
+                        # Diagnostics only. Samples do not certify a surface.
+                        probes = np.array([patch.Value(u,v).Coord() for u in (0.,.5,1.) for v in (0.,.5,1.)])
+                        radii = np.linalg.norm((probes-origin) @ frame[:2].T,axis=1)
+                        details['probe_radial_error_mm'] = float(np.max(np.abs(radii-radius)))
+                    if details['reason']=='spline_layout':
+                        details['reason'] = 'degenerate_or_weights'
+                return False
+    if details is not None:
+        details['reason'] = 'cylinder_surface_proven'
+    return True
 
 
 def _arc_sweep(net, error, depth=0):
@@ -220,7 +312,14 @@ def circular_edge_equal(a, b, tolerance):
             weights = weights / weights.max()
             if weights.min() < 1e-8:
                 return False
-            arc = _arc_sweep(np.column_stack((local[:, :2]*weights[:, None]/radius, weights)), error)
+            arc_error = error
+            if full:
+                # Radial and axial deviations are orthogonal. Reserve half
+                # the distance budget for any angular gap at the closure.
+                axial = np.max(np.abs(local[:,2]))
+                radial = np.sqrt((tolerance/2)**2-axial**2)
+                arc_error = min(.25,radial/radius)-1e-12
+            arc = _arc_sweep(np.column_stack((local[:, :2]*weights[:, None]/radius, weights)), arc_error)
             if arc is None:
                 return False
             total += arc
